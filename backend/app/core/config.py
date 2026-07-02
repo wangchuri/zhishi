@@ -1,5 +1,6 @@
 import os
 import urllib.parse
+from pathlib import Path
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -8,17 +9,24 @@ SECRET_KEY = os.getenv("SECRET_KEY", "your-very-secret-key")
 ALGORITHM = os.getenv("ALGORITHM", "HS256")
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7
 
-# Properly encode password for SQLAlchemy
+# 项目根目录（zhishi/），无论从 backend/ 还是仓库根启动均可解析
+_BACKEND_DIR = Path(__file__).resolve().parent.parent.parent
+_REPO_ROOT = _BACKEND_DIR.parent
+_DEFAULT_SQLITE_PATH = _REPO_ROOT / "data" / "zhishi.db"
+
+
+def _default_database_url() -> str:
+    return f"sqlite:///{_DEFAULT_SQLITE_PATH.as_posix()}"
+
+
+SQLALCHEMY_DATABASE_URL = os.getenv("DATABASE_URL", _default_database_url())
+
+# MySQL 连接参数（仅当 DATABASE_URL 未设置且需回退 MySQL 时使用；团队环境请直接设 DATABASE_URL）
 password = urllib.parse.quote_plus(os.getenv("DB_PASSWORD", "@430524Lj"))
 host = os.getenv("DB_HOST", "127.0.0.1")
 port = os.getenv("DB_PORT", "3306")
 db_name = os.getenv("DB_NAME", "my_ai_app")
 user = os.getenv("DB_USER", "root")
-
-SQLALCHEMY_DATABASE_URL = os.getenv(
-    "DATABASE_URL", 
-    f"mysql+pymysql://{user}:{password}@{host}:{port}/{db_name}"
-)
 
 # SMTP 邮件配置
 SMTP_SERVER = os.getenv("SMTP_SERVER", "smtp.gmail.com")
@@ -82,4 +90,3 @@ except Exception:
     BAIDU_OCR_API_KEY = os.getenv("BAIDU_OCR_API_KEY", "")
     BAIDU_OCR_SECRET_KEY = os.getenv("BAIDU_OCR_SECRET_KEY", "")
     BAIDU_OCR_API_URL = os.getenv("BAIDU_OCR_API_URL", "https://aip.baidubce.com/rest/2.0/ocr/v1/general_basic")
-

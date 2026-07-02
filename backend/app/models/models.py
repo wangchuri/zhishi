@@ -1,4 +1,5 @@
 from sqlalchemy import Column, Integer, String, DateTime, Boolean, DECIMAL
+from sqlalchemy.orm import relationship
 from datetime import datetime
 from app.core.database import Base
 
@@ -35,6 +36,13 @@ class User(Base):
 
     # Dify 知识库 ID（注册时自动分配）
     dataset_id = Column(String(255), nullable=True)
+
+    kb_collections = relationship("KbCollection", back_populates="user")
+    documents = relationship("Document", back_populates="user")
+    question_refs = relationship("UserQuestionRef", back_populates="user")
+    quiz_sessions = relationship("QuizSession", back_populates="user")
+    quiz_answers = relationship("QuizAnswer", back_populates="user")
+    tutor_sessions = relationship("TutorSession", back_populates="user")
 
 class PlanTier(Base):
     __tablename__ = "plan_tiers"

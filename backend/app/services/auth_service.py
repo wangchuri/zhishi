@@ -14,6 +14,7 @@ from app.core.redis import cache
 from app.core.config import ACCESS_TOKEN_EXPIRE_MINUTES, EMAIL_VERIFICATION_EXPIRE_MINUTES, PASSWORD_RESET_EXPIRE_MINUTES, FRONTEND_URL
 from app.core.email_service import email_service
 from app.services.dify_kb import DifyKB
+from app.crud.kb import seed_default_collections
 import app.crud as crud
 
 logger = logging.getLogger(__name__)
@@ -78,6 +79,15 @@ class AuthManager:
             DifyKB.upload_welcome_document(dataset_id)
         except Exception as e:
             logger.warning(f"Dify 知识库初始化失败（不影响注册）: {e}")
+
+        # 3.7 创建默认知识库分区（学习区 / 生活区）
+        try:
+            seed_default_collections(db, new_user.id, new_user.dataset_id)
+            db.commit()
+            logger.info(f"默认知识库分区已创建: user_id={new_user.id}")
+        except Exception as e:
+            db.rollback()
+            logger.warning(f"默认知识库分区创建失败（不影响注册）: {e}")
 
         # 4. 返回 (调用登录逻辑)
         try:

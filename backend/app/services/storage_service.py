@@ -116,6 +116,46 @@ class LocalStorage:
                 })
         return files
 
+    # ─── 全局去重存储 ─────────────────────────────────────
+
+    def _global_dir(self, hash_prefix: str) -> Path:
+        d = self.base / "global" / hash_prefix
+        d.mkdir(parents=True, exist_ok=True)
+        return d
+
+    def save_global_file(self, content_hash: str, content: bytes) -> str:
+        """保存全局去重文件，路径 storage/global/{hash[:2]}/{hash}"""
+        path = self._global_dir(content_hash[:2]) / content_hash
+        path.write_bytes(content)
+        logger.info(f"LocalStorage.save_global_file: {path} ({len(content)} bytes)")
+        return str(path)
+
+    def save_global_parsed(self, content_hash: str, content: str) -> str:
+        """保存全局解析文本缓存"""
+        path = self._global_dir(content_hash[:2]) / f"{content_hash}.parsed.txt"
+        path.write_text(content, encoding="utf-8")
+        logger.info(f"LocalStorage.save_global_parsed: {path} ({len(content)} chars)")
+        return str(path)
+
+    def read_file_at_path(self, path: str) -> Optional[bytes]:
+        p = Path(path)
+        if p.exists() and p.is_file():
+            return p.read_bytes()
+        return None
+
+    def read_text_at_path(self, path: str) -> Optional[str]:
+        p = Path(path)
+        if p.exists() and p.is_file():
+            return p.read_text(encoding="utf-8")
+        return None
+
+    def delete_file_at_path(self, path: str) -> bool:
+        p = Path(path)
+        if p.exists() and p.is_file():
+            p.unlink()
+            return True
+        return False
+
     # ─── 聊天记录文件 ─────────────────────────────────────
 
     def save_chat_history(self, user_id: int, session_id: str, data: dict) -> str:
@@ -224,6 +264,23 @@ class FileStorageService:
 
     def list_chat_sessions(self, user_id: int) -> List[dict]:
         return self._backend.list_chat_sessions(user_id)
+
+    # ─── 全局去重存储 ─────────────────────────────────────
+
+    def save_global_file(self, content_hash: str, content: bytes) -> str:
+        return self._backend.save_global_file(content_hash, content)
+
+    def save_global_parsed(self, content_hash: str, content: str) -> str:
+        return self._backend.save_global_parsed(content_hash, content)
+
+    def read_file_at_path(self, path: str) -> Optional[bytes]:
+        return self._backend.read_file_at_path(path)
+
+    def read_text_at_path(self, path: str) -> Optional[str]:
+        return self._backend.read_text_at_path(path)
+
+    def delete_file_at_path(self, path: str) -> bool:
+        return self._backend.delete_file_at_path(path)
 
 
 # 全局单例

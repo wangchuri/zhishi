@@ -54,6 +54,7 @@ Desktop.ini
 .env
 .env.*
 !.env.example
+!backend/.env.example
 *.env.local
 backend/tina.env
 backend/.env

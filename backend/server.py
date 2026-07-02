@@ -32,7 +32,7 @@ async def lifespan(app: FastAPI):
     try:
         from app.core.database import init_db
         init_db()
-        logger.info("MySQL 数据库初始化成功")
+        logger.info("数据库初始化成功")
     except Exception as e:
         logger.error(f"数据库初始化失败: {e}")
 

@@ -636,6 +636,68 @@ DELETE /api/v1/chat/sessions/{session_id}
 
 ## 3. 知识库管理 (KB) — `/api/v1/kb`
 
+### 3.0 知识库分区
+
+#### 3.0.1 分区列表
+
+```
+GET /api/v1/kb/collections
+```
+
+**鉴权**: ✅ 需要
+
+**说明**: 返回当前用户的知识库分区。新用户注册时自动 seed「学习区」(study) 与「生活区」(life)。
+
+**成功响应** (200)：
+
+```json
+{
+  "collections": [
+    {
+      "id": "uuid-1",
+      "name": "学习区",
+      "zone": "study",
+      "description": null,
+      "dataset_id": "dify-dataset-id",
+      "is_default": true,
+      "created_at": "2026-07-02T00:00:00",
+      "updated_at": "2026-07-02T00:00:00"
+    }
+  ],
+  "total": 2
+}
+```
+
+#### 3.0.2 创建分区
+
+```
+POST /api/v1/kb/collections
+```
+
+**鉴权**: ✅ 需要
+
+**请求体** (JSON)：
+
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|:---:|------|
+| `name` | string | ✅ | 分区名称（用户内唯一） |
+| `zone` | string | ✅ | `study` 或 `life` |
+| `description` | string | | 描述 |
+
+**成功响应** (201)：单个 `CollectionOut` 对象。
+
+#### 3.0.3 更新分区
+
+```
+PATCH /api/v1/kb/collections/{collection_id}
+```
+
+**鉴权**: ✅ 需要
+
+**请求体** (JSON)：`name`、`description` 可选。
+
+---
+
 ### 3.1 上传文档
 
 ```
@@ -649,6 +711,7 @@ POST /api/v1/kb/upload
 | 字段 | 类型 | 必填 | 说明 |
 |------|------|:---:|------|
 | `file` | file | ✅ | 文档文件 |
+| `collection_id` | string | | 目标分区 ID；缺省使用默认「学习区」 |
 
 **支持格式**: `.txt`, `.md`, `.csv`, `.json`, `.html`, `.htm`, `.pdf`, `.docx`
 
@@ -658,10 +721,11 @@ POST /api/v1/kb/upload
 
 **上传流程（文档）**:
 1. 文件大小校验
-2. 保存至本地存储
-3. SHA256 哈希去重检查
+2. SHA256 哈希 → 查 `global_documents` 全局去重
+3. 未命中则写入 `storage/global/{hash[:2]}/{hash}`
 4. 解析文本内容并缓存
-5. 上传至 Dify 知识库索引
+5. 上传至 Dify 知识库索引（`dataset_id` 优先取分区配置，否则 `users.dataset_id`）
+6. 写入 `documents` 表；同用户同 hash 返回 `duplicate`
 
 **上传流程（图片）**:
 1. 文件大小校验
@@ -678,8 +742,10 @@ POST /api/v1/kb/upload
   "message": "文件已上传，正在索引中",
   "batch_id": "abc123",
   "document_id": "def456",
+  "id": "documents-uuid",
   "file_name": "notes.txt",
   "dataset_id": "ghi789",
+  "collection_id": "collection-uuid",
   "status": "indexing",
   "ocr_processed": false
 }
@@ -703,10 +769,20 @@ POST /api/v1/kb/upload
 ### 3.2 文档列表
 
 ```
-GET /api/v1/kb/documents?page=1&limit=20
+GET /api/v1/kb/documents?page=1&limit=20&collection_id={uuid}
 ```
 
 **鉴权**: ✅ 需要
+
+**Query Params**:
+
+| 参数 | 类型 | 说明 |
+|------|------|------|
+| `page` | int | 页码，默认 1 |
+| `limit` | int | 每页数量，默认 20 |
+| `collection_id` | string | 可选，按分区过滤 |
+
+**说明**: 数据来自 `documents` 表。`id` 字段对外仍返回 `dify_document_id`（兼容旧前端）；完整业务主键见 `dify_document_id` 同级的内部 `documents.id`（上传响应中的 `id` 字段）。
 
 **成功响应** (200)：
 
