@@ -3,10 +3,10 @@ import { useNavigate } from "react-router-dom"
 import {
   Search,
   Sparkles,
-  NotebookPen,
+  Brain,
   MessageSquare,
   Upload,
-  Network,
+  Library,
   FileText,
   Lightbulb,
   Clock,
@@ -24,18 +24,18 @@ import { useAuth } from "@/context/AuthContext"
 import { chatApi, kbApi, dashboardApi } from "@/lib/api"
 
 const quickActions = [
-  { id: "note", title: "新建笔记", description: "记录想法、整理资料", to: "/notes" },
-  { id: "chat", title: "AI 对话", description: "向 Tina 提问、整理文档", to: "/chat" },
+  { id: "quiz", title: "刷题练习", description: "基于学习资料检验掌握", to: "/quiz" },
   { id: "upload", title: "上传资料", description: "PDF、TXT、MD、DOCX", to: "/knowledge/upload" },
-  { id: "graph", title: "知识图谱", description: "查看标签与知识关系", to: "/graph" },
+  { id: "chat", title: "AI 对话", description: "向 Tina 提问、检索资料", to: "/chat" },
+  { id: "kb", title: "知识库", description: "管理学习区与生活区文档", to: "/knowledge" },
 ]
 
-const quickActionIcons = [NotebookPen, MessageSquare, Upload, Network]
+const quickActionIcons = [Brain, Upload, MessageSquare, Library]
 
 const rightPanelShortcuts = [
+  { label: "刷题练习", to: "/quiz" },
+  { label: "知识库", to: "/knowledge" },
   { label: "上传资料", to: "/knowledge/upload" },
-  { label: "创建提醒", to: "/reminders" },
-  { label: "查看学习路径", to: "/path" },
 ]
 
 function getTimeGreeting(): string {
@@ -52,7 +52,12 @@ export function DashboardPage() {
   const navigate = useNavigate()
   const { user } = useAuth()
   const [greetingName, setGreetingName] = useState(user?.nickname || "")
-  const [recentItems, setRecentItems] = useState<Array<{ id: string; title: string; meta: string }>>([])
+  const [recentItems, setRecentItems] = useState<Array<{
+    id: string
+    title: string
+    meta: string
+    docId?: string
+  }>>([])
   const [suggestions, setSuggestions] = useState<string[]>(["上传文档，开启智能学习", "完善学习画像，获得精准推荐"])
   const [searchInput, setSearchInput] = useState("")
 
@@ -68,7 +73,7 @@ export function DashboardPage() {
       chatApi.getSessions(),
       kbApi.listDocuments(1, 5),
     ]).then(([sessionsResult, docsResult]) => {
-      const items: Array<{ id: string; title: string; meta: string }> = []
+      const items: Array<{ id: string; title: string; meta: string; docId?: string }> = []
 
       if (sessionsResult.status === "fulfilled") {
         const sessions = sessionsResult.value?.sessions || sessionsResult.value || []
@@ -88,6 +93,7 @@ export function DashboardPage() {
             id: `doc-${d.id}`,
             title: d.name || d.file_name || "文档",
             meta: `知识库 · ${d.updated_at || d.updatedAt || "最近"}`,
+            docId: String(d.id),
           })
         })
       }
@@ -127,7 +133,7 @@ export function DashboardPage() {
           type="text"
           value={searchInput}
           onChange={(e) => setSearchInput(e.target.value)}
-          placeholder="搜索笔记、文档、标签，或直接问 Tina..."
+          placeholder="问 Tina 或搜索学习资料..."
           className="w-full h-12 pl-12 pr-32 rounded-lg bg-surface border border-line-soft text-body text-ink-primary placeholder:text-ink-tertiary focus:outline-none focus:border-primary/50 focus:ring-2 focus:ring-primary/10 transition-all"
         />
         <Button type="submit" variant="gradient" size="md" className="absolute right-2 top-1/2 -translate-y-1/2">
@@ -150,9 +156,9 @@ export function DashboardPage() {
 
       <div className="mb-10">
         <RecommendCard
-          title="智能推荐"
-          highlight="上传文档后，Tina 会根据你的学习记录推荐相关内容。"
-          description="上传第一份文档，让 Tina 帮你建立知识体系。"
+          title="开始学习"
+          highlight="上传学习区文档 → 自动出题 → 开始刷题 → 错题辅导"
+          description="上传第一份学习资料，完成分段与出题后即可开始刷题练习。"
           actionLabel="上传资料"
           onAction={() => navigate("/knowledge/upload")}
         />
@@ -160,7 +166,7 @@ export function DashboardPage() {
 
       <div className="mb-4">
         <SectionHeader title="最近内容">
-          <Button variant="ghost" size="sm" onClick={() => navigate("/notes")}>
+          <Button variant="ghost" size="sm" onClick={() => navigate("/knowledge")}>
             查看全部
             <ArrowRight className="w-4 h-4" strokeWidth={2} />
           </Button>
@@ -175,6 +181,9 @@ export function DashboardPage() {
               ...r,
               icon: i % 2 === 0 ? FileText : Lightbulb,
               iconTone: i % 2 === 0 ? ("neutral" as const) : ("primary" as const),
+              secondaryAction: r.docId
+                ? { label: "去刷题", onClick: () => navigate(`/quiz?document_id=${r.docId}`) }
+                : undefined,
             }))}
           />
         )}

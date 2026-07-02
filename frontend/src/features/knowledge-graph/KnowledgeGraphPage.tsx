@@ -38,8 +38,9 @@ export function KnowledgeGraphPage() {
     ktApi.getSkillGraph()
       .then((res) => {
         // Map nodes
-        const gNodes = (res.nodes || []).map((n: any, i: number) => ({
-          id: n.id || `n${i}`,
+        const rawNodes = res.nodes || res.skills || []
+        const gNodes = rawNodes.map((n: any, i: number) => ({
+          id: String(n.id ?? `n${i}`),
           label: n.label || n.name || "—",
           type: (n.type as GraphNode["type"]) || "tag",
           x: n.x || 200 + (i % 4) * 150,

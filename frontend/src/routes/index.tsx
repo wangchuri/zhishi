@@ -13,6 +13,7 @@ import { ProfilePage } from "@/features/profile/ProfilePage"
 import { SettingsPage } from "@/features/settings/SettingsPage"
 import { DiagnosticsPage } from "@/features/settings/DiagnosticsPage"
 import { LoginPage } from "@/features/auth/LoginPage"
+import { QuizPage } from "@/features/quiz/QuizPage"
 
 function RequireAuth({ children }: { children: React.ReactElement }) {
   const { user, isLoading } = useAuth()
@@ -47,6 +48,7 @@ export function AppRoutes() {
       <Route path="/reminders" element={<RequireAuth><RemindersPage /></RequireAuth>} />
       <Route path="/profile" element={<RequireAuth><ProfilePage /></RequireAuth>} />
       <Route path="/settings" element={<RequireAuth><SettingsPage /></RequireAuth>} />
+      <Route path="/quiz" element={<RequireAuth><QuizPage /></RequireAuth>} />
       <Route path="/settings/diagnostics" element={<RequireAuth><DiagnosticsPage /></RequireAuth>} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

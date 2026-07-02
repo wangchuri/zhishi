@@ -8,6 +8,7 @@ python-dotenv==1.0.1
 redis==5.0.1
 email-validator==2.1.0.post1
 passlib[bcrypt]==1.7.4
+bcrypt>=4.0.1,<4.1  # passlib 1.7.4 incompatible with bcrypt 4.1+
 python-jose[cryptography]==3.3.0
 python-multipart==0.0.6
 requests==2.31.0

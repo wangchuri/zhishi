@@ -2,7 +2,6 @@ import { useState, useRef, useEffect } from "react"
 import {
   Sparkles,
   Paperclip,
-  Library,
   Brain,
   NotebookPen,
   Mic,
@@ -15,6 +14,8 @@ import {
   Plus,
   Trash2,
   ChevronRight,
+  GraduationCap,
+  Home,
 } from "lucide-react"
 import { useNavigate, useSearchParams } from "react-router-dom"
 import { AppShell } from "@/components/layout/AppShell"
@@ -23,9 +24,18 @@ import { Chip } from "@/components/ui/chip"
 import { Button } from "@/components/ui/button"
 import { ChatMessage as ChatMessageBlock } from "@/components/blocks/ChatMessage"
 import { chatModes } from "@/data/chat"
-import { chatApi } from "@/lib/api"
+import { chatApi, kbApi, normalizeChatHistory } from "@/lib/api"
 import { useAuth } from "@/context/AuthContext"
-import type { ChatMessage } from "@/types"
+import type { ChatMessage, Citation, KbCollection } from "@/types"
+import { CitationCard } from "@/components/blocks/CitationCard"
+import { Badge } from "@/components/ui/badge"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import { cn } from "@/lib/utils"
 
 interface SessionItem {
@@ -56,6 +66,9 @@ export function ChatPage() {
   const [sessions, setSessions] = useState<SessionItem[]>([])
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [loadingHistory, setLoadingHistory] = useState(false)
+  const [collections, setCollections] = useState<KbCollection[]>([])
+  const [collectionId, setCollectionId] = useState<string>("")
+  const [recentCitations, setRecentCitations] = useState<Citation[]>([])
   const scrollRef = useRef<HTMLDivElement>(null)
 
   // ─── 会话列表 ──────────────────────────────────────
@@ -72,6 +85,15 @@ export function ChatPage() {
 
   useEffect(() => {
     loadSessions()
+    kbApi
+      .listCollections()
+      .then((res) => {
+        const cols = (res.collections || []) as KbCollection[]
+        setCollections(cols)
+        const defaultCol = cols.find((c) => c.is_default) || cols[0]
+        if (defaultCol) setCollectionId(defaultCol.id)
+      })
+      .catch(() => {})
   }, [])
 
   // ─── 从 Dashboard 跳转过来的自动搜索 ─────────────────
@@ -102,11 +124,13 @@ export function ChatPage() {
     setLoadingHistory(true)
     try {
       const res = await chatApi.getHistory(s.id)
-      const msgs: ChatMessage[] = ((res as any).messages || (res as any).data || []).map((m: any, i: number) => ({
-        id: m.id || `h-${i}`,
-        role: m.role || "user",
-        content: m.content || "",
-        time: m.time || m.created_at || "—",
+      const items = normalizeChatHistory(res)
+      const msgs: ChatMessage[] = items.map((m, i) => ({
+        id: String(m.id || `h-${i}`),
+        role: (m.role as ChatMessage["role"]) || "user",
+        content: String(m.content || ""),
+        time: String(m.time || m.created_at || "—"),
+        citations: (m.citations as Citation[]) || undefined,
       }))
       if (msgs.length === 0) {
         setMessages([welcomeMessage])
@@ -169,33 +193,48 @@ export function ChatPage() {
     setIsStreaming(true)
 
     try {
-      await chatApi.sendStream(text, sessionId ?? undefined, (chunk) => {
-        if (chunk.content) {
-          setMessages(prev =>
-            prev.map(m =>
-              m.id === assistantId
-                ? { ...m, content: m.content + chunk.content }
-                : m
+      let messageCitations: Citation[] = []
+      await chatApi.sendStream({
+        content: text,
+        session_id: sessionId ?? undefined,
+        collection_id: collectionId || undefined,
+        onChunk: (chunk) => {
+          if (typeof chunk.content === "string") {
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === assistantId ? { ...m, content: m.content + chunk.content } : m
+              )
             )
-          )
-        }
-        if (chunk.session_id && !sessionId) {
-          setSessionId(chunk.session_id)
-          loadSessions()
-        }
+          }
+          if (chunk.session_id && !sessionId) {
+            setSessionId(String(chunk.session_id))
+            loadSessions()
+          }
+          if (Array.isArray(chunk.citations) && chunk.citations.length > 0) {
+            messageCitations = chunk.citations as Citation[]
+            setRecentCitations(messageCitations)
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === assistantId ? { ...m, citations: messageCitations } : m
+              )
+            )
+          }
+        },
       })
-    } catch (err: any) {
-      setMessages(prev =>
-        prev.map(m =>
-          m.id === assistantId
-            ? { ...m, content: `❌ 发送失败：${err.message || "请稍后重试"}` }
-            : m
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "请稍后重试"
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === assistantId ? { ...m, content: `❌ 发送失败：${msg}` } : m
         )
       )
     } finally {
       setIsStreaming(false)
     }
   }
+
+  const selectedCollection = collections.find((c) => c.id === collectionId)
+  const zoneLabel = selectedCollection?.zone === "life" ? "生活区" : "学习区"
 
   const handleLogout = () => {
     logout()
@@ -394,6 +433,31 @@ export function ChatPage() {
 
           <div className="border-t border-line-soft bg-surface px-8 py-4">
             <div className="max-w-[860px] mx-auto">
+              <div className="flex flex-wrap items-center gap-2 mb-3">
+                <span className="text-small text-ink-tertiary">检索分区</span>
+                <Select value={collectionId} onValueChange={setCollectionId}>
+                  <SelectTrigger className="h-8 min-w-[180px] border-line bg-surface text-small text-ink-primary">
+                    <SelectValue placeholder="选择分区" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {collections.map((c) => (
+                      <SelectItem key={c.id} value={c.id}>
+                        {c.name} · {c.zone === "life" ? "生活区" : "学习区"}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {selectedCollection && (
+                  <Badge variant={selectedCollection.zone === "life" ? "neutral" : "info"}>
+                    {selectedCollection.zone === "life" ? (
+                      <Home className="w-3 h-3 mr-1 inline" strokeWidth={2} />
+                    ) : (
+                      <GraduationCap className="w-3 h-3 mr-1 inline" strokeWidth={2} />
+                    )}
+                    当前对话将检索 {zoneLabel}
+                  </Badge>
+                )}
+              </div>
               <div className="relative rounded-lg border border-line bg-surface shadow-xs focus-within:border-primary/50 focus-within:ring-2 focus-within:ring-primary/10 transition-all">
                 <textarea
                   value={input}
@@ -413,15 +477,14 @@ export function ChatPage() {
                 <div className="absolute bottom-0 left-0 right-0 flex items-center justify-between px-3 py-2">
                   <div className="flex items-center gap-0.5">
                     <ToolButton icon={Paperclip} label="添加资料" />
-                    <ToolButton icon={Library} label="关联知识库" />
                     <ToolButton
                       icon={Brain}
                       label="推理模式"
                       active={reasoning}
                       onClick={() => setReasoning((r) => !r)}
                     />
-                    <ToolButton icon={NotebookPen} label="生成笔记" />
-                    <ToolButton icon={Mic} label="语音输入" />
+                    <ToolButton icon={NotebookPen} label="生成笔记" disabled />
+                    <ToolButton icon={Mic} label="语音输入" disabled />
                   </div>
                   <Button
                     variant={input.trim() && !isStreaming ? "primary" : "secondary"}
@@ -447,8 +510,18 @@ export function ChatPage() {
             <section>
               <h3 className="text-card-title font-semibold text-ink-primary mb-3">对话设置</h3>
               <div className="space-y-2.5">
-                <ContextRow label="已关联知识库" value="默认知识库" />
-                <ContextRow label="当前模式" value="高效笔记" />
+                <ContextRow
+                  label="知识库分区"
+                  value={
+                    selectedCollection
+                      ? `${selectedCollection.name} · ${zoneLabel}`
+                      : "—"
+                  }
+                />
+                <ContextRow
+                  label="当前模式"
+                  value={mode === "reasoning" ? "推理模式" : "高效笔记"}
+                />
                 <ContextRow label="输出目标" value="回答 + 可生成笔记" />
               </div>
             </section>
@@ -458,7 +531,15 @@ export function ChatPage() {
                 <FileText className="w-4 h-4 text-primary" strokeWidth={2} />
                 最近引用
               </h3>
-              <div className="text-small text-ink-tertiary">暂无</div>
+              {recentCitations.length === 0 ? (
+                <div className="text-small text-ink-tertiary">暂无</div>
+              ) : (
+                <div className="space-y-2">
+                  {recentCitations.map((c, i) => (
+                    <CitationCard key={i} citation={c} variant="inline" />
+                  ))}
+                </div>
+              )}
             </section>
 
             <section>
@@ -479,19 +560,23 @@ function ToolButton({
   icon: Icon,
   label,
   active,
+  disabled,
   onClick,
 }: {
   icon: typeof Paperclip
   label: string
   active?: boolean
+  disabled?: boolean
   onClick?: () => void
 }) {
   return (
     <button
       onClick={onClick}
-      title={label}
+      disabled={disabled}
+      title={disabled ? "即将推出" : label}
       className={cn(
         "inline-flex items-center gap-1.5 h-8 px-2.5 rounded-md text-small transition-colors",
+        disabled && "opacity-40 cursor-not-allowed",
         active ? "text-primary bg-primary-soft" : "text-ink-tertiary hover:text-ink-primary hover:bg-surface-soft"
       )}
     >

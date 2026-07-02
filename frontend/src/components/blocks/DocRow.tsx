@@ -1,5 +1,6 @@
 import type { KnowledgeDoc } from "@/types"
 import { Badge } from "@/components/ui/badge"
+import { DocumentPipelineBadge } from "@/components/blocks/DocumentPipelineBadge"
 import { cn } from "@/lib/utils"
 
 const typeLabels: Record<KnowledgeDoc["type"], string> = {
@@ -66,7 +67,15 @@ export function DocRow({ doc, className }: DocRowProps) {
       <div className="hidden sm:block text-small text-ink-tertiary">{doc.updatedAt}</div>
 
       {/* 状态 */}
-      <div className="flex items-center gap-2 justify-self-end">
+      <div className="flex items-center gap-2 justify-self-end flex-wrap justify-end">
+        {(doc.segment_status || doc.question_gen_status) && (
+          <DocumentPipelineBadge
+            segment_status={doc.segment_status}
+            question_gen_status={doc.question_gen_status}
+            questionCount={doc.questionCount}
+            zone={doc.zone}
+          />
+        )}
         <Badge variant={status.variant}>{status.label}</Badge>
       </div>
     </div>

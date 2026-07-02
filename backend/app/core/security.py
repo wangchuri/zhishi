@@ -6,6 +6,7 @@ from app.core.config import SECRET_KEY, ALGORITHM, ACCESS_TOKEN_EXPIRE_MINUTES
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto", bcrypt__ident="2b")
 
+
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     to_encode = data.copy()
     if expires_delta:
@@ -16,8 +17,10 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
 
-def verify_password(plain_password, hashed_password):
-    return pwd_context.verify(plain_password.encode('utf-8')[:72], hashed_password)
 
-def get_password_hash(password):
-    return pwd_context.hash(password.encode('utf-8')[:72])
+def verify_password(plain_password, hashed_password) -> bool:
+    return pwd_context.verify(plain_password[:72], hashed_password)
+
+
+def get_password_hash(password) -> str:
+    return pwd_context.hash(password[:72])

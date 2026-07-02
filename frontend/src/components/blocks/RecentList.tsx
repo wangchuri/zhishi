@@ -7,6 +7,7 @@ export interface RecentItem {
   meta: string
   icon?: LucideIcon
   iconTone?: "primary" | "neutral"
+  secondaryAction?: { label: string; onClick: () => void }
 }
 
 interface RecentListProps {
@@ -41,6 +42,18 @@ export function RecentList({ items, className }: RecentListProps) {
               </div>
               <div className="text-small text-ink-tertiary truncate-1">{item.meta}</div>
             </div>
+            {item.secondaryAction && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  item.secondaryAction?.onClick()
+                }}
+                className="shrink-0 text-small text-primary hover:underline opacity-0 group-hover:opacity-100 transition-opacity"
+              >
+                {item.secondaryAction.label}
+              </button>
+            )}
           </div>
         )
       })}

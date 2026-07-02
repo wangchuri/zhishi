@@ -2,6 +2,7 @@ import { Sparkles } from "lucide-react"
 import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
 import type { ChatMessage as ChatMessageType } from "@/types"
+import { CitationCard } from "@/components/blocks/CitationCard"
 import { cn } from "@/lib/utils"
 
 interface ChatMessageProps {
@@ -37,6 +38,14 @@ export function ChatMessage({ message, className }: ChatMessageProps) {
             {message.content}
           </ReactMarkdown>
         </div>
+        {message.citations && message.citations.length > 0 && (
+          <div className="mt-3 pt-3 border-t border-line-soft space-y-1.5">
+            <div className="text-small text-ink-tertiary">引用来源：</div>
+            {message.citations.map((c, i) => (
+              <CitationCard key={i} citation={c} variant="inline" />
+            ))}
+          </div>
+        )}
         {message.refs && message.refs.length > 0 && (
           <div className="mt-3 pt-3 border-t border-line-soft space-y-1">
             <div className="text-small text-ink-tertiary">引用文档：</div>

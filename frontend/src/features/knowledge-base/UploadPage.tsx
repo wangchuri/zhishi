@@ -17,7 +17,9 @@ import { StatCard } from "@/components/ui/stat-card"
 import { EmptyState } from "@/components/ui/empty-state"
 import { TimelineStep } from "@/components/blocks/TimelineStep"
 import { cn } from "@/lib/utils"
+import { SegmentedTabs } from "@/components/ui/segmented-tabs"
 import { kbApi } from "@/lib/api"
+import type { KbCollection } from "@/types"
 
 const SUPPORTED_EXTENSIONS = [".txt", ".md", ".csv", ".json", ".html", ".htm", ".pdf", ".docx"]
 const SUPPORTED_LABEL = "TXT, MD, CSV, JSON, HTML, PDF, DOCX"
@@ -64,6 +66,8 @@ export function UploadPage() {
   const [uploading, setUploading] = useState(false)
   const [maxUploadSize, setMaxUploadSize] = useState("10.0 MB")
   const [showDemoWarning, setShowDemoWarning] = useState(false)
+  const [collections, setCollections] = useState<KbCollection[]>([])
+  const [selectedCollectionId, setSelectedCollectionId] = useState("")
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -71,6 +75,15 @@ export function UploadPage() {
       .then((res) => {
         setMaxUploadSize(res.max_upload_size_display || "10.0 MB")
         setShowDemoWarning(!res.use_oss)
+      })
+      .catch(() => {})
+    kbApi
+      .listCollections()
+      .then((res) => {
+        const cols = (res.collections || []) as KbCollection[]
+        setCollections(cols)
+        const defaultCol = cols.find((c) => c.is_default) || cols[0]
+        if (defaultCol) setSelectedCollectionId(defaultCol.id)
       })
       .catch(() => {})
   }, [])
@@ -171,7 +184,7 @@ export function UploadPage() {
         }
 
         try {
-          const res = await kbApi.upload(file)
+          const res = await kbApi.upload(file, selectedCollectionId || undefined)
 
           if (res.status === "duplicate") {
             setTasks((prev) =>
@@ -211,7 +224,7 @@ export function UploadPage() {
 
       setUploading(false)
     },
-    [active, pollStatus]
+    [active, pollStatus, selectedCollectionId]
   )
 
   const onDrop = useCallback(
@@ -243,6 +256,20 @@ export function UploadPage() {
   return (
     <AppShell maxWidth={1180}>
       <PageHeader title="上传到知识库" subtitle="把文档、图片或拍照资料交给 Tina 整理" />
+
+      {collections.length > 0 && (
+        <div className="mb-6">
+          <div className="text-small text-ink-tertiary mb-2">上传到分区</div>
+          <SegmentedTabs
+            tabs={collections.map((c) => ({
+              label: `${c.name}${c.zone === "life" ? " · 生活" : " · 学习"}`,
+              value: c.id,
+            }))}
+            value={selectedCollectionId}
+            onChange={setSelectedCollectionId}
+          />
+        </div>
+      )}
 
       {/* 流程条 */}
       <div className="bg-surface border border-line-soft rounded-lg shadow-xs p-5 mb-8">
