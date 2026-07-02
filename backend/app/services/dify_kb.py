@@ -237,10 +237,20 @@ class DifyKB:
 
         resp = response.json()
         records = resp.get("records", [])
-        results = [
-            {"score": rec.get("score", 0), "content": rec.get("segment", {}).get("content", "")}
-            for rec in records
-        ]
+        results = []
+        for rec in records:
+            segment = rec.get("segment") or {}
+            document = segment.get("document") or {}
+            dify_document_id = (
+                segment.get("document_id")
+                or document.get("id")
+            )
+            results.append({
+                "score": rec.get("score", 0),
+                "content": segment.get("content", ""),
+                "dify_document_id": dify_document_id,
+                "document_name": document.get("name"),
+            })
         return results
 
     def add_document(self, file_path: str) -> Optional[dict]:

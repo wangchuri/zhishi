@@ -89,7 +89,7 @@ HTTP Request
 | SQLAlchemy models | ✅ S1 完成 | 13 张表 ORM 已建（含 `global_documents`） |
 | Alembic | ⚠️ 待 S1+ | S1 暂用 `init_db()` + `create_all` |
 | `kb_collections` CRUD | ✅ S2 完成 | 注册 seed + API |
-| 刷题 / 辅导 | ✅ 刷题已实现 / 辅导 S6+ | S5 完成，S6+ |
+| 刷题 / 辅导 | ✅ 刷题已实现 / 辅导 S6 完成 | S5–S6 完成 |
 | 前端联调 | ⚠️ 部分 | `api.ts` 硬编码公网地址 |
 
 ---
@@ -526,16 +526,17 @@ backend/test_s5_quiz.py
 
 ```
 backend/app/services/tutor_service.py
-backend/app/services/socratic_agent.py   # 扩展 ZhishiAgent 或独立 Agent
 backend/app/schemas/tutor.py
+backend/app/crud/tutor.py
 backend/app/api/v1/tutor.py
+backend/test_s6_tutor.py
 ```
 
 **API 约定**：
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| POST | `/api/v1/tutor/sessions` | `{question_id, quiz_answer_id?}` 创建 |
+| POST | `/api/v1/tutor/sessions` | `{question_id, quiz_session_id?, quiz_answer_id?}` 创建 |
 | POST | `/api/v1/tutor/sessions/{id}/messages` | `{content, stream?}` SSE 同 chat |
 | GET | `/api/v1/tutor/sessions/{id}` | 元数据 + 绑定 segment 摘要 |
 
@@ -549,9 +550,11 @@ backend/app/api/v1/tutor.py
 
 **验收标准**：
 
-- [ ] 从刷题页点「我不会」能进入辅导对话  
-- [ ] Agent 回复明显引用分段内容（不跑题到无关知识）  
-- [ ] `tutor_sessions.segment_id` 与错题 citation 一致  
+- [x] 从刷题页点「我不会」能进入辅导对话（`POST /tutor/sessions` + `quiz_session_id`）
+- [x] Agent 回复明显引用分段内容（system prompt 注入 excerpt/分段全文）
+- [x] `tutor_sessions.segment_id` 与错题 citation 一致
+
+**S6 完成备注（2026-07-02）**：`SocraticTutorAgent` 内置于 `tutor_service.py`；对话历史 Redis 键 `tutor:history:{user}:{chat_session_id}`，Redis 不可用时回退内存；`test_s6_tutor.py` mock Agent 验证创建、消息往返与上下文注入。
 
 **常见坑**：
 
@@ -602,9 +605,9 @@ backend/app/services/citation_service.py
 
 **验收标准**：
 
-- [ ] 前端传 `collection_id` 后检索范围切换（生活区 vs 学习区）  
-- [ ] 非流式与流式均能拿到 `citations`（流式可在最后一条 event）  
-- [ ] citation 的 `doc_id` 可调用 `GET /kb/documents/{id}/content` 做高亮  
+- [x] 前端传 `collection_id` 后检索范围切换（生活区 vs 学习区）  
+- [x] 非流式与流式均能拿到 `citations`（流式可在最后一条 event）  
+- [x] citation 的 `doc_id` 可调用 `GET /kb/documents/{id}/content` 做高亮  
 
 **常见坑**：
 

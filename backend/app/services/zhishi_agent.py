@@ -2,7 +2,7 @@
 知拾 Agent — 封装 Tina Agent + DifyKB，提供流式对话
 """
 import logging
-from typing import Generator, List, Optional
+from typing import Generator, List, Optional, TYPE_CHECKING
 
 from app.utils.tina_loader import tina_env_path
 from tina import Agent
@@ -10,7 +10,14 @@ from tina.agent.core.context_manager import ContextManager
 from tina.agent.core.tools import Tools
 from tina.llm import BaseAPI
 
+from app.services.citation_service import (
+    build_citations_from_hits,
+    filter_hits_by_collection,
+)
 from app.services.dify_kb import DifyKB
+
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
 
 logger = logging.getLogger(__name__)
 
@@ -43,6 +50,8 @@ class ZhishiAgent:
     def __init__(self, user_id: int, dataset_id: str):
         self.user_id = user_id
         self.dataset_id = dataset_id
+        self._active_collection_id: Optional[str] = None
+        self._active_db: Optional["Session"] = None
 
         # 用户专属知识库
         self.kb = DifyKB(dataset_id) if dataset_id else None
@@ -83,6 +92,13 @@ class ZhishiAgent:
         if not self.kb:
             return "知识库未初始化"
         results = self.kb.query(query, top_k=5)
+        if self._active_db and self._active_collection_id is not None:
+            results = filter_hits_by_collection(
+                self._active_db,
+                self.user_id,
+                self._active_collection_id,
+                results,
+            )
         if not results:
             return "未找到相关内容"
         lines = []
@@ -96,40 +112,57 @@ class ZhishiAgent:
         return self.agent is not None
 
     def predict_stream(
-        self, message: str, history: Optional[List[dict]] = None
+        self,
+        message: str,
+        history: Optional[List[dict]] = None,
+        collection_id: Optional[str] = None,
+        db: Optional["Session"] = None,
     ) -> Generator[dict, None, None]:
         """
         流式对话
 
         流程：
             1. 恢复历史上下文
-            2. DifyKB 检索知识片段
+            2. DifyKB 检索知识片段（可按 collection_id 过滤）
             3. 构建增强后的 instruction
             4. Tina Agent 流式预测
+            5. 末包附带 citations
 
         Args:
             message: 用户消息
             history: 历史消息列表 [{role, content}, ...]
+            collection_id: 知识库分区 ID，限定检索与 citation 范围
+            db: 数据库会话，用于 citation 映射
 
         Yields:
             dict: {"role": "assistant", "content": "...", ...}
         """
+        self._active_collection_id = collection_id
+        self._active_db = db
+
         if not self.agent:
             yield {"role": "assistant", "content": "抱歉，AI 服务暂时不可用，请稍后重试。"}
             return
 
         # 构建增强消息
         enhanced_message = message
+        retrieval_hits: List[dict] = []
 
         # 1. 知识库检索
         knowledge_context = ""
         if self.kb:
             try:
-                results = self.kb.query(message, top_k=3)
-                if results:
+                retrieval_hits = self.kb.query(message, top_k=3)
+                if db and collection_id:
+                    retrieval_hits = filter_hits_by_collection(
+                        db, self.user_id, collection_id, retrieval_hits
+                    )
+                if retrieval_hits:
                     fragments = []
-                    for i, r in enumerate(results, 1):
-                        fragments.append(f"[片段{i}] (相关度: {r['score']:.2f})\n{r['content']}")
+                    for i, r in enumerate(retrieval_hits, 1):
+                        fragments.append(
+                            f"[片段{i}] (相关度: {r['score']:.2f})\n{r['content']}"
+                        )
                     knowledge_context = "\n\n".join(fragments)
             except Exception as e:
                 logger.warning(f"ZhishiAgent 知识库检索失败: {e}")
@@ -182,3 +215,21 @@ class ZhishiAgent:
         except Exception as e:
             logger.error(f"ZhishiAgent.predict_stream 错误: {e}")
             yield {"role": "assistant", "content": f"抱歉，生成回复时出错了：{str(e)}"}
+
+        # 5. 附带 citations（SSE 末包）
+        if db and retrieval_hits:
+            try:
+                citations = build_citations_from_hits(
+                    db, self.user_id, collection_id, retrieval_hits
+                )
+                if citations:
+                    yield {
+                        "role": "assistant",
+                        "content": "",
+                        "citations": [c.model_dump() for c in citations],
+                    }
+            except Exception as e:
+                logger.warning(f"ZhishiAgent 构建 citations 失败: {e}")
+
+        self._active_collection_id = None
+        self._active_db = None

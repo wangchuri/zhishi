@@ -6,8 +6,9 @@ from typing import Optional, List
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
+from sqlalchemy.orm import Session
 
-from app.api.deps import get_current_active_user
+from app.api.deps import get_current_active_user, get_db
 from app.core.redis import cache
 from app.core.agent_manager import agent_manager
 from app.schemas.schemas import (
@@ -17,6 +18,7 @@ from app.schemas.schemas import (
     ChatSession,
     ChatSessionList,
 )
+from app.services.citation_service import resolve_chat_collection
 from app.services.storage_service import storage_service
 
 logger = logging.getLogger(__name__)
@@ -183,6 +185,8 @@ def _stream_agent_response(
     session_id: str,
     message: str,
     dataset_id: str,
+    collection_id: Optional[str] = None,
+    db: Optional[Session] = None,
     history: Optional[list] = None,
 ):
     if not dataset_id:
@@ -211,7 +215,9 @@ def _stream_agent_response(
 
         full_content = ""
 
-        for chunk in agent.predict_stream(message, history):
+        for chunk in agent.predict_stream(
+            message, history, collection_id=collection_id, db=db
+        ):
             role = chunk.get("role", "assistant")
             content = chunk.get("content", "")
 
@@ -231,6 +237,10 @@ def _stream_agent_response(
             tool_name = chunk.get("tool_name")
             if tool_name:
                 payload["tool_name"] = tool_name
+
+            citations = chunk.get("citations")
+            if citations:
+                payload["citations"] = citations
 
             data = json.dumps(payload, ensure_ascii=False)
             yield f"event: message\ndata: {data}\n\n"
@@ -254,10 +264,16 @@ def _stream_agent_response(
 @router.post("", response_model=ChatResponse)
 def send_chat(
     request: ChatRequest,
-    current_user: dict = Depends(get_current_active_user)
+    current_user: dict = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
 ):
     user_id = current_user["user_id"]
-    dataset_id = current_user.get("dataset_id")
+    user_dataset_id = current_user.get("dataset_id")
+    collection, dataset_id = resolve_chat_collection(
+        db, user_id, request.collection_id, user_dataset_id
+    )
+    collection_id = collection.id
+
     session_id = request.session_id or uuid4().hex
     session_meta = _load_session_meta(user_id, session_id)
 
@@ -280,6 +296,8 @@ def send_chat(
                 session_id=session_id,
                 message=request.content,
                 dataset_id=dataset_id,
+                collection_id=collection_id,
+                db=db,
                 history=history,
             ),
             media_type="text/event-stream",
@@ -290,7 +308,32 @@ def send_chat(
             }
         )
 
+    citations = None
     assistant_content = _generate_assistant_response(request.content)
+
+    if dataset_id:
+        try:
+            agent = agent_manager.get_agent(user_id, dataset_id)
+            if agent.is_ready:
+                history = _load_history(user_id, session_id)
+                if history:
+                    history = history[:-1]
+                full_content = ""
+                for chunk in agent.predict_stream(
+                    request.content,
+                    history,
+                    collection_id=collection_id,
+                    db=db,
+                ):
+                    if chunk.get("citations"):
+                        citations = chunk["citations"]
+                    elif chunk.get("content"):
+                        full_content += chunk["content"]
+                if full_content:
+                    assistant_content = full_content
+        except Exception as e:
+            logger.error(f"非流式 chat Agent 调用失败: {e}")
+
     _save_message(user_id, session_id, "assistant", assistant_content)
 
     meta = _load_session_meta(user_id, session_id)
@@ -300,7 +343,8 @@ def send_chat(
         "session_title": title,
         "role": "assistant",
         "content": assistant_content,
-        "created_at": _now_iso()
+        "created_at": _now_iso(),
+        "citations": citations,
     }
 
 

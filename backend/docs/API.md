@@ -15,10 +15,11 @@
 - [3. 知识库管理 (KB)](#3-知识库管理-kb-apiv1kb)
 - [4. 题目 (Questions)](#4-题目-questions-apiv1questions)
 - [5. 刷题 (Quiz)](#5-刷题-quiz-apiv1quiz)
-- [6. 首页建议 (Dashboard)](#6-首页建议-dashboard-apiv1dashboard)
-- [7. 知识追踪 (KT)](#7-知识追踪-kt-apiv1kt)
-- [8. 用户套餐 (Plan)](#8-用户套餐-plan-apiv1plan)
-- [9. 系统](#9-系统)
+- [6. 辅导 (Tutor)](#6-辅导-tutor-apiv1tutor)
+- [7. 首页建议 (Dashboard)](#7-首页建议-dashboard-apiv1dashboard)
+- [8. 知识追踪 (KT)](#8-知识追踪-kt-apiv1kt)
+- [9. 用户套餐 (Plan)](#9-用户套餐-plan-apiv1plan)
+- [10. 系统](#10-系统)
 
 ---
 
@@ -513,7 +514,8 @@ POST /api/v1/chat
 {
   "session_id": "可选，已存在会话的 ID",
   "content": "你好，帮我总结一下知识库的内容",
-  "stream": true
+  "stream": true,
+  "collection_id": "可选，知识库分区 ID；缺省使用默认学习区"
 }
 ```
 
@@ -522,6 +524,7 @@ POST /api/v1/chat
 | `session_id` | string | | 已有会话 ID。不传则自动创建新会话 |
 | `content` | string | ✅ | 用户消息内容 |
 | `stream` | bool | | 是否 SSE 流式返回，默认 `true` |
+| `collection_id` | string | | 知识库分区 ID；缺省使用默认「学习区」，检索与 citation 限定在该分区 |
 
 **响应**: `text/event-stream`
 
@@ -537,6 +540,9 @@ data: {"session_id":"abc123","role":"assistant","content":"我是","tool_name":"
 
 event: message
 data: {"session_id":"abc123","role":"assistant","content":"Tina，你的知识助手。","reasoning_content":"正在分析..."}
+
+event: message
+data: {"session_id":"abc123","role":"assistant","content":"","citations":[{"doc_id":"uuid","segment_id":"uuid","title":"第二章","char_start":1200,"char_end":1450,"snippet":"..."}]}
 ```
 
 **SSE 数据字段说明**：
@@ -548,6 +554,7 @@ data: {"session_id":"abc123","role":"assistant","content":"Tina，你的知识�
 | `content` | 本次增量文本片段 |
 | `reasoning_content` | 可选，DeepSeek 推理过程（思维链） |
 | `tool_name` | 可选，当前调用的工具名称 |
+| `citations` | 可选，流式末包携带；引用列表，见下方结构 |
 
 > **前端拼接方式**: 将所有 `content` 片段按顺序拼接得到完整回复。
 
@@ -559,9 +566,30 @@ data: {"session_id":"abc123","role":"assistant","content":"Tina，你的知识�
   "session_title": "你好，帮我总结一下...",
   "role": "assistant",
   "content": "你好！我是 Tina...",
-  "created_at": "2025-01-01T00:00:00Z"
+  "created_at": "2025-01-01T00:00:00Z",
+  "citations": [
+    {
+      "doc_id": "documents.id",
+      "segment_id": "document_segments.id",
+      "title": "第二章",
+      "char_start": 1200,
+      "char_end": 1450,
+      "snippet": "引用原文片段..."
+    }
+  ]
 }
 ```
+
+**citation 字段**（`citations[]` 每项）：
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `doc_id` | string | `documents.id`，可用于 `GET /kb/documents/{id}/content` 高亮 |
+| `segment_id` | string \| null | `document_segments.id`；生活区无分段时为 `null` |
+| `title` | string \| null | 段标题或文档名 |
+| `char_start` | int \| null | 原文起始偏移 |
+| `char_end` | int \| null | 原文结束偏移 |
+| `snippet` | string | 引用片段预览 |
 
 ---
 
@@ -1262,9 +1290,111 @@ GET /api/v1/quiz/sessions/{session_id}/results
 
 ---
 
-## 6. 首页建议 (Dashboard) — `/api/v1/dashboard`
+## 6. 辅导 (Tutor) — `/api/v1/tutor`
 
-### 6.1 获取个性化建议
+「我不会，和 Agent 聊聊」— 绑定题目与 `question_provenance` 分段上下文的苏格拉底式辅导。
+
+### 6.1 创建辅导会话
+
+```
+POST /api/v1/tutor/sessions
+```
+
+**鉴权**: ✅ 需要
+
+**说明**: 从 `question_provenance` 解析 `segment_id` / `document_id`，写入 `tutor_sessions`；系统 prompt 注入题干与分段原文（优先 `excerpt`，否则截断 `content`）。
+
+**请求体**：
+
+```json
+{
+  "question_id": "uuid-q",
+  "quiz_session_id": "uuid-quiz-session",
+  "quiz_answer_id": "uuid-answer"
+}
+```
+
+`quiz_session_id` / `quiz_answer_id` 可选；传入后可关联刷题作答（含 `unknown`「我不会」）并注入用户答案上下文。
+
+**成功响应** (201)：
+
+```json
+{
+  "id": "uuid-tutor",
+  "question_id": "uuid-q",
+  "document_id": "uuid-doc",
+  "segment_id": "uuid-seg",
+  "quiz_answer_id": "uuid-answer",
+  "status": "active",
+  "question_stem": "题干",
+  "segment_context": {
+    "segment_id": "uuid-seg",
+    "title": "导论",
+    "snippet": "原文摘录片段..."
+  },
+  "messages": [],
+  "created_at": "2025-01-01T00:00:00",
+  "updated_at": "2025-01-01T00:00:00"
+}
+```
+
+**错误**：
+
+| 状态码 | 场景 |
+|--------|------|
+| 404 | 题目、分段、刷题会话或答题记录不存在 |
+| 400 | 题目不在刷题会话中，或答题记录不匹配 |
+
+---
+
+### 6.2 发送辅导消息
+
+```
+POST /api/v1/tutor/sessions/{session_id}/messages
+```
+
+**鉴权**: ✅ 需要
+
+**请求体**：
+
+```json
+{
+  "content": "我不太理解这道题",
+  "stream": false
+}
+```
+
+`stream: true` 时返回 SSE，事件格式与 `/api/v1/chat` 一致（`event: message` + JSON `data`）。
+
+**成功响应** (200) — 同步：
+
+```json
+{
+  "role": "assistant",
+  "content": "我们先看看教材里是怎么说的……",
+  "created_at": "2025-01-01T00:00:00Z"
+}
+```
+
+对话历史存储于 Redis 键 `tutor:history:{user_id}:{chat_session_id}`（与通用 `/chat` 隔离）。
+
+---
+
+### 6.3 获取辅导会话
+
+```
+GET /api/v1/tutor/sessions/{session_id}
+```
+
+**鉴权**: ✅ 需要
+
+**成功响应** (200)：同 6.1 结构，含完整 `messages`（不含内部 system prompt）。
+
+---
+
+## 7. 首页建议 (Dashboard) — `/api/v1/dashboard`
+
+### 7.1 获取个性化建议
 
 ```
 GET /api/v1/dashboard/suggestions
@@ -1299,9 +1429,9 @@ GET /api/v1/dashboard/suggestions
 
 ---
 
-## 7. 知识追踪 (KT) — `/api/v1/kt`
+## 8. 知识追踪 (KT) — `/api/v1/kt`
 
-### 7.1 LADL 修正认知状态
+### 8.1 LADL 修正认知状态
 
 ```
 POST /api/v1/kt/correct
@@ -1328,7 +1458,7 @@ POST /api/v1/kt/correct
 
 ---
 
-### 7.2 评估能力指标
+### 8.2 评估能力指标
 
 ```
 POST /api/v1/kt/evaluate
@@ -1356,7 +1486,7 @@ POST /api/v1/kt/evaluate
 
 ---
 
-### 7.3 推荐学习路径
+### 8.3 推荐学习路径
 
 ```
 POST /api/v1/kt/learning-path
@@ -1387,7 +1517,7 @@ POST /api/v1/kt/learning-path
 
 ---
 
-### 7.4 查询技能先修/后继关系
+### 8.4 查询技能先修/后继关系
 
 ```
 POST /api/v1/kt/prerequisites
@@ -1420,7 +1550,7 @@ POST /api/v1/kt/prerequisites
 
 ---
 
-### 7.5 获取完整知识依赖图
+### 8.5 获取完整知识依赖图
 
 ```
 GET /api/v1/kt/skill-graph
@@ -1447,9 +1577,9 @@ GET /api/v1/kt/skill-graph
 
 ---
 
-## 8. 用户套餐 (Plan) — `/api/v1/plan`
+## 9. 用户套餐 (Plan) — `/api/v1/plan`
 
-### 8.1 获取所有套餐
+### 9.1 获取所有套餐
 
 ```
 GET /api/v1/plan/
@@ -1490,7 +1620,7 @@ GET /api/v1/plan/
 
 ---
 
-### 8.2 获取我的套餐
+### 9.2 获取我的套餐
 
 ```
 GET /api/v1/plan/my-plan
@@ -1523,9 +1653,9 @@ GET /api/v1/plan/my-plan
 
 ---
 
-## 9. 系统
+## 10. 系统
 
-### 9.1 健康检查
+### 10.1 健康检查
 
 ```
 GET /health

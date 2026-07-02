@@ -187,10 +187,14 @@ class UpdateProfileRequest(BaseModel):
 
 # ============ 聊天相关模型 ============
 
+from app.schemas.quiz import CitationOut
+
+
 class ChatRequest(BaseModel):
     content: str
     session_id: Optional[str] = None
     stream: bool = False
+    collection_id: Optional[str] = None
 
 class ChatResponse(BaseModel):
     session_id: str
@@ -198,6 +202,7 @@ class ChatResponse(BaseModel):
     role: str
     content: str
     created_at: datetime
+    citations: Optional[List[CitationOut]] = None
 
 class ChatHistoryItem(BaseModel):
     role: str
