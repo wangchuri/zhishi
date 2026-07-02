@@ -12,6 +12,7 @@ from app.api.deps import get_current_active_user, get_db
 from app.core.config import DEBUG_MAX_UPLOAD_SIZE, USE_OSS
 from app.schemas.kb import CollectionCreate, CollectionUpdate
 from app.services import kb_service
+from app.services import segment_service
 from app.services.dify_kb import DifyKB
 from app.services.file_parser import SUPPORTED_EXTENSIONS
 
@@ -200,6 +201,18 @@ def get_document_content(
 ):
     """获取文档解析后的文本内容"""
     return kb_service.get_document_content(db, current_user["user_id"], doc_id)
+
+
+@router.get("/documents/{doc_id}/segments")
+def list_document_segments(
+    doc_id: str,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_active_user),
+):
+    """列出文档分段（仅文档 owner 可访问）"""
+    return segment_service.list_document_segments(
+        db, current_user["user_id"], doc_id
+    )
 
 
 # ─── 配置查询（供前端使用） ───────────────────────────────

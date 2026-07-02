@@ -381,9 +381,9 @@ backend/app/api/v1/segments.py      # 可选：GET /documents/{id}/segments
 
 **验收标准**：
 
-- [ ] 上传 `.md` 后 `document_segments` 行数 ≥ 1  
-- [ ] `char_start/char_end` 与全文对得上（抽样校验）  
-- [ ] 生活区文档 `segment_status` 保持 `not_started`  
+- [x] 上传 `.md` 后 `document_segments` 行数 ≥ 1  
+- [x] `char_start/char_end` 与全文对得上（抽样校验）  
+- [x] 生活区文档 `segment_status` 保持 `not_started`  
 
 **常见坑**：
 

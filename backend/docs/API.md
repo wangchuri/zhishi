@@ -885,7 +885,50 @@ GET /api/v1/kb/documents/{doc_id}/content
 
 ---
 
-### 3.6 配置查询
+### 3.6 文档分段列表
+
+```
+GET /api/v1/kb/documents/{doc_id}/segments
+```
+
+**鉴权**: ✅ 需要（仅文档 owner 可访问）
+
+**说明**: 返回学习区文档的 `document_segments` 列表，用于出题溯源与 citation 定位。`doc_id` 支持 `documents.id` 或 `dify_document_id`。
+
+**成功响应** (200)：
+
+```json
+{
+  "document_id": "uuid-doc",
+  "segment_status": "completed",
+  "total": 2,
+  "segments": [
+    {
+      "id": "uuid-seg-1",
+      "document_id": "uuid-doc",
+      "order_index": 0,
+      "title": "第一章",
+      "content": "# 第一章\n正文...",
+      "char_start": 0,
+      "char_end": 120,
+      "created_at": "2025-01-01T00:00:00"
+    }
+  ]
+}
+```
+
+**`segment_status` 说明**：
+
+| 值 | 含义 |
+|------|------|
+| `not_started` | 未分段（生活区文档保持此状态） |
+| `processing` | 分段进行中 |
+| `completed` | 分段完成 |
+| `failed` | 分段失败 |
+
+---
+
+### 3.7 配置查询
 
 ```
 GET /api/v1/kb/config

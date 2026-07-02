@@ -97,9 +97,17 @@ def _guess_mime(suffix: str) -> Optional[str]:
 
 
 def _maybe_trigger_segment(db: Session, document: Document) -> None:
-    """S3 分段 hook — 暂未实现"""
-    if document.zone == "study":
-        logger.debug("segment hook skipped (S3): document_id=%s", document.id)
+    """学习区文档上传后同步分段"""
+    if document.zone != "study":
+        return
+    from app.services.segment_service import segment_document
+
+    try:
+        segment_document(document.id, db)
+        db.commit()
+    except Exception:
+        logger.exception("segment hook failed: document_id=%s", document.id)
+        db.rollback()
 
 
 def _load_hash_store_fallback() -> dict:
