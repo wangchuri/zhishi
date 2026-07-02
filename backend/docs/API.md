@@ -13,10 +13,12 @@
 - [1. 账号认证 (Auth)](#1-账号认证-auth-apiv1auth)
 - [2. 智能聊天 (Chat)](#2-智能聊天-chat-apiv1chat)
 - [3. 知识库管理 (KB)](#3-知识库管理-kb-apiv1kb)
-- [4. 首页建议 (Dashboard)](#4-首页建议-dashboard-apiv1dashboard)
-- [5. 知识追踪 (KT)](#5-知识追踪-kt-apiv1kt)
-- [6. 用户套餐 (Plan)](#6-用户套餐-plan-apiv1plan)
-- [7. 系统](#7-系统)
+- [4. 题目 (Questions)](#4-题目-questions-apiv1questions)
+- [5. 刷题 (Quiz)](#5-刷题-quiz-apiv1quiz)
+- [6. 首页建议 (Dashboard)](#6-首页建议-dashboard-apiv1dashboard)
+- [7. 知识追踪 (KT)](#7-知识追踪-kt-apiv1kt)
+- [8. 用户套餐 (Plan)](#8-用户套餐-plan-apiv1plan)
+- [9. 系统](#9-系统)
 
 ---
 
@@ -949,9 +951,320 @@ GET /api/v1/kb/config
 
 ---
 
-## 4. 首页建议 (Dashboard) — `/api/v1/dashboard`
+## 4. 题目 (Questions) — `/api/v1/questions`
 
-### 4.1 获取个性化建议
+### 4.1 批量出题
+
+```
+POST /api/v1/questions/generate
+```
+
+**鉴权**: ✅ 需要
+
+**说明**: 对学习区（`zone=study`）且分段已完成（`segment_status=completed`）的文档，从 `document_segments` 生成单选题，写入 `global_questions`（全局去重）、`question_provenance`（溯源）、`user_question_refs`（用户题库）。LLM 不可用时自动回退模板题。
+
+**请求体**（`document_id` 与 `segment_ids` 至少一项）：
+
+```json
+{
+  "document_id": "uuid-doc"
+}
+```
+
+或指定分段：
+
+```json
+{
+  "segment_ids": ["uuid-seg-1", "uuid-seg-2"]
+}
+```
+
+**成功响应** (200)：
+
+```json
+{
+  "document_id": "uuid-doc",
+  "question_gen_status": "completed",
+  "questions_created": 2,
+  "questions_reused": 0,
+  "total_questions": 2
+}
+```
+
+**`question_gen_status` 说明**：
+
+| 值 | 含义 |
+|------|------|
+| `not_started` | 未出题 |
+| `processing` | 出题进行中 |
+| `completed` | 出题完成（至少 1 题） |
+| `failed` | 出题失败（无有效题目） |
+
+**错误**：
+
+| 状态码 | 场景 |
+|--------|------|
+| 400 | 非学习区、分段未完成、segment_ids 跨文档 |
+| 404 | 文档或分段不存在 |
+
+---
+
+### 4.2 题目列表
+
+```
+GET /api/v1/questions?document_id=&collection_id=
+```
+
+**鉴权**: ✅ 需要
+
+**说明**: 返回当前用户 `user_question_refs` 中的题目，可按 `document_id` 或 `collection_id` 过滤。
+
+**成功响应** (200)：
+
+```json
+{
+  "questions": [
+    {
+      "id": "uuid-q",
+      "stem": "关于「导论」的核心内容，以下哪项正确？",
+      "question_type": "single_choice",
+      "options": [
+        {"key": "A", "text": "选项 A"}
+      ],
+      "answer": "A",
+      "explanation": "解析文本",
+      "tags": ["测试"],
+      "source_type": "generated",
+      "document_id": "uuid-doc",
+      "collection_id": "uuid-coll",
+      "created_at": "2025-01-01T00:00:00"
+    }
+  ],
+  "total": 1,
+  "document_id": "uuid-doc",
+  "collection_id": null
+}
+```
+
+> 注：`options` 每项为 `{"key":"A","text":"..."}`。
+
+---
+
+### 4.3 题目详情（含溯源）
+
+```
+GET /api/v1/questions/{question_id}
+```
+
+**鉴权**: ✅ 需要（仅用户可见题目）
+
+**成功响应** (200)：
+
+```json
+{
+  "id": "uuid-q",
+  "stem": "题干",
+  "question_type": "single_choice",
+  "options": [{"key": "A", "text": "..."}],
+  "answer": "A",
+  "explanation": "解析",
+  "tags": [],
+  "source_type": "generated",
+  "document_id": "uuid-doc",
+  "collection_id": "uuid-coll",
+  "created_at": "2025-01-01T00:00:00",
+  "provenance": [
+    {
+      "id": "uuid-prov",
+      "document_id": "uuid-doc",
+      "segment_id": "uuid-seg",
+      "excerpt": "原文摘录片段..."
+    }
+  ]
+}
+```
+
+---
+
+## 5. 刷题 (Quiz) — `/api/v1/quiz`
+
+### 5.1 创建刷题会话
+
+```
+POST /api/v1/quiz/sessions
+```
+
+**鉴权**: ✅ 需要
+
+**说明**: 从 `user_question_refs` 按 `document_id` / `collection_id` 拉题，或指定 `question_ids`；题目顺序随机打乱后写入 `quiz_session_questions`。
+
+**请求体**（`document_id`、`collection_id`、`question_ids` 至少一项）：
+
+```json
+{
+  "document_id": "uuid-doc",
+  "title": "可选会话标题"
+}
+```
+
+**成功响应** (201)：
+
+```json
+{
+  "id": "uuid-session",
+  "title": "刷题 · notes.md",
+  "status": "active",
+  "document_id": "uuid-doc",
+  "collection_id": null,
+  "total_questions": 3,
+  "answered_count": 0,
+  "started_at": "2025-01-01T00:00:00",
+  "finished_at": null,
+  "questions": [
+    {
+      "question_id": "uuid-q",
+      "order_index": 0,
+      "stem": "题干",
+      "question_type": "single_choice",
+      "options": [{"key": "A", "text": "..."}]
+    }
+  ]
+}
+```
+
+> 注：响应不含标准答案。
+
+**错误**：
+
+| 状态码 | 场景 |
+|--------|------|
+| 404 | 文档、知识库或题目不存在 |
+| 409 | 文档未出题完成，或无可用题目 |
+
+---
+
+### 5.2 获取会话进度
+
+```
+GET /api/v1/quiz/sessions/{session_id}
+```
+
+**鉴权**: ✅ 需要
+
+**成功响应** (200)：同 5.1 创建响应结构（含最新 `answered_count` 与 `status`）。
+
+---
+
+### 5.3 提交答案
+
+```
+POST /api/v1/quiz/sessions/{session_id}/answers
+```
+
+**鉴权**: ✅ 需要
+
+**请求体**：
+
+```json
+{
+  "question_id": "uuid-q",
+  "user_answer": "A",
+  "status": null,
+  "time_spent_seconds": 12
+}
+```
+
+「我不会」时传 `status: "unknown"`，`user_answer` 可省略。
+
+**成功响应** (200) — 答对：
+
+```json
+{
+  "question_id": "uuid-q",
+  "status": "correct",
+  "correct_answer": "A",
+  "explanation": null,
+  "citation": null,
+  "answered_count": 1,
+  "total_questions": 3,
+  "session_status": "active"
+}
+```
+
+**成功响应** (200) — 答错或 unknown：
+
+```json
+{
+  "question_id": "uuid-q",
+  "status": "wrong",
+  "correct_answer": "A",
+  "explanation": "解析文本",
+  "citation": {
+    "doc_id": "uuid-doc",
+    "segment_id": "uuid-seg",
+    "title": "导论",
+    "char_start": 0,
+    "char_end": 120,
+    "snippet": "原文摘录片段..."
+  },
+  "answered_count": 1,
+  "total_questions": 3,
+  "session_status": "active"
+}
+```
+
+**`status` 枚举**：`correct` | `wrong` | `unknown`
+
+全部作答后 `session_status` 变为 `completed`。
+
+---
+
+### 5.4 错题汇总
+
+```
+GET /api/v1/quiz/sessions/{session_id}/results
+```
+
+**鉴权**: ✅ 需要
+
+**说明**: 返回 `wrong` / `unknown` 题目列表，含 provenance 原文定位。
+
+**成功响应** (200)：
+
+```json
+{
+  "session_id": "uuid-session",
+  "status": "completed",
+  "total_questions": 3,
+  "correct_count": 1,
+  "wrong_count": 1,
+  "unknown_count": 1,
+  "items": [
+    {
+      "question_id": "uuid-q",
+      "stem": "题干",
+      "user_answer": "B",
+      "status": "wrong",
+      "correct_answer": "A",
+      "explanation": "解析",
+      "citation": {
+        "doc_id": "uuid-doc",
+        "segment_id": "uuid-seg",
+        "title": "导论",
+        "char_start": 0,
+        "char_end": 120,
+        "snippet": "原文摘录..."
+      }
+    }
+  ]
+}
+```
+
+---
+
+## 6. 首页建议 (Dashboard) — `/api/v1/dashboard`
+
+### 6.1 获取个性化建议
 
 ```
 GET /api/v1/dashboard/suggestions
@@ -986,9 +1299,9 @@ GET /api/v1/dashboard/suggestions
 
 ---
 
-## 5. 知识追踪 (KT) — `/api/v1/kt`
+## 7. 知识追踪 (KT) — `/api/v1/kt`
 
-### 5.1 LADL 修正认知状态
+### 7.1 LADL 修正认知状态
 
 ```
 POST /api/v1/kt/correct
@@ -1015,7 +1328,7 @@ POST /api/v1/kt/correct
 
 ---
 
-### 5.2 评估能力指标
+### 7.2 评估能力指标
 
 ```
 POST /api/v1/kt/evaluate
@@ -1043,7 +1356,7 @@ POST /api/v1/kt/evaluate
 
 ---
 
-### 5.3 推荐学习路径
+### 7.3 推荐学习路径
 
 ```
 POST /api/v1/kt/learning-path
@@ -1074,7 +1387,7 @@ POST /api/v1/kt/learning-path
 
 ---
 
-### 5.4 查询技能先修/后继关系
+### 7.4 查询技能先修/后继关系
 
 ```
 POST /api/v1/kt/prerequisites
@@ -1107,7 +1420,7 @@ POST /api/v1/kt/prerequisites
 
 ---
 
-### 5.5 获取完整知识依赖图
+### 7.5 获取完整知识依赖图
 
 ```
 GET /api/v1/kt/skill-graph
@@ -1134,9 +1447,9 @@ GET /api/v1/kt/skill-graph
 
 ---
 
-## 6. 用户套餐 (Plan) — `/api/v1/plan`
+## 8. 用户套餐 (Plan) — `/api/v1/plan`
 
-### 6.1 获取所有套餐
+### 8.1 获取所有套餐
 
 ```
 GET /api/v1/plan/
@@ -1177,7 +1490,7 @@ GET /api/v1/plan/
 
 ---
 
-### 6.2 获取我的套餐
+### 8.2 获取我的套餐
 
 ```
 GET /api/v1/plan/my-plan
@@ -1210,9 +1523,9 @@ GET /api/v1/plan/my-plan
 
 ---
 
-## 7. 系统
+## 9. 系统
 
-### 7.1 健康检查
+### 9.1 健康检查
 
 ```
 GET /health

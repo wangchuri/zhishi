@@ -89,7 +89,7 @@ HTTP Request
 | SQLAlchemy models | ✅ S1 完成 | 13 张表 ORM 已建（含 `global_documents`） |
 | Alembic | ⚠️ 待 S1+ | S1 暂用 `init_db()` + `create_all` |
 | `kb_collections` CRUD | ✅ S2 完成 | 注册 seed + API |
-| 刷题 / 辅导 | ❌ 未实现 | S5+ |
+| 刷题 / 辅导 | ✅ 刷题已实现 / 辅导 S6+ | S5 完成，S6+ |
 | 前端联调 | ⚠️ 部分 | `api.ts` 硬编码公网地址 |
 
 ---
@@ -405,6 +405,7 @@ backend/app/api/v1/segments.py      # 可选：GET /documents/{id}/segments
 backend/app/services/question_gen_service.py
 backend/app/services/question_hash.py       # 题干规范化 → content_hash
 backend/app/schemas/question.py
+backend/app/crud/question.py
 backend/app/api/v1/questions.py
 backend/app/api/v1/router.py
 ```
@@ -439,9 +440,9 @@ llm = BaseAPI(env_path=tina_env_path())
 
 **验收标准**：
 
-- [ ] 学习区文档完成后 `user_question_refs` ≥ 1  
-- [ ] 同一题干全局只一条 `global_questions`  
-- [ ] `GET /questions/{id}` 能返回 `segment_id` 与 `excerpt`  
+- [x] 学习区文档完成后 `user_question_refs` ≥ 1  
+- [x] 同一题干全局只一条 `global_questions`  
+- [x] `GET /questions/{id}` 能返回 `segment_id` 与 `excerpt`  
 
 **常见坑**：
 
@@ -462,8 +463,10 @@ llm = BaseAPI(env_path=tina_env_path())
 ```
 backend/app/services/quiz_service.py
 backend/app/schemas/quiz.py
+backend/app/crud/quiz.py
 backend/app/api/v1/quiz.py
 backend/app/api/v1/router.py
+backend/test_s5_quiz.py
 ```
 
 **API 约定**：
@@ -473,7 +476,7 @@ backend/app/api/v1/router.py
 | POST | `/api/v1/quiz/sessions` | `{document_id?, collection_id?, question_ids?}` 创建 |
 | GET | `/api/v1/quiz/sessions/{id}` | 会话题序、进度 |
 | POST | `/api/v1/quiz/sessions/{id}/answers` | `{question_id, user_answer, status?, time_spent_seconds?}` |
-| GET | `/api/v1/quiz/sessions/{id}/review` | 错题列表 + provenance 原文 |
+| GET | `/api/v1/quiz/sessions/{id}/results` | 错题列表 + provenance 原文 |
 
 **`status` 枚举**：`correct` | `wrong` | `unknown`（「我不会」）
 
@@ -502,9 +505,9 @@ backend/app/api/v1/router.py
 
 **验收标准**：
 
-- [ ] 能完成 3 题以上并看到对错  
-- [ ] 错题返回可定位的 `segment_id`  
-- [ ] `unknown` 不判错，但记入 `quiz_answers`  
+- [x] 能完成 3 题以上并看到对错  
+- [x] 错题返回可定位的 `segment_id`  
+- [x] `unknown` 不判错，但记入 `quiz_answers`  
 
 **常见坑**：
 
