@@ -25,7 +25,7 @@ class AgentManager:
         self._agents: Dict[int, "ZhishiAgent"] = {}  # user_id → ZhishiAgent
         self._last_access: Dict[int, float] = {}      # user_id → timestamp
 
-    def get_agent(self, user_id: int, dataset_id: str) -> "ZhishiAgent":
+    def get_agent(self, user_id: int, dataset_id: str = "") -> "ZhishiAgent":
         """
         获取或创建用户的 Agent 实例
 

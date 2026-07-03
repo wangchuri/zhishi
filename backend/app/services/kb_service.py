@@ -11,6 +11,7 @@ from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.crud import kb as kb_crud
+from app.core.config import DIFY_MAX_UPLOAD_SIZE, is_local_rag
 from app.models import Document, KbCollection
 from app.schemas.kb import (
     CollectionCreate,
@@ -22,7 +23,7 @@ from app.schemas.kb import (
     UploadResponse,
 )
 from app.services.dify_kb import DifyKB
-from app.services.file_parser import IMAGE_EXTENSIONS, SUPPORTED_EXTENSIONS, parse_file
+from app.services.file_parser import IMAGE_EXTENSIONS, SUPPORTED_EXTENSIONS, parse_file, parse_file_detailed
 from app.services.ocr_service import extract_text_from_image
 from app.services.storage_service import storage_service
 
@@ -45,6 +46,11 @@ def _format_size(bytes_val: int) -> str:
 
 
 def _get_kb(dataset_id: str) -> DifyKB:
+    if is_local_rag():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="当前使用本地向量 RAG，无需 Dify 知识库",
+        )
     if not dataset_id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -118,6 +124,81 @@ def _load_hash_store_fallback() -> dict:
             return json.load(f)
     except (json.JSONDecodeError, OSError):
         return {}
+
+
+def _is_dify_file_too_large(http_status: int, detail: str) -> bool:
+    if http_status == 413:
+        return True
+    if http_status != 400:
+        return False
+    lower = detail.lower()
+    size_keywords = (
+        "file size",
+        "file too large",
+        "too large",
+        "size limit",
+        "exceeds",
+        "maximum",
+        "max size",
+        "upload limit",
+        "文件过大",
+        "大小",
+        "超出",
+        "限制",
+        "mb",
+        "limit",
+    )
+    return any(kw in lower for kw in size_keywords)
+
+
+def _raise_dify_upload_error(result: dict) -> None:
+    detail = result.get("error") or "文件上传到知识库失败"
+    http_status = result.get("http_status", 502)
+    if _is_dify_file_too_large(http_status, detail):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                f"Dify 知识库服务拒绝接收该文件（{detail}）。"
+                f"这是 Dify Cloud 侧的单文件大小限制，本地未限制上传大小。"
+                f"请压缩或拆分 PDF 后重试。"
+            ),
+        )
+    if http_status in (400, 415, 422):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"知识库无法处理该文件: {detail}",
+        )
+    raise HTTPException(
+        status_code=status.HTTP_502_BAD_GATEWAY,
+        detail=f"文件上传到知识库失败: {detail}",
+    )
+
+
+def _dify_upload_target(
+    *,
+    is_image: bool,
+    safe_filename: str,
+    raw_storage_path: str,
+    parsed_text_path: Optional[str],
+) -> tuple[str, str]:
+    if is_image and parsed_text_path:
+        return parsed_text_path, f"{Path(safe_filename).stem}_ocr.txt"
+    return raw_storage_path, safe_filename
+
+
+def _check_dify_upload_size(file_path: str) -> None:
+    if not DIFY_MAX_UPLOAD_SIZE:
+        return
+    size = Path(file_path).stat().st_size
+    if size > DIFY_MAX_UPLOAD_SIZE:
+        raise HTTPException(
+            status_code=413,
+            detail=(
+                f"文件过大 ({_format_size(size)})，"
+                f"知识库单文件限制不超过 {_format_size(DIFY_MAX_UPLOAD_SIZE)}。"
+                f"请压缩或拆分后重试。"
+            ),
+        )
 
 
 def _duplicate_response(
@@ -218,7 +299,7 @@ def upload_document(
 
     collection = _resolve_collection(db, user_id, collection_id, user_dataset_id)
     dataset_id = _resolve_dataset_id(collection, user_dataset_id)
-    kb = _get_kb(dataset_id)
+    kb = None if is_local_rag() else _get_kb(dataset_id)
 
     safe_filename = Path(filename).name
     file_hash = _compute_sha256(content_bytes)
@@ -228,6 +309,8 @@ def upload_document(
         return _duplicate_response(existing, dataset_id, safe_filename)
 
     is_image = suffix in IMAGE_EXTENSIONS
+    ocr_processed = False
+    last_parse_error: Optional[str] = None
     global_doc = kb_crud.get_global_document_by_hash(db, file_hash)
     upload_path: str
     display_name = safe_filename
@@ -239,9 +322,13 @@ def upload_document(
         upload_path = global_doc.storage_path
         parsed_text_path = global_doc.parsed_text_path
         raw_storage_path = global_doc.storage_path
+        if not safe_filename and global_doc.original_filename:
+            safe_filename = global_doc.original_filename
         logger.info("命中全局去重: hash=%s, path=%s", file_hash[:16], upload_path)
     else:
-        raw_storage_path = storage_service.save_global_file(file_hash, content_bytes)
+        raw_storage_path = storage_service.save_global_file(
+            file_hash, content_bytes, suffix
+        )
         upload_path = raw_storage_path
 
         if is_image:
@@ -249,7 +336,7 @@ def upload_document(
             if ocr_text is None:
                 raise HTTPException(
                     status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                    detail="OCR 识别失败，请确认图片包含文字且凭据配置正确",
+                    detail="OCR 识别失败，请确认图片包含文字；本地模式需安装 paddleocr",
                 )
             if not ocr_text.strip():
                 raise HTTPException(
@@ -259,10 +346,25 @@ def upload_document(
             parsed_text_path = storage_service.save_global_parsed(file_hash, ocr_text)
             display_name = f"{Path(safe_filename).stem}_ocr.txt"
             upload_path = parsed_text_path
+            ocr_processed = True
         else:
-            parsed_content = parse_file(raw_storage_path)
+            parse_outcome = parse_file_detailed(
+                raw_storage_path, original_filename=safe_filename
+            )
+            parsed_content = parse_outcome.text
+            if parse_outcome.ocr_used:
+                ocr_processed = True
             if parsed_content:
-                parsed_text_path = storage_service.save_global_parsed(file_hash, parsed_content)
+                parsed_text_path = storage_service.save_global_parsed(
+                    file_hash, parsed_content
+                )
+            elif parse_outcome.error:
+                last_parse_error = parse_outcome.error
+                logger.warning(
+                    "上传时文本解析失败: hash=%s, error=%s",
+                    file_hash[:16],
+                    parse_outcome.error,
+                )
 
         global_doc = kb_crud.create_global_document(
             db,
@@ -283,12 +385,27 @@ def upload_document(
         upload_path = global_doc.parsed_text_path
         display_name = f"{Path(safe_filename).stem}_ocr.txt"
 
-    result = kb.add_document(upload_path)
-    if not result:
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="文件上传到 Dify 知识库失败",
+    dify_doc_id: Optional[str] = None
+    dify_batch_id: Optional[str] = None
+    indexing_status = "processing"
+
+    if is_local_rag():
+        # 本地 RAG：仅存盘 + 分段 + Chroma 索引，不调用 Dify
+        pass
+    else:
+        dify_path, dify_filename = _dify_upload_target(
+            is_image=is_image,
+            safe_filename=safe_filename,
+            raw_storage_path=raw_storage_path or upload_path,
+            parsed_text_path=parsed_text_path,
         )
+        _check_dify_upload_size(dify_path)
+
+        result = kb.add_document(dify_path, upload_filename=dify_filename)
+        if "error" in result:
+            _raise_dify_upload_error(result)
+        dify_doc_id = result["document_id"]
+        dify_batch_id = result["batch_id"]
 
     document = kb_crud.create_document(
         db,
@@ -298,26 +415,62 @@ def upload_document(
         display_name=display_name,
         content_hash=file_hash,
         global_document_id=global_doc.id if global_doc else None,
-        dify_document_id=result["document_id"],
-        dify_batch_id=result["batch_id"],
+        dify_document_id=dify_doc_id,
+        dify_batch_id=dify_batch_id,
         parsed_cache_key=parsed_cache_key,
-        indexing_status="processing",
+        indexing_status=indexing_status,
     )
     db.commit()
     db.refresh(document)
 
     _maybe_trigger_segment(db, document)
+    if (
+        is_local_rag()
+        and document.zone != "study"
+        and document.indexing_status == "processing"
+    ):
+        document.indexing_status = "completed"
+        db.commit()
+    if document.segment_status == "failed":
+        document.indexing_status = "failed"
+        db.commit()
+    db.refresh(document)
+
+    resp_doc_id = document.dify_document_id or document.id
+    resp_batch_id = document.dify_batch_id or document.id
+    if document.segment_status == "failed":
+        resp_status = "error"
+    elif document.indexing_status == "completed":
+        resp_status = "completed"
+    else:
+        resp_status = "indexing"
+
+    message = "文件已上传"
+    parse_warning: Optional[str] = None
+    if document.segment_status == "failed":
+        message += "，分段失败：无法提取文档文本"
+        parse_warning = last_parse_error or (
+            "PDF 无嵌入文本层（可能是扫描版），请安装 paddleocr 或上传可复制文字的 PDF"
+        )
+    elif resp_status == "completed":
+        message += "，索引完成"
+    else:
+        message += "，正在索引中"
+    if ocr_processed:
+        message += "（已通过 OCR 识别文字）"
 
     return UploadResponse(
-        message="文件已上传，正在索引中" + ("（已通过 OCR 识别文字）" if is_image else ""),
-        batch_id=result["batch_id"],
-        document_id=result["document_id"],
+        message=message,
+        batch_id=resp_batch_id,
+        document_id=resp_doc_id,
         id=document.id,
         file_name=display_name,
-        dataset_id=dataset_id,
+        dataset_id=dataset_id or None,
         collection_id=collection.id,
-        status="indexing",
-        ocr_processed=is_image,
+        status=resp_status,
+        segment_status=document.segment_status,
+        parse_warning=parse_warning,
+        ocr_processed=ocr_processed,
     )
 
 
@@ -340,7 +493,7 @@ def list_documents(
     docs, total = kb_crud.list_documents(db, user_id, collection_id, page, limit)
 
     # 无分区过滤且 DB 无记录时，回退 Dify 列表（兼容旧上传数据）
-    if total == 0 and not collection_id and dataset_id:
+    if total == 0 and not collection_id and dataset_id and not is_local_rag():
         kb = _get_kb(dataset_id)
         result = kb.list_documents(page=page, limit=limit)
         dify_docs = []
@@ -465,13 +618,18 @@ def delete_document(
         if coll:
             dataset_id = _resolve_dataset_id(coll, user_dataset_id)
 
-    if doc.dify_document_id and dataset_id:
+    if doc.dify_document_id and dataset_id and not is_local_rag():
         kb = _get_kb(dataset_id)
         if not kb.delete_document(doc.dify_document_id):
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="删除文档失败，请检查文档是否存在",
             )
+
+    if is_local_rag():
+        from app.services.index_service import delete_document_index
+
+        delete_document_index(doc.id)
 
     content_hash = doc.content_hash
     global_doc = doc.global_document

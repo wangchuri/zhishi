@@ -68,4 +68,6 @@ class UploadResponse(BaseModel):
     dataset_id: Optional[str] = None
     collection_id: Optional[str] = None
     status: str
+    segment_status: str = "not_started"
+    parse_warning: Optional[str] = None
     ocr_processed: bool = False

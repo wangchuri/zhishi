@@ -1,4 +1,6 @@
 import os
+
+from app.core import paddle_env  # noqa: F401
 import urllib.parse
 from pathlib import Path
 from dotenv import load_dotenv
@@ -47,7 +49,7 @@ FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000")
 
 # Dify 知识库配置
 DIFY_BASE_URL = os.getenv("DIFY_BASE_URL", "https://api.dify.ai/v1")
-DIFY_DATASET_API_KEY = os.getenv("DIFY_DATASET_API_KEY", "dataset-bql2uhoANu9lXjJNuqou1Zm8")
+DIFY_DATASET_API_KEY = os.getenv("DIFY_DATASET_API_KEY", "")
 DIFY_INDEXING_TECHNIQUE = os.getenv("DIFY_INDEXING_TECHNIQUE", "high_quality")
 DIFY_PROCESS_RULE = {
     "rules": {
@@ -73,8 +75,41 @@ WELCOME_DOC_PATH = os.getenv("WELCOME_DOC_PATH", "docs/欢迎使用知拾.md")
 USE_OSS = os.getenv("USE_OSS", "false").lower() == "true"
 LOCAL_STORAGE_DIR = os.getenv("LOCAL_STORAGE_DIR", "storage")
 
-# Cloudflare Tunnel 演示环境文件大小上限（字节）
-DEBUG_MAX_UPLOAD_SIZE = int(os.getenv("DEBUG_MAX_UPLOAD_SIZE", 10 * 1024 * 1024))  # 10MB
+# 上传文件大小上限（字节）；0 表示不限制。可通过环境变量 DEBUG_MAX_UPLOAD_SIZE 覆盖
+DEBUG_MAX_UPLOAD_SIZE = int(os.getenv("DEBUG_MAX_UPLOAD_SIZE", "0"))
+
+# PDF 解析最多读取页数；0 表示不限制（大文件可设如 200 以控制内存/耗时）
+PDF_MAX_PAGES = int(os.getenv("PDF_MAX_PAGES", "0"))
+
+# 扫描型 PDF OCR 最多处理页数；0 表示全页（大 PDF 可设如 50 控制耗时/API 配额）
+PDF_OCR_MAX_PAGES = int(os.getenv("PDF_OCR_MAX_PAGES", "0"))
+
+# PDF 页渲染 DPI（OCR 用）；过高可能导致图片超百度 OCR 4MB 限制
+PDF_OCR_RENDER_DPI = int(os.getenv("PDF_OCR_RENDER_DPI", "150"))
+
+# OCR 后端：local（默认，PaddleOCR 本地）| baidu | auto（先 Paddle 再百度）
+OCR_BACKEND = os.getenv("OCR_BACKEND", "local").lower()
+
+# Dify 知识库单文件大小上限（字节）；0 表示不限制，仅在上传前做本地预检
+# 显式设置 DIFY_MAX_UPLOAD_SIZE 后才拦截；实际能否入库仍受 Dify Cloud 侧限制
+DIFY_MAX_UPLOAD_SIZE = int(os.getenv("DIFY_MAX_UPLOAD_SIZE", "0"))
+
+# 本地向量 RAG（Chroma + sentence-transformers）
+RAG_BACKEND = os.getenv("RAG_BACKEND", "local").lower()  # local | dify
+_CHROMA_DEFAULT = _REPO_ROOT / "data" / "chroma"
+_CHROMA_ENV = os.getenv("CHROMA_PERSIST_DIR", "")
+if _CHROMA_ENV:
+    _chroma_path = Path(_CHROMA_ENV)
+    CHROMA_PERSIST_DIR = str(
+        _chroma_path if _chroma_path.is_absolute() else (_REPO_ROOT / _chroma_path)
+    )
+else:
+    CHROMA_PERSIST_DIR = str(_CHROMA_DEFAULT)
+EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "BAAI/bge-small-zh-v1.5")
+
+
+def is_local_rag() -> bool:
+    return RAG_BACKEND == "local"
 
 # 百度 OCR 配置（从 zhishi_app/assets/config/baidu_ocr.json 读取）
 import json as _json

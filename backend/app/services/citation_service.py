@@ -42,12 +42,16 @@ def filter_hits_by_collection(
     collection_id: Optional[str],
     hits: List[dict],
 ) -> List[dict]:
-    """按分区过滤检索命中（Dify dataset 无法按 collection 检索时的后置过滤）。"""
+    """按分区过滤检索命中。"""
     if not collection_id:
         return hits
 
     filtered: List[dict] = []
     for hit in hits:
+        if hit.get("collection_id"):
+            if hit["collection_id"] == collection_id:
+                filtered.append(hit)
+            continue
         dify_doc_id = hit.get("dify_document_id")
         if not dify_doc_id:
             continue
@@ -96,12 +100,35 @@ def build_citations_from_hits(
     collection_id: Optional[str],
     hits: List[dict],
 ) -> List[CitationOut]:
-    """从 RAG 命中构建 citations[]，与 document_segments 对齐。"""
+    """从 RAG 命中构建 citations[]。"""
     citations: List[CitationOut] = []
     seen: set = set()
 
     for hit in hits:
         content = (hit.get("content") or "").strip()
+
+        # 本地 RAG：metadata 已含 segment 信息，直接构建
+        if hit.get("segment_id") and hit.get("document_id"):
+            doc_id = hit["document_id"]
+            if collection_id and hit.get("collection_id") != collection_id:
+                continue
+            dedupe_key = (doc_id, hit["segment_id"])
+            if dedupe_key in seen:
+                continue
+            seen.add(dedupe_key)
+            title = hit.get("title") or hit.get("display_name")
+            citations.append(
+                CitationOut(
+                    doc_id=doc_id,
+                    segment_id=hit["segment_id"],
+                    title=title,
+                    char_start=hit.get("char_start"),
+                    char_end=hit.get("char_end"),
+                    snippet=content[:500] if content else None,
+                )
+            )
+            continue
+
         dify_doc_id = hit.get("dify_document_id")
         if not content and not dify_doc_id:
             continue

@@ -9,25 +9,16 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, s
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_active_user, get_db
-from app.core.config import DEBUG_MAX_UPLOAD_SIZE, USE_OSS
+from app.core.config import DEBUG_MAX_UPLOAD_SIZE, USE_OSS, is_local_rag
 from app.schemas.kb import CollectionCreate, CollectionUpdate
 from app.services import kb_service
 from app.services import segment_service
-from app.services.dify_kb import DifyKB
+from app.crud import kb as kb_crud
 from app.services.file_parser import SUPPORTED_EXTENSIONS
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["知识库管理"])
-
-
-def _get_kb(user_id: int, dataset_id: str) -> DifyKB:
-    if not dataset_id:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="您的知识库尚未创建，请先完成注册",
-        )
-    return DifyKB(dataset_id)
 
 
 def _format_size(bytes_val: int) -> str:
@@ -95,7 +86,7 @@ async def upload_document(
         1. 文件大小校验
         2. SHA256 → global_documents 去重
         3. 解析文本并缓存
-        4. 上传至 Dify 知识库索引
+        4. 分段并写入 Chroma 向量索引（RAG_BACKEND=local）
         5. 写入 documents 表
 
   支持格式：txt, md, csv, json, html, pdf, docx 及图片 OCR
@@ -148,13 +139,45 @@ def list_documents(
 @router.get("/documents/{batch_id}/status")
 def get_document_status(
     batch_id: str,
+    db: Session = Depends(get_db),
     current_user: dict = Depends(get_current_active_user),
 ):
-    """查询文档索引进度（使用上传返回的 batch_id）"""
+    """查询文档索引进度（使用上传返回的 batch_id / document_id）"""
     user_id = current_user["user_id"]
-    dataset_id = current_user.get("dataset_id")
-    kb = _get_kb(user_id, dataset_id)
 
+    if is_local_rag():
+        doc = kb_crud.get_document_by_id_or_dify(db, user_id, batch_id)
+        if not doc:
+            doc = kb_crud.get_document_by_batch_id(db, user_id, batch_id)
+        if not doc:
+            raise HTTPException(status_code=404, detail="文档不存在")
+        if doc.segment_status == "failed":
+            return {
+                "batch_id": batch_id,
+                "status": "error",
+                "segment_status": doc.segment_status,
+                "error_message": (
+                    "文档文本提取失败，可能是扫描版 PDF，"
+                    "请上传可复制文字的 PDF 或使用 OCR"
+                ),
+                "document_id": doc.id,
+            }
+        return {
+            "batch_id": batch_id,
+            "status": doc.indexing_status,
+            "segment_status": doc.segment_status,
+            "document_id": doc.id,
+        }
+
+    from app.services.dify_kb import DifyKB
+
+    dataset_id = current_user.get("dataset_id")
+    if not dataset_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="您的知识库尚未创建，请先完成注册",
+        )
+    kb = DifyKB(dataset_id)
     result = kb.get_indexing_status(batch_id)
 
     if "data" in result and isinstance(result["data"], list) and len(result["data"]) > 0:
@@ -223,8 +246,11 @@ def get_kb_config(
 ):
     """查询知识库配置（供前端展示提示等）"""
     return {
+        "rag_backend": "local" if is_local_rag() else "dify",
         "use_oss": USE_OSS,
         "max_upload_size": DEBUG_MAX_UPLOAD_SIZE,
-        "max_upload_size_display": _format_size(DEBUG_MAX_UPLOAD_SIZE),
+        "max_upload_size_display": (
+            _format_size(DEBUG_MAX_UPLOAD_SIZE) if DEBUG_MAX_UPLOAD_SIZE else None
+        ),
         "supported_extensions": list(SUPPORTED_EXTENSIONS.keys()),
     }

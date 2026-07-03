@@ -334,7 +334,8 @@ UploadFile
       命中: 复用 storage_path, 新建 documents 行
       未命中: storage_service 写全局路径 storage/global/{hash[:2]}/{hash}
   → 解析文本 → parsed 缓存
-  → DifyKB.upload（dataset_id = collection.dataset_id or user.dataset_id）
+  → **RAG_BACKEND=local（默认）**：segment → Chroma 索引（`data/chroma/`），不调用 Dify
+  → **RAG_BACKEND=dify**：DifyKB.upload（dataset_id = collection.dataset_id or user.dataset_id）
   → documents.indexing_status = processing → completed
   → 若 zone==study: 触发 S3 分段（可先同步调用 segment_service）
 ```

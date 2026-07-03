@@ -123,9 +123,15 @@ class LocalStorage:
         d.mkdir(parents=True, exist_ok=True)
         return d
 
-    def save_global_file(self, content_hash: str, content: bytes) -> str:
-        """保存全局去重文件，路径 storage/global/{hash[:2]}/{hash}"""
-        path = self._global_dir(content_hash[:2]) / content_hash
+    def save_global_file(
+        self, content_hash: str, content: bytes, suffix: str = ""
+    ) -> str:
+        """保存全局去重文件，路径 storage/global/{hash[:2]}/{hash}{suffix}"""
+        normalized = suffix.lower()
+        if normalized and not normalized.startswith("."):
+            normalized = f".{normalized}"
+        filename = f"{content_hash}{normalized}" if normalized else content_hash
+        path = self._global_dir(content_hash[:2]) / filename
         path.write_bytes(content)
         logger.info(f"LocalStorage.save_global_file: {path} ({len(content)} bytes)")
         return str(path)
@@ -267,8 +273,10 @@ class FileStorageService:
 
     # ─── 全局去重存储 ─────────────────────────────────────
 
-    def save_global_file(self, content_hash: str, content: bytes) -> str:
-        return self._backend.save_global_file(content_hash, content)
+    def save_global_file(
+        self, content_hash: str, content: bytes, suffix: str = ""
+    ) -> str:
+        return self._backend.save_global_file(content_hash, content, suffix)
 
     def save_global_parsed(self, content_hash: str, content: str) -> str:
         return self._backend.save_global_parsed(content_hash, content)

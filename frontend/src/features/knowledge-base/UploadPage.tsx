@@ -64,7 +64,7 @@ export function UploadPage() {
   const [dragging, setDragging] = useState(false)
   const [tasks, setTasks] = useState<UploadTask[]>([])
   const [uploading, setUploading] = useState(false)
-  const [maxUploadSize, setMaxUploadSize] = useState("10.0 MB")
+  const [maxUploadSize, setMaxUploadSize] = useState("")
   const [showDemoWarning, setShowDemoWarning] = useState(false)
   const [collections, setCollections] = useState<KbCollection[]>([])
   const [selectedCollectionId, setSelectedCollectionId] = useState("")
@@ -73,8 +73,8 @@ export function UploadPage() {
   useEffect(() => {
     kbApi.getConfig()
       .then((res) => {
-        setMaxUploadSize(res.max_upload_size_display || "10.0 MB")
-        setShowDemoWarning(!res.use_oss)
+        setMaxUploadSize(res.max_upload_size_display || "")
+        setShowDemoWarning(!res.use_oss && (res.max_upload_size ?? 0) > 0)
       })
       .catch(() => {})
     kbApi

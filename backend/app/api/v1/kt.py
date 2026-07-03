@@ -4,6 +4,7 @@ KT 知识追踪路由 — 所有接口需要登录鉴权
 
 from fastapi import APIRouter, HTTPException, Depends
 from app.api.deps import get_current_active_user
+from app.core.lekt_state import get_lekt
 from models import (
     CognitiveStateRequest,
     CorrectResponse,
@@ -13,7 +14,6 @@ from models import (
     PrerequisiteRequest,
     PrerequisiteResponse,
 )
-from server import _get_lekt
 
 router = APIRouter(tags=["知识追踪"])
 
@@ -22,8 +22,8 @@ router = APIRouter(tags=["知识追踪"])
 async def kt_correct(
     req: CognitiveStateRequest,
     current_user: dict = Depends(get_current_active_user),
+    lekt=Depends(get_lekt),
 ):
-    lekt = _get_lekt()
     if not lekt.is_loaded:
         raise HTTPException(503, "LEKT 模型未加载")
     result = lekt.correct(req.states)
@@ -34,8 +34,8 @@ async def kt_correct(
 async def kt_evaluate(
     req: CognitiveStateRequest,
     current_user: dict = Depends(get_current_active_user),
+    lekt=Depends(get_lekt),
 ):
-    lekt = _get_lekt()
     if not lekt.is_loaded:
         raise HTTPException(503, "LEKT 模型未加载")
     result = lekt.evaluate(req.states)
@@ -46,8 +46,8 @@ async def kt_evaluate(
 async def kt_learning_path(
     req: LearningPathRequest,
     current_user: dict = Depends(get_current_active_user),
+    lekt=Depends(get_lekt),
 ):
-    lekt = _get_lekt()
     if not lekt.is_loaded:
         raise HTTPException(503, "LEKT 模型未加载")
     return {"recommendations": lekt.recommend_learning_path(req.states, req.top_k)}
@@ -57,8 +57,8 @@ async def kt_learning_path(
 async def kt_prerequisites(
     req: PrerequisiteRequest,
     current_user: dict = Depends(get_current_active_user),
+    lekt=Depends(get_lekt),
 ):
-    lekt = _get_lekt()
     if not lekt.is_loaded:
         raise HTTPException(503, "LEKT 模型未加载")
     result = lekt.get_prerequisites(req.skill_id)
@@ -70,8 +70,8 @@ async def kt_prerequisites(
 @router.get("/skill-graph", response_model=SkillGraphResponse)
 async def kt_skill_graph(
     current_user: dict = Depends(get_current_active_user),
+    lekt=Depends(get_lekt),
 ):
-    lekt = _get_lekt()
     if not lekt.is_loaded:
         raise HTTPException(503, "LEKT 模型未加载")
     result = lekt.get_dependency_graph()

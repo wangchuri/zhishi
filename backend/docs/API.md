@@ -666,6 +666,10 @@ DELETE /api/v1/chat/sessions/{session_id}
 
 ## 3. 知识库管理 (KB) — `/api/v1/kb`
 
+> **RAG 后端**（`RAG_BACKEND` 环境变量，默认 `local`）：
+> - `local`：上传 → 本地存储 → 分段 → **Chroma 向量索引** → 聊天本地检索 + citation（无 Dify 单文件 15MB 限制）
+> - `dify`：沿用 Dify Dataset API（需配置 `DIFY_DATASET_API_KEY`）
+
 ### 3.0 知识库分区
 
 #### 3.0.1 分区列表
@@ -749,7 +753,15 @@ POST /api/v1/kb/upload
 
 > **演示环境限制**: 未配置 OSS 时，单文件上限 10 MB。
 
-**上传流程（文档）**:
+**上传流程（文档，RAG_BACKEND=local）**:
+1. 文件大小校验（仅 `DEBUG_MAX_UPLOAD_SIZE`，大 PDF 不受 Dify 15MB 限制）
+2. SHA256 哈希 → 查 `global_documents` 全局去重
+3. 未命中则写入 `storage/global/{hash[:2]}/{hash}`
+4. 解析文本内容并缓存
+5. 学习区文档自动分段 → 写入 Chroma（`data/chroma/`）
+6. 写入 `documents` 表；`indexing_status` 为 `completed` 表示本地索引完成
+
+**上传流程（文档，RAG_BACKEND=dify）**:
 1. 文件大小校验
 2. SHA256 哈希 → 查 `global_documents` 全局去重
 3. 未命中则写入 `storage/global/{hash[:2]}/{hash}`
@@ -970,6 +982,7 @@ GET /api/v1/kb/config
 
 ```json
 {
+  "rag_backend": "local",
   "use_oss": false,
   "max_upload_size": 10485760,
   "max_upload_size_display": "10.0 MB",

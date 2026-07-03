@@ -253,23 +253,26 @@ class DifyKB:
             })
         return results
 
-    def add_document(self, file_path: str) -> Optional[dict]:
+    def add_document(
+        self, file_path: str, upload_filename: Optional[str] = None
+    ) -> dict:
         """
         上传文档到知识库
 
         Args:
             file_path: 本地文件路径
+            upload_filename: 提交给 Dify 的文件名（需含扩展名）
 
         Returns:
-            dict or None: {"batch_id": str, "document_id": str} 或 None
+            成功: {"batch_id": str, "document_id": str}
+            失败: {"error": str, "http_status": int}
         """
-        import os
         from pathlib import Path
 
         file_path_obj = Path(file_path)
         if not file_path_obj.exists():
             logger.error(f"DifyKB.add_document - 文件不存在: {file_path}")
-            return None
+            return {"error": "本地文件不存在", "http_status": 500}
 
         url = f"{DIFY_BASE_URL}/datasets/{self.dataset_id}/document/create-by-file"
 
@@ -279,15 +282,14 @@ class DifyKB:
             "doc_form": "text_model",
         }
 
+        filename = upload_filename or file_path_obj.name
+        mime_type = self._guess_upload_mime(filename)
+
         try:
             with open(file_path, "rb") as f:
                 files = {
                     "data": (None, json.dumps(data), "application/json"),
-                    "file": (
-                        file_path_obj.name,
-                        f,
-                        "application/octet-stream",
-                    ),
+                    "file": (filename, f, mime_type),
                 }
                 # headers 不包含 Content-Type，交给 httpx 自动处理 multipart
                 upload_headers = {"Authorization": f"Bearer {DIFY_DATASET_API_KEY}"}
@@ -296,14 +298,15 @@ class DifyKB:
                 )
         except Exception as e:
             logger.error(f"DifyKB.add_document - 上传失败: {e}")
-            return None
+            return {"error": str(e), "http_status": 502}
 
         if response.status_code not in (200, 201):
+            detail = self._extract_error_message(response)
             logger.error(
                 f"DifyKB.add_document - 上传失败 "
                 f"(status={response.status_code}): {response.text}"
             )
-            return None
+            return {"error": detail, "http_status": response.status_code}
 
         resp = response.json()
         batch_id = resp.get("batch")
@@ -313,6 +316,42 @@ class DifyKB:
             f"doc_id={doc_id} batch_id={batch_id}"
         )
         return {"batch_id": batch_id, "document_id": doc_id}
+
+    @staticmethod
+    def _guess_upload_mime(filename: str) -> str:
+        from pathlib import Path
+
+        mapping = {
+            ".txt": "text/plain",
+            ".md": "text/markdown",
+            ".csv": "text/csv",
+            ".json": "application/json",
+            ".html": "text/html",
+            ".htm": "text/html",
+            ".pdf": "application/pdf",
+            ".docx": (
+                "application/vnd.openxmlformats-officedocument."
+                "wordprocessingml.document"
+            ),
+            ".png": "image/png",
+            ".jpg": "image/jpeg",
+            ".jpeg": "image/jpeg",
+            ".webp": "image/webp",
+            ".bmp": "image/bmp",
+        }
+        return mapping.get(Path(filename).suffix.lower(), "application/octet-stream")
+
+    @staticmethod
+    def _extract_error_message(response: httpx.Response) -> str:
+        try:
+            payload = response.json()
+            message = payload.get("message") or payload.get("code") or ""
+            if message:
+                return str(message)
+        except ValueError:
+            pass
+        text = (response.text or "").strip()
+        return text or f"Dify 返回 HTTP {response.status_code}"
 
     def get_indexing_status(self, batch_id: str) -> dict:
         """

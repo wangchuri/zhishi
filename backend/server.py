@@ -1,8 +1,20 @@
 """
 知拾 KT 后端服务 — FastAPI
-启动方式:
-    uvicorn server:app --host 127.0.0.1 --port 8765
+启动方式（任选其一）:
+    cd backend && uvicorn server:app --host 127.0.0.1 --port 8765
+    cd backend && python server.py
+    项目根目录: dev.bat 或 backend\\run.bat
 """
+
+import sys
+from pathlib import Path
+
+# 保证从项目根 python -m backend.server 或任意 cwd 均可导入 lekt_service / app
+_BACKEND_ROOT = Path(__file__).resolve().parent
+if str(_BACKEND_ROOT) not in sys.path:
+    sys.path.insert(0, str(_BACKEND_ROOT))
+
+from app.core import paddle_env  # noqa: F401
 
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
@@ -38,7 +50,7 @@ async def lifespan(app: FastAPI):
 
     # 2. 加载 LEKT 推理模型
     print("[Server] 正在加载 LEKT 服务...")
-    lekt = LEKTService("logic_matrix.npy", skill_names=SKILL_NAMES)
+    lekt = LEKTService(str(_BACKEND_ROOT / "logic_matrix.npy"), skill_names=SKILL_NAMES)
     app.state.lekt = lekt
     if lekt.is_loaded:
         print(f"[Server] LEKT 服务就绪，{lekt.num_skills} 个技能")

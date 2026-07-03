@@ -9,6 +9,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_active_user, get_db
+from app.core.config import is_local_rag
 from app.core.redis import cache
 from app.core.agent_manager import agent_manager
 from app.schemas.schemas import (
@@ -189,8 +190,9 @@ def _stream_agent_response(
     db: Optional[Session] = None,
     history: Optional[list] = None,
 ):
-    if not dataset_id:
+    if not dataset_id and not is_local_rag():
         logger.warning(f"_stream_agent_response: user_id={user_id} 没有 dataset_id，使用 echo 回退")
+    if not dataset_id and not is_local_rag():
         content = _generate_assistant_response(message)
         data = json.dumps({
             "session_id": session_id,
@@ -201,7 +203,7 @@ def _stream_agent_response(
         return
 
     try:
-        agent = agent_manager.get_agent(user_id, dataset_id)
+        agent = agent_manager.get_agent(user_id, dataset_id or "")
 
         if not agent.is_ready:
             logger.error(f"_stream_agent_response: user_id={user_id} Agent 不可用")
@@ -311,9 +313,9 @@ def send_chat(
     citations = None
     assistant_content = _generate_assistant_response(request.content)
 
-    if dataset_id:
+    if dataset_id or is_local_rag():
         try:
-            agent = agent_manager.get_agent(user_id, dataset_id)
+            agent = agent_manager.get_agent(user_id, dataset_id or "")
             if agent.is_ready:
                 history = _load_history(user_id, session_id)
                 if history:

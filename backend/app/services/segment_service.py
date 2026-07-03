@@ -12,7 +12,7 @@ from app.crud import kb as kb_crud
 from app.crud import segment as segment_crud
 from app.models import Document
 from app.schemas.segment import SegmentListOut, SegmentOut
-from app.services.file_parser import parse_file
+from app.services.file_parser import parse_file_detailed
 from app.services.storage_service import storage_service
 
 logger = logging.getLogger(__name__)
@@ -22,22 +22,27 @@ OVERLAP = 200
 HEADING_PATTERN = re.compile(r"^#{1,2}\s+.+", re.MULTILINE)
 
 
-def _load_document_text(document: Document) -> Optional[str]:
+def _load_document_text(document: Document) -> tuple[Optional[str], Optional[str]]:
+    """返回 (text, error_message)。"""
     if document.parsed_cache_key:
         text = storage_service.read_text_at_path(document.parsed_cache_key)
         if text:
-            return text
+            return text, None
 
     global_doc = document.global_document
     if global_doc and global_doc.parsed_text_path:
         text = storage_service.read_text_at_path(global_doc.parsed_text_path)
         if text:
-            return text
+            return text, None
 
     if global_doc and global_doc.storage_path:
-        return parse_file(global_doc.storage_path)
+        outcome = parse_file_detailed(
+            global_doc.storage_path,
+            original_filename=global_doc.original_filename,
+        )
+        return outcome.text, outcome.error
 
-    return None
+    return None, "文档无存储路径或解析缓存"
 
 
 def _has_markdown_headings(text: str) -> bool:
@@ -135,9 +140,9 @@ def segment_document(document_id: str, db: Session) -> int:
     db.flush()
 
     try:
-        text = _load_document_text(doc)
+        text, parse_error = _load_document_text(doc)
         if text is None:
-            raise ValueError("无法获取文档文本")
+            raise ValueError(parse_error or "无法获取文档文本")
 
         segment_dicts = split_text(text)
         segment_crud.delete_segments_for_document(db, document_id)
@@ -150,6 +155,20 @@ def segment_document(document_id: str, db: Session) -> int:
             document_id,
             len(segment_dicts),
         )
+
+        from app.core.config import is_local_rag
+        if is_local_rag():
+            from app.services.index_service import index_document_segments
+
+            try:
+                index_document_segments(db, doc)
+            except Exception:
+                logger.exception(
+                    "Chroma index failed: document_id=%s", document_id
+                )
+                doc.indexing_status = "failed"
+                db.flush()
+
         return len(segment_dicts)
     except Exception:
         logger.exception("segment_document failed: document_id=%s", document_id)

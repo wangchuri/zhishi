@@ -1,148 +1,627 @@
 """
+
 多格式文件解析器
+
 支持 TXT / MD / CSV / JSON / HTML / PDF / DOCX
+
 """
+
 import logging
+
+import zipfile
+
+from dataclasses import dataclass
+
 from pathlib import Path
+
 from typing import Optional
+
+
+
+from app.core.config import PDF_MAX_PAGES
+
+
 
 logger = logging.getLogger(__name__)
 
+
+
 # 支持的文件类型映射
+
 SUPPORTED_EXTENSIONS = {
+
     ".txt": "text",
+
     ".md": "text",
+
     ".csv": "text",
+
     ".json": "text",
+
     ".html": "text",
+
     ".htm": "text",
+
     ".pdf": "pdf",
+
     ".docx": "docx",
+
     ".png": "image",
+
     ".jpg": "image",
+
     ".jpeg": "image",
+
     ".webp": "image",
+
     ".bmp": "image",
+
 }
 
+
+
 # 图片扩展名集合（需要 OCR 处理）
+
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".bmp"}
 
-# 文件大小上限：10MB
-MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024
 
 
-def parse_file(file_path: str) -> Optional[str]:
-    """
-    根据文件类型解析内容，返回纯文本
 
-    Args:
-        file_path: 本地文件路径
 
-    Returns:
-        str or None: 解析出的文本内容，失败返回 None
-    """
-    path_obj = Path(file_path)
-    if not path_obj.exists():
-        logger.error(f"file_parser - 文件不存在: {file_path}")
-        return None
+@dataclass
 
-    suffix = path_obj.suffix.lower()
-    file_type = SUPPORTED_EXTENSIONS.get(suffix)
+class ParseOutcome:
 
-    if file_type is None:
-        logger.warning(f"file_parser - 不支持的文件类型: {suffix}")
-        return None
+    text: Optional[str]
 
-    # 检查文件大小
+    error: Optional[str] = None
+
+    ocr_used: bool = False
+
+
+
+
+
+def _read_magic_header(file_path: str, n: int = 12) -> bytes:
+
+    with open(file_path, "rb") as f:
+
+        return f.read(n)
+
+
+
+
+
+def _detect_ooxml_suffix(file_path: str) -> Optional[str]:
+
     try:
-        size = path_obj.stat().st_size
-        if size > MAX_FILE_SIZE_BYTES:
-            logger.warning(f"file_parser - 文件过大 ({size} bytes): {file_path}")
-            return None
-    except OSError:
-        pass
 
-    if file_type == "text":
-        return _parse_text(file_path)
-    elif file_type == "pdf":
-        return _parse_pdf(file_path)
-    elif file_type == "docx":
-        return _parse_docx(file_path)
+        with zipfile.ZipFile(file_path, "r") as zf:
+
+            if any(name.startswith("word/") for name in zf.namelist()):
+
+                return ".docx"
+
+    except (zipfile.BadZipFile, OSError) as e:
+
+        logger.debug("file_parser - OOXML 检测失败: %s", e)
 
     return None
+
+
+
+
+
+def detect_suffix(file_path: str, original_filename: Optional[str] = None) -> Optional[str]:
+
+    """从原始文件名、路径后缀或 magic bytes 推断扩展名。"""
+
+    if original_filename:
+
+        suffix = Path(original_filename).suffix.lower()
+
+        if suffix in SUPPORTED_EXTENSIONS:
+
+            return suffix
+
+
+
+    suffix = Path(file_path).suffix.lower()
+
+    if suffix in SUPPORTED_EXTENSIONS:
+
+        return suffix
+
+
+
+    try:
+
+        header = _read_magic_header(file_path)
+
+    except OSError as e:
+
+        logger.warning("file_parser - 无法读取文件头: %s", e)
+
+        return None
+
+
+
+    if header.startswith(b"%PDF"):
+
+        return ".pdf"
+
+    if header.startswith(b"\x89PNG"):
+
+        return ".png"
+
+    if header.startswith(b"\xff\xd8\xff"):
+
+        return ".jpeg"
+
+    if header.startswith(b"BM"):
+
+        return ".bmp"
+
+    if len(header) >= 12 and header[:4] == b"RIFF" and header[8:12] == b"WEBP":
+
+        return ".webp"
+
+    if header.startswith(b"PK\x03\x04"):
+
+        return _detect_ooxml_suffix(file_path)
+
+
+
+    return None
+
+
+
+
+
+def parse_file(file_path: str, original_filename: Optional[str] = None) -> Optional[str]:
+
+    """根据文件类型解析内容，返回纯文本；失败返回 None。"""
+
+    return parse_file_detailed(file_path, original_filename).text
+
+
+
+
+
+def parse_file_detailed(
+
+    file_path: str, original_filename: Optional[str] = None
+
+) -> ParseOutcome:
+
+    """
+
+    解析文件并返回文本与可读错误信息。
+
+
+
+    Returns:
+
+        ParseOutcome: text 为 None 时 error 说明原因（扫描版 PDF、缺依赖等）
+
+    """
+
+    path_obj = Path(file_path)
+
+    if not path_obj.exists():
+
+        msg = f"文件不存在: {file_path}"
+
+        logger.error("file_parser - %s", msg)
+
+        return ParseOutcome(text=None, error=msg)
+
+
+
+    suffix = detect_suffix(file_path, original_filename)
+
+    file_type = SUPPORTED_EXTENSIONS.get(suffix) if suffix else None
+
+
+
+    if file_type is None:
+
+        msg = f"不支持的文件类型: {suffix or '未知'}"
+
+        logger.warning(
+
+            "file_parser - %s (path=%s, original=%s)",
+
+            msg,
+
+            file_path,
+
+            original_filename,
+
+        )
+
+        return ParseOutcome(text=None, error=msg)
+
+
+
+    if file_type == "text":
+
+        text = _parse_text(file_path)
+
+        return ParseOutcome(
+
+            text=text,
+
+            error=None if text is not None else "文本文件读取失败（编码不支持或文件为空）",
+
+        )
+
+    if file_type == "pdf":
+
+        return _parse_pdf(file_path, original_filename)
+
+    if file_type == "docx":
+
+        text = _parse_docx(file_path)
+
+        return ParseOutcome(
+
+            text=text,
+
+            error=None if text is not None else "DOCX 解析失败或文档无文字内容",
+
+        )
+
+
+
+    return ParseOutcome(text=None, error="不支持的文件类型")
+
+
+
 
 
 def _parse_text(file_path: str) -> Optional[str]:
+
     """解析纯文本文件（TXT/MD/CSV/JSON/HTML），尝试多种编码"""
+
     encodings = ["utf-8", "gbk", "gb2312", "latin-1"]
+
     for enc in encodings:
+
         try:
+
             with open(file_path, "r", encoding=enc, errors="replace") as f:
+
                 return f.read()
+
         except UnicodeDecodeError:
+
             continue
+
         except Exception as e:
+
             logger.error(f"file_parser._parse_text 失败 ({enc}): {e}")
+
             continue
+
     return None
 
 
-def _parse_pdf(file_path: str) -> Optional[str]:
-    """解析 PDF 文件"""
-    try:
-        import pdfplumber
-    except ImportError:
-        logger.warning("file_parser - pdfplumber 未安装，回退到 PyPDF2")
-        return _parse_pdf_pypdf2(file_path)
+
+
+
+def _pdf_page_limit(total_pages: int) -> int:
+
+    if PDF_MAX_PAGES > 0:
+
+        return min(total_pages, PDF_MAX_PAGES)
+
+    return total_pages
+
+
+
+
+
+def _parse_pdf(file_path: str, original_filename: Optional[str] = None) -> ParseOutcome:
+
+    """解析 PDF：优先 PyMuPDF，回退 pdfplumber，再回退 PyPDF2。"""
+
+    errors: list[str] = []
+
+
+
+    outcome = _parse_pdf_pymupdf(file_path)
+
+    if outcome.text:
+
+        return outcome
+
+    if outcome.error:
+
+        errors.append(outcome.error)
+
+
+
+    outcome = _parse_pdf_pdfplumber(file_path)
+
+    if outcome.text:
+
+        return outcome
+
+    if outcome.error:
+
+        errors.append(outcome.error)
+
+
+
+    outcome = _parse_pdf_pypdf2(file_path)
+
+    if outcome.text:
+
+        return outcome
+
+    if outcome.error:
+
+        errors.append(outcome.error)
+
+
+
+    detail = "；".join(errors) if errors else "所有 PDF 解析器均未能提取文本"
+
+    logger.info("file_parser - 常规 PDF 提取无文本，尝试 OCR 回退: %s", file_path)
+
+    from app.services.pdf_ocr_service import parse_pdf_with_ocr_fallback
+
+    ocr_outcome = parse_pdf_with_ocr_fallback(file_path, original_filename)
+
+    if ocr_outcome.text:
+
+        return ocr_outcome
+
+    ocr_err = ocr_outcome.error or "OCR 未识别到文字"
+
+    return ParseOutcome(
+
+        text=None,
+
+        error=(
+
+            f"PDF 无嵌入文本层（扫描版），OCR 也未能提取文字。"
+
+            f"（常规: {detail}；OCR: {ocr_err}）"
+
+        ),
+
+        ocr_used=ocr_outcome.ocr_used,
+
+    )
+
+
+
+
+
+def _parse_pdf_pymupdf(file_path: str) -> ParseOutcome:
 
     try:
-        with pdfplumber.open(file_path) as pdf:
-            pages_text = []
-            for page in pdf.pages:
-                text = page.extract_text()
-                if text:
+
+        import fitz
+
+    except ImportError:
+
+        return ParseOutcome(text=None, error="PyMuPDF 未安装")
+
+
+
+    try:
+
+        doc = fitz.open(file_path)
+
+        try:
+
+            total = doc.page_count
+
+            limit = _pdf_page_limit(total)
+
+            pages_text: list[str] = []
+
+            for i in range(limit):
+
+                text = doc[i].get_text("text") or ""
+
+                if text.strip():
+
                     pages_text.append(text)
-            return "\n\n".join(pages_text) if pages_text else None
+
+            if limit < total:
+
+                logger.info(
+
+                    "file_parser - PDF 仅解析前 %d/%d 页（PDF_MAX_PAGES=%s）",
+
+                    limit,
+
+                    total,
+
+                    PDF_MAX_PAGES,
+
+                )
+
+            if pages_text:
+
+                return ParseOutcome(text="\n\n".join(pages_text))
+
+            if total > 0:
+
+                return ParseOutcome(
+
+                    text=None,
+
+                    error=f"PyMuPDF: {total} 页均无嵌入文本",
+
+                )
+
+            return ParseOutcome(text=None, error="PyMuPDF: PDF 无页面")
+
+        finally:
+
+            doc.close()
+
     except Exception as e:
-        logger.warning(f"file_parser._parse_pdf (pdfplumber) 失败: {e}，回退到 PyPDF2")
-        return _parse_pdf_pypdf2(file_path)
+
+        logger.warning("file_parser._parse_pdf_pymupdf 失败: %s", e)
+
+        return ParseOutcome(text=None, error=f"PyMuPDF: {e}")
 
 
-def _parse_pdf_pypdf2(file_path: str) -> Optional[str]:
-    """PyPDF2 回退解析"""
+
+
+
+def _parse_pdf_pdfplumber(file_path: str) -> ParseOutcome:
+
     try:
-        from PyPDF2 import PdfReader
-        reader = PdfReader(file_path)
-        pages_text = []
-        for page in reader.pages:
-            text = page.extract_text()
-            if text:
-                pages_text.append(text)
-        return "\n\n".join(pages_text) if pages_text else None
+
+        import pdfplumber
+
     except ImportError:
-        logger.error("file_parser - PyPDF2 未安装，无法解析 PDF")
-        return None
+
+        return ParseOutcome(text=None, error="pdfplumber 未安装")
+
+
+
+    try:
+
+        with pdfplumber.open(file_path) as pdf:
+
+            total = len(pdf.pages)
+
+            limit = _pdf_page_limit(total)
+
+            pages_text: list[str] = []
+
+            for page in pdf.pages[:limit]:
+
+                text = page.extract_text()
+
+                if text and text.strip():
+
+                    pages_text.append(text)
+
+            if pages_text:
+
+                return ParseOutcome(text="\n\n".join(pages_text))
+
+            if total > 0:
+
+                return ParseOutcome(
+
+                    text=None,
+
+                    error=f"pdfplumber: {total} 页均无嵌入文本",
+
+                )
+
+            return ParseOutcome(text=None, error="pdfplumber: PDF 无页面")
+
     except Exception as e:
-        logger.error(f"file_parser._parse_pdf_pypdf2 失败: {e}")
-        return None
+
+        logger.warning("file_parser._parse_pdf_pdfplumber 失败: %s", e)
+
+        return ParseOutcome(text=None, error=f"pdfplumber: {e}")
+
+
+
+
+
+def _parse_pdf_pypdf2(file_path: str) -> ParseOutcome:
+
+    try:
+
+        from PyPDF2 import PdfReader
+
+    except ImportError:
+
+        return ParseOutcome(text=None, error="PyPDF2 未安装")
+
+
+
+    try:
+
+        reader = PdfReader(file_path)
+
+        total = len(reader.pages)
+
+        limit = _pdf_page_limit(total)
+
+        pages_text: list[str] = []
+
+        for page in reader.pages[:limit]:
+
+            text = page.extract_text()
+
+            if text and text.strip():
+
+                pages_text.append(text)
+
+        if pages_text:
+
+            return ParseOutcome(text="\n\n".join(pages_text))
+
+        if total > 0:
+
+            return ParseOutcome(
+
+                text=None,
+
+                error=f"PyPDF2: {total} 页均无嵌入文本",
+
+            )
+
+        return ParseOutcome(text=None, error="PyPDF2: PDF 无页面")
+
+    except Exception as e:
+
+        logger.error("file_parser._parse_pdf_pypdf2 失败: %s", e)
+
+        return ParseOutcome(text=None, error=f"PyPDF2: {e}")
+
+
+
 
 
 def _parse_docx(file_path: str) -> Optional[str]:
+
     """解析 DOCX 文件"""
+
     try:
+
         from docx import Document
+
         doc = Document(file_path)
+
         paragraphs = [p.text for p in doc.paragraphs if p.text.strip()]
+
         return "\n".join(paragraphs) if paragraphs else None
+
     except ImportError:
+
         logger.error("file_parser - python-docx 未安装，无法解析 DOCX")
+
         return None
+
     except Exception as e:
+
         logger.error(f"file_parser._parse_docx 失败: {e}")
+
         return None
+
+
+
 
 
 def get_supported_extensions() -> list:
+
     """返回支持的文件扩展名列表"""
+
     return list(SUPPORTED_EXTENSIONS.keys())
+
+

@@ -11,7 +11,7 @@ from datetime import datetime, timedelta
 from app.models import User
 from app.core.security import get_password_hash, verify_password
 from app.core.redis import cache
-from app.core.config import ACCESS_TOKEN_EXPIRE_MINUTES, EMAIL_VERIFICATION_EXPIRE_MINUTES, PASSWORD_RESET_EXPIRE_MINUTES, FRONTEND_URL
+from app.core.config import ACCESS_TOKEN_EXPIRE_MINUTES, EMAIL_VERIFICATION_EXPIRE_MINUTES, PASSWORD_RESET_EXPIRE_MINUTES, FRONTEND_URL, is_local_rag
 from app.core.email_service import email_service
 from app.services.dify_kb import DifyKB
 from app.crud.kb import seed_default_collections
@@ -65,20 +65,20 @@ class AuthManager:
             logger.error(f"注册数据库错误: {str(e)}")
             raise HTTPException(status_code=500, detail="注册失败，请稍后重试")
 
-        # 3.5 自动创建 Dify 知识库（昵称 + 8位UUID），含 embedding/rerank 配置 + 欢迎文档
-        try:
-            import uuid
-            kb_name = f"{nickname}_{uuid.uuid4().hex[:8]}"
-            dataset_id = DifyKB.create_dataset(kb_name, f"用户 {email} 的知识库")
-            new_user.dataset_id = dataset_id
-            db.commit()
-            db.refresh(new_user)
-            logger.info(f"Dify 知识库创建成功: user_id={new_user.id}, dataset_id={dataset_id}, name={kb_name}")
+        # 3.5 自动创建 Dify 知识库（仅 RAG_BACKEND=dify 时）
+        if not is_local_rag():
+            try:
+                import uuid
+                kb_name = f"{nickname}_{uuid.uuid4().hex[:8]}"
+                dataset_id = DifyKB.create_dataset(kb_name, f"用户 {email} 的知识库")
+                new_user.dataset_id = dataset_id
+                db.commit()
+                db.refresh(new_user)
+                logger.info(f"Dify 知识库创建成功: user_id={new_user.id}, dataset_id={dataset_id}, name={kb_name}")
 
-            # 3.6 上传欢迎文档
-            DifyKB.upload_welcome_document(dataset_id)
-        except Exception as e:
-            logger.warning(f"Dify 知识库初始化失败（不影响注册）: {e}")
+                DifyKB.upload_welcome_document(dataset_id)
+            except Exception as e:
+                logger.warning(f"Dify 知识库初始化失败（不影响注册）: {e}")
 
         # 3.7 创建默认知识库分区（学习区 / 生活区）
         try:
