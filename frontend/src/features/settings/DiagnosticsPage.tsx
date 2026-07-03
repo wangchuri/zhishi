@@ -4,8 +4,6 @@ import {
   AlertTriangle,
   CheckCircle2,
   XCircle,
-  Wrench,
-  RefreshCw,
   ChevronDown,
   ChevronRight,
 } from "lucide-react"
@@ -13,7 +11,6 @@ import { AppShell } from "@/components/layout/AppShell"
 import { PageHeader } from "@/components/blocks/PageHeader"
 import { SectionHeader } from "@/components/blocks/SectionHeader"
 import { Card } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { TimelineStep, type TimelineStatus } from "@/components/blocks/TimelineStep"
 
@@ -74,18 +71,6 @@ export function DiagnosticsPage() {
             </div>
           ))}
         </Card>
-      </div>
-
-      {/* 操作按钮 */}
-      <div className="flex flex-wrap gap-3 mb-8">
-        <Button variant="primary" size="lg">
-          <RefreshCw className="w-4 h-4" strokeWidth={2} />
-          一键检查
-        </Button>
-        <Button variant="secondary" size="lg">
-          <Wrench className="w-4 h-4" strokeWidth={2} />
-          一键设置权限
-        </Button>
       </div>
 
       {/* 排查步骤 - 时间线 */}
@@ -156,11 +141,6 @@ export function DiagnosticsPage() {
                   ))}
                 </ol>
               </div>
-
-              <Button variant="primary" size="md" className="w-full mt-2">
-                <Wrench className="w-4 h-4" strokeWidth={2} />
-                开始修复
-              </Button>
             </div>
           )}
         </Card>

@@ -17,14 +17,24 @@
     USE_OSS=False → 本地存储 (storage/{user_id}/)
     USE_OSS=True  → OSS 存储（未实现）
 """
+import json
 import logging
+import re
 import shutil
 from pathlib import Path
-from typing import Optional, List
+from typing import List, Optional
 
-from app.core.config import USE_OSS, LOCAL_STORAGE_DIR
+from app.core.config import OCR_PAGES_DIR_NAME, USE_OSS, LOCAL_STORAGE_DIR
 
 logger = logging.getLogger(__name__)
+
+PAGE_FILE_PATTERN = re.compile(r"^page_(\d+)\.md$", re.IGNORECASE)
+
+
+def build_page_markdown(page_number: int, text: str) -> str:
+    """单页 OCR 影子 Markdown（含页标题）。"""
+    body = text.strip() if text and text.strip() else "（本页未识别到文字）"
+    return f"## 第 {page_number} 页\n\n{body}\n"
 
 
 class LocalStorage:
@@ -137,11 +147,140 @@ class LocalStorage:
         return str(path)
 
     def save_global_parsed(self, content_hash: str, content: str) -> str:
-        """保存全局解析文本缓存"""
+        """保存全局解析文本缓存（单文件，向后兼容）"""
         path = self._global_dir(content_hash[:2]) / f"{content_hash}.parsed.txt"
         path.write_text(content, encoding="utf-8")
         logger.info(f"LocalStorage.save_global_parsed: {path} ({len(content)} chars)")
         return str(path)
+
+    def _global_parsed_pages_dir(self, content_hash: str) -> Path:
+        return self._global_dir(content_hash[:2]) / f"{content_hash}.parsed"
+
+    def save_global_parsed_pages(
+        self,
+        content_hash: str,
+        page_texts: list[str],
+        *,
+        original_filename: str = "",
+        ocr_used: bool = True,
+    ) -> str:
+        """OCR 按页写入影子文件夹，返回文件夹路径（作为 parsed_text_path）。"""
+        base = self._global_parsed_pages_dir(content_hash)
+        pages_dir = base / OCR_PAGES_DIR_NAME
+        if base.exists():
+            shutil.rmtree(base)
+        pages_dir.mkdir(parents=True, exist_ok=True)
+
+        for i, text in enumerate(page_texts, 1):
+            page_path = pages_dir / f"page_{i:03d}.md"
+            page_path.write_text(build_page_markdown(i, text), encoding="utf-8")
+
+        manifest = {
+            "version": 1,
+            "original_filename": original_filename or "",
+            "total_pages": len(page_texts),
+            "ocr_used": ocr_used,
+            "pages_dir": OCR_PAGES_DIR_NAME,
+        }
+        (base / "manifest.json").write_text(
+            json.dumps(manifest, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        logger.info(
+            "LocalStorage.save_global_parsed_pages: %s (%d pages)",
+            base,
+            len(page_texts),
+        )
+        return str(base)
+
+    def save_global_parsed_content(
+        self,
+        content_hash: str,
+        content: str,
+        *,
+        page_texts: Optional[list[str]] = None,
+        original_filename: str = "",
+        ocr_used: bool = False,
+    ) -> str:
+        """优先按页文件夹保存；无 page_texts 时写单文件。"""
+        if page_texts is not None and len(page_texts) > 0:
+            return self.save_global_parsed_pages(
+                content_hash,
+                page_texts,
+                original_filename=original_filename,
+                ocr_used=ocr_used,
+            )
+        return self.save_global_parsed(content_hash, content)
+
+    @staticmethod
+    def is_parsed_pages_dir(path: str) -> bool:
+        p = Path(path)
+        if not p.is_dir():
+            return False
+        return (p / OCR_PAGES_DIR_NAME).is_dir()
+
+    def _parsed_pages_dir(self, parsed_path: str) -> Path:
+        return Path(parsed_path) / OCR_PAGES_DIR_NAME
+
+    def _iter_page_files(self, parsed_path: str) -> List[tuple[int, Path]]:
+        pages_dir = self._parsed_pages_dir(parsed_path)
+        if not pages_dir.is_dir():
+            return []
+        items: List[tuple[int, Path]] = []
+        for p in pages_dir.iterdir():
+            if not p.is_file():
+                continue
+            m = PAGE_FILE_PATTERN.match(p.name)
+            if m:
+                items.append((int(m.group(1)), p))
+        items.sort(key=lambda x: x[0])
+        return items
+
+    def read_parsed_manifest(self, parsed_path: str) -> Optional[dict]:
+        manifest_path = Path(parsed_path) / "manifest.json"
+        if not manifest_path.is_file():
+            return None
+        try:
+            return json.loads(manifest_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return None
+
+    def read_page_at_path(self, parsed_path: str, page_number: int) -> Optional[str]:
+        page_path = self._parsed_pages_dir(parsed_path) / f"page_{page_number:03d}.md"
+        if not page_path.is_file():
+            return None
+        return page_path.read_text(encoding="utf-8")
+
+    def list_parsed_pages(
+        self, parsed_path: str, *, include_content: bool = True
+    ) -> List[dict]:
+        """从按页文件夹列出页；每项含 page_number/title/content/content_length。"""
+        pages: List[dict] = []
+        for page_num, page_path in self._iter_page_files(parsed_path):
+            content = page_path.read_text(encoding="utf-8") if include_content else ""
+            pages.append(
+                {
+                    "page_number": page_num,
+                    "title": f"第 {page_num} 页",
+                    "content": content,
+                    "content_length": page_path.stat().st_size,
+                }
+            )
+        return pages
+
+    def _read_combined_from_pages_dir(self, base: Path) -> Optional[str]:
+        manifest = self.read_parsed_manifest(str(base))
+        page_items = self._iter_page_files(str(base))
+        if not page_items:
+            return None
+
+        name = (manifest or {}).get("original_filename") or "document"
+        total = (manifest or {}).get("total_pages") or len(page_items)
+        lines = [f"# {name}", "", f"> OCR 提取，共 {total} 页", ""]
+        for _, page_path in page_items:
+            lines.append(page_path.read_text(encoding="utf-8").strip())
+            lines.append("")
+        return "\n".join(lines).strip() + "\n"
 
     def read_file_at_path(self, path: str) -> Optional[bytes]:
         p = Path(path)
@@ -151,15 +290,28 @@ class LocalStorage:
 
     def read_text_at_path(self, path: str) -> Optional[str]:
         p = Path(path)
-        if p.exists() and p.is_file():
+        if p.is_file():
             return p.read_text(encoding="utf-8")
+        if p.is_dir() and self.is_parsed_pages_dir(path):
+            return self._read_combined_from_pages_dir(p)
         return None
 
     def delete_file_at_path(self, path: str) -> bool:
         p = Path(path)
+        if p.is_dir():
+            try:
+                shutil.rmtree(str(p))
+                return True
+            except OSError as e:
+                logger.warning("delete_file_at_path (dir) failed path=%s: %s", path, e)
+                return False
         if p.exists() and p.is_file():
-            p.unlink()
-            return True
+            try:
+                p.unlink()
+                return True
+            except OSError as e:
+                logger.warning("delete_file_at_path failed path=%s: %s", path, e)
+                return False
         return False
 
     # ─── 聊天记录文件 ─────────────────────────────────────
@@ -201,11 +353,17 @@ class LocalStorage:
         for p in sorted(d.glob("*.json"), key=lambda x: x.stat().st_mtime, reverse=True):
             try:
                 data = _json.loads(p.read_text(encoding="utf-8"))
+                meta = data.get("meta") or {}
+                messages = data.get("messages") or []
+                message_count = meta.get("message_count")
+                if message_count is None:
+                    message_count = len(messages)
                 sessions.append({
                     "id": p.stem,
-                    "title": (data.get("meta") or {}).get("title", "会话"),
-                    "created_at": (data.get("meta") or {}).get("created_at", ""),
-                    "updated_at": (data.get("meta") or {}).get("updated_at", ""),
+                    "title": meta.get("title", "会话"),
+                    "created_at": meta.get("created_at", ""),
+                    "updated_at": meta.get("updated_at", ""),
+                    "message_count": int(message_count),
                 })
             except Exception:
                 sessions.append({
@@ -213,6 +371,7 @@ class LocalStorage:
                     "title": "会话",
                     "created_at": "",
                     "updated_at": "",
+                    "message_count": 0,
                 })
         return sessions
 
@@ -280,6 +439,54 @@ class FileStorageService:
 
     def save_global_parsed(self, content_hash: str, content: str) -> str:
         return self._backend.save_global_parsed(content_hash, content)
+
+    def save_global_parsed_pages(
+        self,
+        content_hash: str,
+        page_texts: list[str],
+        *,
+        original_filename: str = "",
+        ocr_used: bool = True,
+    ) -> str:
+        return self._backend.save_global_parsed_pages(
+            content_hash,
+            page_texts,
+            original_filename=original_filename,
+            ocr_used=ocr_used,
+        )
+
+    def save_global_parsed_content(
+        self,
+        content_hash: str,
+        content: str,
+        *,
+        page_texts: Optional[list[str]] = None,
+        original_filename: str = "",
+        ocr_used: bool = False,
+    ) -> str:
+        return self._backend.save_global_parsed_content(
+            content_hash,
+            content,
+            page_texts=page_texts,
+            original_filename=original_filename,
+            ocr_used=ocr_used,
+        )
+
+    def is_parsed_pages_dir(self, path: str) -> bool:
+        return self._backend.is_parsed_pages_dir(path)
+
+    def read_parsed_manifest(self, parsed_path: str) -> Optional[dict]:
+        return self._backend.read_parsed_manifest(parsed_path)
+
+    def read_page_at_path(self, parsed_path: str, page_number: int) -> Optional[str]:
+        return self._backend.read_page_at_path(parsed_path, page_number)
+
+    def list_parsed_pages(
+        self, parsed_path: str, *, include_content: bool = True
+    ) -> List[dict]:
+        return self._backend.list_parsed_pages(
+            parsed_path, include_content=include_content
+        )
 
     def read_file_at_path(self, path: str) -> Optional[bytes]:
         return self._backend.read_file_at_path(path)

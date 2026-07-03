@@ -13,6 +13,7 @@ from tina.llm import BaseAPI
 
 from app.services.citation_service import build_citations_from_hits
 from app.services.local_retrieval_service import search as local_search
+from app.services.llm_runner import iter_agent_predict_stream
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
@@ -183,37 +184,24 @@ class ZhishiAgent:
                 f"## 用户问题\n{message}"
             )
 
-        if history:
-            try:
-                self.agent.clear_messages()
-                self.agent.context_manager.set_system_message(SYSTEM_PROMPT)
-                for msg in history:
-                    role = msg.get("role", "user")
-                    content = msg.get("content", "")
-                    if role in ("user", "assistant"):
-                        self.agent.add_message(role=role, content=content)
-            except Exception as e:
-                logger.warning(f"ZhishiAgent 恢复历史失败: {e}")
-
         try:
-            for chunk in self.agent.predict(instruction=enhanced_message, stream=True):
-                try:
-                    result = {
-                        "role": chunk.get("role", "assistant"),
-                        "content": chunk.get("content", ""),
-                    }
-                    reasoning = chunk.get("reasoning_content")
-                    if reasoning:
-                        result["reasoning_content"] = reasoning
-                    tool_name = chunk.get("tool_name")
-                    if tool_name:
-                        result["tool_name"] = tool_name
-                    yield result
-                except AttributeError:
-                    if isinstance(chunk, dict):
-                        yield chunk
-                    else:
-                        yield {"role": "assistant", "content": str(chunk)}
+            for chunk in iter_agent_predict_stream(
+                self.agent,
+                enhanced_message,
+                history=history,
+                system_prompt=SYSTEM_PROMPT,
+            ):
+                result = {
+                    "role": chunk.get("role", "assistant"),
+                    "content": chunk.get("content", ""),
+                }
+                reasoning = chunk.get("reasoning_content")
+                if reasoning:
+                    result["reasoning_content"] = reasoning
+                tool_name = chunk.get("tool_name")
+                if tool_name:
+                    result["tool_name"] = tool_name
+                yield result
         except Exception as e:
             logger.error(f"ZhishiAgent.predict_stream 错误: {e}")
             yield {"role": "assistant", "content": f"抱歉，生成回复时出错了：{str(e)}"}

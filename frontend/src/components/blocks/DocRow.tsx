@@ -1,4 +1,5 @@
 import type { KnowledgeDoc } from "@/types"
+import { Trash2, Eye } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { DocumentPipelineBadge } from "@/components/blocks/DocumentPipelineBadge"
 import { cn } from "@/lib/utils"
@@ -22,24 +23,35 @@ const statusConfig: Record<
   pending: { label: "待整理", variant: "neutral" },
 }
 
+function statusLabel(doc: KnowledgeDoc): string {
+  if (doc.ocr_status === "processing") {
+    const total = doc.ocr_total_pages
+    const current = doc.ocr_current_page ?? 0
+    return total ? `OCR 第 ${current}/${total} 页` : "OCR 识别中"
+  }
+  return statusConfig[doc.status].label
+}
+
 interface DocRowProps {
   doc: KnowledgeDoc
   className?: string
+  onDelete?: (e: React.MouseEvent) => void
+  onView?: (e: React.MouseEvent) => void
 }
 
 /** 知识库文档行 · 表格风格要轻，不像传统后台厚重表格 */
-export function DocRow({ doc, className }: DocRowProps) {
+export function DocRow({ doc, className, onDelete, onView }: DocRowProps) {
   const status = statusConfig[doc.status]
   return (
     <div
       className={cn(
-        "grid grid-cols-[1fr_auto] sm:grid-cols-[minmax(0,2fr)_auto_auto_auto_auto] gap-x-4 gap-y-2 items-center px-5 py-3.5 hover:bg-surface-soft transition-colors group",
+        "grid grid-cols-[1fr_auto] sm:grid-cols-[minmax(0,2fr)_auto_auto_auto_auto_auto] gap-x-4 gap-y-2 items-center px-5 py-3.5 hover:bg-surface-soft transition-colors group",
         className
       )}
     >
       {/* 文档名 + 标签 */}
       <div className="min-w-0">
-        <div className="text-body text-ink-primary font-medium truncate-1 group-hover:text-primary transition-colors">
+        <div className="text-body text-ink-primary font-medium truncate-1">
           {doc.name}
         </div>
         {doc.tags.length > 0 && (
@@ -76,7 +88,33 @@ export function DocRow({ doc, className }: DocRowProps) {
             zone={doc.zone}
           />
         )}
-        <Badge variant={status.variant}>{status.label}</Badge>
+        <Badge variant={status.variant}>{statusLabel(doc)}</Badge>
+      </div>
+
+      {/* 操作 */}
+      <div className="flex items-center justify-end sm:justify-center gap-0.5">
+        {onView && (
+          <button
+            type="button"
+            onClick={onView}
+            className="w-8 h-8 rounded-md flex items-center justify-center text-ink-tertiary opacity-100 sm:opacity-0 sm:group-hover:opacity-100 hover:bg-primary-soft hover:text-primary transition-all"
+            title="查看文档"
+            aria-label={`查看 ${doc.name}`}
+          >
+            <Eye className="w-4 h-4" strokeWidth={2} />
+          </button>
+        )}
+        {onDelete && (
+          <button
+            type="button"
+            onClick={onDelete}
+            className="w-8 h-8 rounded-md flex items-center justify-center text-ink-tertiary opacity-100 sm:opacity-0 sm:group-hover:opacity-100 hover:bg-danger-soft hover:text-danger transition-all"
+            title="删除文档"
+            aria-label={`删除 ${doc.name}`}
+          >
+            <Trash2 className="w-4 h-4" strokeWidth={2} />
+          </button>
+        )}
       </div>
     </div>
   )

@@ -28,9 +28,11 @@ def create_session(
     current_user: dict = Depends(get_current_active_user),
 ):
     """从 document_id / collection_id / question_ids 创建刷题会话。"""
-    return quiz_service.create_quiz_session(
+    result = quiz_service.create_quiz_session(
         db=db, user_id=current_user["user_id"], payload=payload
     )
+    db.commit()
+    return result
 
 
 @router.get("/sessions/{session_id}", response_model=QuizSessionOut)
@@ -53,7 +55,7 @@ def submit_answer(
     current_user: dict = Depends(get_current_active_user),
 ):
     """提交单题答案；status=unknown 表示「我不会」。"""
-    return quiz_service.submit_answer(
+    result = quiz_service.submit_answer(
         db=db,
         user_id=current_user["user_id"],
         session_id=session_id,
@@ -62,6 +64,8 @@ def submit_answer(
         status_hint=payload.status,
         time_spent_seconds=payload.time_spent_seconds,
     )
+    db.commit()
+    return result
 
 
 @router.get("/sessions/{session_id}/results", response_model=QuizResultsOut)

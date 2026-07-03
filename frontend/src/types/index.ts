@@ -39,6 +39,9 @@ export interface KnowledgeDoc {
   status: "indexed" | "processing" | "failed" | "pending"
   segment_status?: string
   question_gen_status?: string
+  ocr_status?: string
+  ocr_current_page?: number
+  ocr_total_pages?: number
   questionCount?: number
   zone?: string
   wordCount: number
@@ -148,9 +151,21 @@ export interface Question {
   document_id?: string | null
   collection_id?: string | null
   created_at?: string
+  user_answer_status?: "correct" | "wrong" | "unknown" | null
+  attempt_count?: number
 }
 
-/** 刷题会话中的题目（不含答案） */
+/** 题目列表（含做题统计） */
+export interface QuestionListResult {
+  questions: Question[]
+  total: number
+  document_id?: string | null
+  collection_id?: string | null
+  answered_count?: number
+  correct_count?: number
+  wrong_count?: number
+  unknown_count?: number
+}
 export interface QuizSessionQuestion {
   question_id: string
   order_index: number
@@ -207,6 +222,64 @@ export interface QuizResults {
   items: QuizReviewItem[]
 }
 
+/** 学习分析统计 */
+export interface DocumentStats {
+  total: number
+  indexed: number
+  processing: number
+  failed: number
+  study_zone: number
+  with_questions: number
+}
+
+export interface QuestionStats {
+  total: number
+  answered: number
+  correct: number
+  wrong: number
+  unknown: number
+  accuracy_rate: number | null
+}
+
+export interface DocumentProgress {
+  document_id: string
+  document_name: string
+  question_total: number
+  answered_count: number
+  correct_count: number
+  wrong_count: number
+  unknown_count: number
+  accuracy_rate: number | null
+}
+
+export interface RecentSession {
+  id: string
+  document_id?: string | null
+  document_name?: string | null
+  status: string
+  total_questions: number
+  answered_count: number
+  started_at?: string | null
+  finished_at?: string | null
+}
+
+export interface RecentAnswer {
+  question_id: string
+  stem: string
+  status: string
+  document_id?: string | null
+  document_name?: string | null
+  answered_at?: string | null
+}
+
+export interface LearningStats {
+  documents: DocumentStats
+  questions: QuestionStats
+  document_progress: DocumentProgress[]
+  recent_sessions: RecentSession[]
+  recent_answers: RecentAnswer[]
+}
+
 /** 辅导消息 */
 export interface TutorMessage {
   role: "user" | "assistant" | string
@@ -231,6 +304,41 @@ export interface TutorSession {
   messages: TutorMessage[]
   created_at?: string
   updated_at?: string
+}
+
+/** 文档页（出题页） */
+export interface DocumentPage {
+  page_number: number
+  title: string
+  preview: string
+  char_start: number
+  char_end: number
+  content_length: number
+  has_builtin_questions: boolean
+  is_key_page: boolean
+  segment_id?: string | null
+}
+
+export interface DocumentPageList {
+  document_id: string
+  document_name: string
+  total_pages: number
+  has_page_markers: boolean
+  pages: DocumentPage[]
+}
+
+export interface DocumentPageDetail extends DocumentPage {
+  content: string
+}
+
+export interface PageQuestionResult {
+  document_id: string
+  page_numbers: number[]
+  mode: string
+  question_gen_status?: string
+  questions_created: number
+  questions_reused: number
+  total_questions: number
 }
 
 /** 对话消息 */

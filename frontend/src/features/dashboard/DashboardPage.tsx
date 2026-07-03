@@ -24,7 +24,7 @@ import { useAuth } from "@/context/AuthContext"
 import { chatApi, kbApi, dashboardApi } from "@/lib/api"
 
 const quickActions = [
-  { id: "quiz", title: "刷题练习", description: "基于学习资料检验掌握", to: "/quiz" },
+  { id: "quiz", title: "题库页", description: "基于学习资料检验掌握", to: "/quiz" },
   { id: "upload", title: "上传资料", description: "PDF、TXT、MD、DOCX", to: "/knowledge/upload" },
   { id: "chat", title: "AI 对话", description: "向 Tina 提问、检索资料", to: "/chat" },
   { id: "kb", title: "知识库", description: "管理学习区与生活区文档", to: "/knowledge" },
@@ -33,7 +33,7 @@ const quickActions = [
 const quickActionIcons = [Brain, Upload, MessageSquare, Library]
 
 const rightPanelShortcuts = [
-  { label: "刷题练习", to: "/quiz" },
+  { label: "题库页", to: "/quiz" },
   { label: "知识库", to: "/knowledge" },
   { label: "上传资料", to: "/knowledge/upload" },
 ]
@@ -157,8 +157,8 @@ export function DashboardPage() {
       <div className="mb-10">
         <RecommendCard
           title="开始学习"
-          highlight="上传学习区文档 → 自动出题 → 开始刷题 → 错题辅导"
-          description="上传第一份学习资料，完成分段与出题后即可开始刷题练习。"
+          highlight="上传学习区文档 → 自动出题 → 开始练习 → 错题辅导"
+          description="上传第一份学习资料，完成分段与出题后即可在题库页练习。"
           actionLabel="上传资料"
           onAction={() => navigate("/knowledge/upload")}
         />
@@ -182,7 +182,7 @@ export function DashboardPage() {
               icon: i % 2 === 0 ? FileText : Lightbulb,
               iconTone: i % 2 === 0 ? ("neutral" as const) : ("primary" as const),
               secondaryAction: r.docId
-                ? { label: "去刷题", onClick: () => navigate(`/quiz?document_id=${r.docId}`) }
+                ? { label: "去题库", onClick: () => navigate(`/quiz?document_id=${r.docId}`) }
                 : undefined,
             }))}
           />

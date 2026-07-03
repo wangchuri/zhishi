@@ -4,13 +4,22 @@
 流程：
     1. PyMuPDF 渲染每页为 PNG
     2. 按 OCR_BACKEND 调用 ocr_service（默认本地 PaddleOCR）
-    3. 拼接为带页标题的 Markdown
+    3. 并行 OCR（ThreadPoolExecutor，max_workers 来自 config）
+    4. 按页码排序拼接为带页标题的 Markdown
 """
 import logging
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
-from typing import Optional
+from typing import Callable, Optional
 
-from app.core.config import OCR_BACKEND, PDF_MAX_PAGES, PDF_OCR_MAX_PAGES, PDF_OCR_RENDER_DPI
+from app.core.config import (
+    OCR_BACKEND,
+    OCR_MAX_PARALLEL_PAGES,
+    PDF_MAX_PAGES,
+    PDF_OCR_MAX_PAGES,
+    PDF_OCR_RENDER_DPI,
+)
 from app.services.ocr_service import (
     extract_text_from_image_bytes,
     is_baidu_ocr_configured,
@@ -80,6 +89,22 @@ def _ocr_page_image(png_bytes: bytes) -> tuple[Optional[str], Optional[str]]:
     return None, ocr_unavailable_message()
 
 
+def _ocr_single_page(
+    file_path: str, page_index: int, dpi: int
+) -> tuple[int, str, Optional[str]]:
+    """独立打开 PDF 处理单页，便于线程池并行。"""
+    import fitz
+
+    doc = fitz.open(file_path)
+    try:
+        logger.info("pdf_ocr - 正在 OCR 第 %d 页…", page_index + 1)
+        png_bytes = _render_page_png(doc, page_index, dpi)
+        page_text, page_err = _ocr_page_image(png_bytes)
+        return page_index, page_text, page_err
+    finally:
+        doc.close()
+
+
 def build_shadow_markdown(original_filename: str, page_texts: list[str]) -> str:
     """构造 OCR 影子 Markdown 文档。"""
     name = Path(original_filename).name if original_filename else "document.pdf"
@@ -102,6 +127,7 @@ def build_shadow_markdown(original_filename: str, page_texts: list[str]) -> str:
 def parse_pdf_with_ocr_fallback(
     file_path: str,
     original_filename: Optional[str] = None,
+    on_page_progress: Optional[Callable[[int, int], None]] = None,
 ):
     """
     扫描型 PDF OCR：渲染每页 → OCR → Markdown 影子文档。
@@ -141,21 +167,66 @@ def parse_pdf_with_ocr_fallback(
                 PDF_OCR_MAX_PAGES,
             )
 
-        page_texts: list[str] = []
+        if on_page_progress:
+            on_page_progress(0, limit)
+
+        max_workers = min(OCR_MAX_PARALLEL_PAGES, limit)
+        page_texts: list[str] = [""] * limit
         ocr_errors: list[str] = []
+        fatal_error: Optional[str] = None
+        completed_count = 0
+        progress_lock = threading.Lock()
 
-        for i in range(limit):
-            logger.info("pdf_ocr - 正在 OCR 第 %d/%d 页…", i + 1, limit)
-            png_bytes = _render_page_png(doc, i, PDF_OCR_RENDER_DPI)
-            page_text, page_err = _ocr_page_image(png_bytes)
+        def _report_progress() -> None:
+            nonlocal completed_count
+            if not on_page_progress:
+                return
+            with progress_lock:
+                completed_count += 1
+                on_page_progress(completed_count, limit)
 
-            if page_err:
-                ocr_errors.append(f"第{i + 1}页: {page_err}")
-                if page_text is None:
-                    break
-            page_texts.append(page_text or "")
+        if max_workers <= 1:
+            for i in range(limit):
+                _, text, page_err = _ocr_single_page(
+                    file_path, i, PDF_OCR_RENDER_DPI
+                )
+                if page_err:
+                    ocr_errors.append(f"第{i + 1}页: {page_err}")
+                    if text is None:
+                        break
+                page_texts[i] = text or ""
+                _report_progress()
+        else:
+            logger.info(
+                "pdf_ocr - 并行 OCR: workers=%d, pages=%d",
+                max_workers,
+                limit,
+            )
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                futures = {
+                    executor.submit(
+                        _ocr_single_page, file_path, i, PDF_OCR_RENDER_DPI
+                    ): i
+                    for i in range(limit)
+                }
+                for future in as_completed(futures):
+                    page_index, text, page_err = future.result()
+                    if page_err:
+                        ocr_errors.append(f"第{page_index + 1}页: {page_err}")
+                        if text is None:
+                            fatal_error = page_err
+                    page_texts[page_index] = text or ""
+                    _report_progress()
 
-        if not page_texts and ocr_errors:
+            if fatal_error and not any(t.strip() for t in page_texts):
+                detail = ocr_errors[0] if ocr_errors else fatal_error
+                return ParseOutcome(
+                    text=None,
+                    error=f"PDF OCR 失败: {detail}",
+                    ocr_used=True,
+                )
+
+        if not any(t.strip() for t in page_texts) and ocr_errors:
             detail = ocr_errors[0]
             return ParseOutcome(
                 text=None,
@@ -173,11 +244,17 @@ def parse_pdf_with_ocr_fallback(
 
         markdown = build_shadow_markdown(display_name, page_texts)
         logger.info(
-            "pdf_ocr - 完成: %s, %d 页, %d 字符",
+            "pdf_ocr - 完成: %s, %d 页, %d 字符, parallel=%d",
             display_name,
             len(page_texts),
             len(markdown),
+            max_workers,
         )
-        return ParseOutcome(text=markdown, error=None, ocr_used=True)
+        return ParseOutcome(
+            text=markdown,
+            error=None,
+            ocr_used=True,
+            page_texts=page_texts,
+        )
     finally:
         doc.close()

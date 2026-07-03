@@ -1,13 +1,7 @@
 import { useState, useRef, useEffect } from "react"
 import {
   Sparkles,
-  Paperclip,
-  Brain,
-  NotebookPen,
-  Mic,
   ArrowUp,
-  FileText,
-  MessageSquare,
   LogOut,
   PanelLeftClose,
   PanelLeftOpen,
@@ -19,15 +13,12 @@ import {
 } from "lucide-react"
 import { useNavigate, useSearchParams } from "react-router-dom"
 import { AppShell } from "@/components/layout/AppShell"
-import { RightPanel } from "@/components/layout/RightPanel"
-import { Chip } from "@/components/ui/chip"
+import { ChatCitationSidebar } from "@/components/blocks/ChatCitationSidebar"
 import { Button } from "@/components/ui/button"
 import { ChatMessage as ChatMessageBlock } from "@/components/blocks/ChatMessage"
-import { chatModes } from "@/data/chat"
 import { chatApi, kbApi, normalizeChatHistory } from "@/lib/api"
 import { useAuth } from "@/context/AuthContext"
 import type { ChatMessage, Citation, KbCollection } from "@/types"
-import { CitationCard } from "@/components/blocks/CitationCard"
 import { Badge } from "@/components/ui/badge"
 import {
   Select,
@@ -52,23 +43,40 @@ const welcomeMessage: ChatMessage = {
   time: "刚刚",
 }
 
+const HISTORY_SIDEBAR_KEY = "zhishi_chat_history_sidebar"
+
+function readHistorySidebarOpen(): boolean {
+  try {
+    return localStorage.getItem(HISTORY_SIDEBAR_KEY) === "open"
+  } catch {
+    return false
+  }
+}
+
+function persistHistorySidebarOpen(open: boolean) {
+  try {
+    localStorage.setItem(HISTORY_SIDEBAR_KEY, open ? "open" : "closed")
+  } catch {
+    /* ignore */
+  }
+}
+
 export function ChatPage() {
   const { user, logout } = useAuth()
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
 
-  const [mode, setMode] = useState("notes")
-  const [reasoning, setReasoning] = useState(false)
   const [input, setInput] = useState("")
   const [messages, setMessages] = useState<ChatMessage[]>([welcomeMessage])
   const [isStreaming, setIsStreaming] = useState(false)
   const [sessionId, setSessionId] = useState<string | null>(null)
   const [sessions, setSessions] = useState<SessionItem[]>([])
-  const [sidebarOpen, setSidebarOpen] = useState(true)
+  const [sidebarOpen, setSidebarOpen] = useState(readHistorySidebarOpen)
+  const [citationSidebarOpen, setCitationSidebarOpen] = useState(false)
+  const [activeCitation, setActiveCitation] = useState<Citation | null>(null)
   const [loadingHistory, setLoadingHistory] = useState(false)
   const [collections, setCollections] = useState<KbCollection[]>([])
   const [collectionId, setCollectionId] = useState<string>("")
-  const [recentCitations, setRecentCitations] = useState<Citation[]>([])
   const scrollRef = useRef<HTMLDivElement>(null)
 
   // ─── 会话列表 ──────────────────────────────────────
@@ -212,7 +220,6 @@ export function ChatPage() {
           }
           if (Array.isArray(chunk.citations) && chunk.citations.length > 0) {
             messageCitations = chunk.citations as Citation[]
-            setRecentCitations(messageCitations)
             setMessages((prev) =>
               prev.map((m) =>
                 m.id === assistantId ? { ...m, citations: messageCitations } : m
@@ -231,6 +238,19 @@ export function ChatPage() {
     } finally {
       setIsStreaming(false)
     }
+  }
+
+  const handleCitationClick = (citation: Citation) => {
+    setActiveCitation(citation)
+    setCitationSidebarOpen(true)
+  }
+
+  const toggleHistorySidebar = () => {
+    setSidebarOpen((prev) => {
+      const next = !prev
+      persistHistorySidebarOpen(next)
+      return next
+    })
   }
 
   const selectedCollection = collections.find((c) => c.id === collectionId)
@@ -284,7 +304,7 @@ export function ChatPage() {
               </>
             )}
             <button
-              onClick={() => setSidebarOpen(o => !o)}
+              onClick={toggleHistorySidebar}
               className="w-7 h-7 rounded-md flex items-center justify-center text-ink-tertiary hover:text-ink-primary hover:bg-surface-soft transition-colors shrink-0"
               title={sidebarOpen ? "折叠历史" : "展开历史"}
             >
@@ -338,7 +358,10 @@ export function ChatPage() {
           {!sidebarOpen && (
             <div className="flex-1 flex items-center justify-center">
               <button
-                onClick={() => setSidebarOpen(true)}
+                onClick={() => {
+                  setSidebarOpen(true)
+                  persistHistorySidebarOpen(true)
+                }}
                 className="flex flex-col items-center gap-1.5 text-ink-tertiary hover:text-primary transition-colors py-8"
               >
                 <ChevronRight className="w-4 h-4" strokeWidth={2} />
@@ -351,7 +374,7 @@ export function ChatPage() {
         {/* ────── 对话主区域 ────── */}
         <div className="flex-1 flex flex-col min-w-0">
           <div className="px-8 pt-6 pb-4 border-b border-line-soft">
-            <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-full bg-gradient-primary flex items-center justify-center shadow-primary shrink-0">
                   <Sparkles className="w-5 h-5 text-white" strokeWidth={2} />
@@ -372,25 +395,6 @@ export function ChatPage() {
                 <span className="hidden lg:inline">退出</span>
               </button>
             </div>
-            <div className="flex items-center gap-2 flex-wrap">
-              {chatModes.map((m) => (
-                <Chip
-                  key={m.value}
-                  variant={mode === m.value ? "selected" : "default"}
-                  onClick={() => {
-                    if (m.value === "reasoning") {
-                      setReasoning((r) => !r)
-                      setMode((r) => (r === "reasoning" ? "notes" : "reasoning"))
-                    } else {
-                      setMode(m.value)
-                      setReasoning(false)
-                    }
-                  }}
-                >
-                  {m.label}
-                </Chip>
-              ))}
-            </div>
           </div>
 
           <div ref={scrollRef} className="flex-1 overflow-y-auto scroll-thin px-8 py-6">
@@ -405,19 +409,21 @@ export function ChatPage() {
               ) : (
                 <>
                   {messages.map((m) => (
-                    <ChatMessageBlock key={m.id} message={m} />
+                    <ChatMessageBlock
+                      key={m.id}
+                      message={m}
+                      onCitationClick={handleCitationClick}
+                    />
                   ))}
                   {isStreaming && messages.length > 0 && messages[messages.length - 1].role === "assistant" && !messages[messages.length - 1].content && (
                     <div className="flex gap-3 animate-msg-in">
-                      <div className="w-8 h-8 rounded-full bg-gradient-primary flex items-center justify-center shrink-0 shadow-primary">
+                      <div className="w-8 h-8 rounded-full bg-gradient-primary flex items-center justify-center shrink-0 shadow-primary mt-0.5">
                         <Sparkles className="w-4 h-4 text-white" strokeWidth={2} />
                       </div>
-                      <div className="max-w-[78%] bg-surface border border-line-soft rounded-lg rounded-tl-sm px-4 py-3 text-body text-ink-tertiary">
-                        <div className="flex items-center gap-1.5">
-                          <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
-                          <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse [animation-delay:150ms]" />
-                          <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse [animation-delay:300ms]" />
-                        </div>
+                      <div className="flex items-center gap-1.5 pt-2">
+                        <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
+                        <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse [animation-delay:150ms]" />
+                        <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse [animation-delay:300ms]" />
                       </div>
                     </div>
                   )}
@@ -474,18 +480,7 @@ export function ChatPage() {
                   style={{ maxHeight: "240px", minHeight: "88px" }}
                   disabled={isStreaming || loadingHistory}
                 />
-                <div className="absolute bottom-0 left-0 right-0 flex items-center justify-between px-3 py-2">
-                  <div className="flex items-center gap-0.5">
-                    <ToolButton icon={Paperclip} label="添加资料" />
-                    <ToolButton
-                      icon={Brain}
-                      label="推理模式"
-                      active={reasoning}
-                      onClick={() => setReasoning((r) => !r)}
-                    />
-                    <ToolButton icon={NotebookPen} label="生成笔记" disabled />
-                    <ToolButton icon={Mic} label="语音输入" disabled />
-                  </div>
+                <div className="absolute bottom-0 left-0 right-0 flex items-center justify-end px-3 py-2">
                   <Button
                     variant={input.trim() && !isStreaming ? "primary" : "secondary"}
                     size="icon"
@@ -504,93 +499,13 @@ export function ChatPage() {
           </div>
         </div>
 
-        {/* ────── 右侧上下文面板 ────── */}
-        <RightPanel title="当前上下文">
-          <div className="space-y-6">
-            <section>
-              <h3 className="text-card-title font-semibold text-ink-primary mb-3">对话设置</h3>
-              <div className="space-y-2.5">
-                <ContextRow
-                  label="知识库分区"
-                  value={
-                    selectedCollection
-                      ? `${selectedCollection.name} · ${zoneLabel}`
-                      : "—"
-                  }
-                />
-                <ContextRow
-                  label="当前模式"
-                  value={mode === "reasoning" ? "推理模式" : "高效笔记"}
-                />
-                <ContextRow label="输出目标" value="回答 + 可生成笔记" />
-              </div>
-            </section>
-
-            <section>
-              <h3 className="text-card-title font-semibold text-ink-primary mb-3 flex items-center gap-1.5">
-                <FileText className="w-4 h-4 text-primary" strokeWidth={2} />
-                最近引用
-              </h3>
-              {recentCitations.length === 0 ? (
-                <div className="text-small text-ink-tertiary">暂无</div>
-              ) : (
-                <div className="space-y-2">
-                  {recentCitations.map((c, i) => (
-                    <CitationCard key={i} citation={c} variant="inline" />
-                  ))}
-                </div>
-              )}
-            </section>
-
-            <section>
-              <h3 className="text-card-title font-semibold text-ink-primary mb-3 flex items-center gap-1.5">
-                <MessageSquare className="w-4 h-4 text-primary" strokeWidth={2} />
-                相关笔记
-              </h3>
-              <div className="text-small text-ink-tertiary">暂无</div>
-            </section>
-          </div>
-        </RightPanel>
+        {/* ────── 右侧可折叠引用侧栏 ────── */}
+        <ChatCitationSidebar
+          open={citationSidebarOpen}
+          onOpenChange={setCitationSidebarOpen}
+          citation={activeCitation}
+        />
       </div>
     </AppShell>
-  )
-}
-
-function ToolButton({
-  icon: Icon,
-  label,
-  active,
-  disabled,
-  onClick,
-}: {
-  icon: typeof Paperclip
-  label: string
-  active?: boolean
-  disabled?: boolean
-  onClick?: () => void
-}) {
-  return (
-    <button
-      onClick={onClick}
-      disabled={disabled}
-      title={disabled ? "即将推出" : label}
-      className={cn(
-        "inline-flex items-center gap-1.5 h-8 px-2.5 rounded-md text-small transition-colors",
-        disabled && "opacity-40 cursor-not-allowed",
-        active ? "text-primary bg-primary-soft" : "text-ink-tertiary hover:text-ink-primary hover:bg-surface-soft"
-      )}
-    >
-      <Icon className="w-4 h-4" strokeWidth={2} />
-      <span className="hidden lg:inline">{label}</span>
-    </button>
-  )
-}
-
-function ContextRow({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex items-center justify-between gap-2 px-3 py-2 rounded-md bg-surface-soft">
-      <span className="text-caption text-ink-secondary">{label}</span>
-      <span className="text-caption text-ink-primary font-medium">{value}</span>
-    </div>
   )
 }

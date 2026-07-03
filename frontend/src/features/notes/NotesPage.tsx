@@ -2,9 +2,6 @@ import { useState } from "react"
 import { useNavigate } from "react-router-dom"
 import {
   NotebookPen,
-  Plus,
-  SlidersHorizontal,
-  ArrowUpDown,
   LayoutGrid,
   List,
 } from "lucide-react"
@@ -13,7 +10,6 @@ import { RightPanel } from "@/components/layout/RightPanel"
 import { PageHeader } from "@/components/blocks/PageHeader"
 import { EmptyState } from "@/components/ui/empty-state"
 import { SearchInput } from "@/components/ui/search-input"
-import { Button } from "@/components/ui/button"
 import { Chip } from "@/components/ui/chip"
 import { SegmentedTabs } from "@/components/ui/segmented-tabs"
 import { noteFilters } from "@/data/notes"
@@ -25,20 +21,7 @@ export function NotesPage() {
 
   return (
     <AppShell maxWidth={1180}>
-      <PageHeader title="笔记" subtitle="记录想法、整理资料，让 Tina 帮你沉淀知识。">
-        <Button variant="secondary" size="md">
-          <ArrowUpDown className="w-4 h-4" strokeWidth={2} />
-          排序
-        </Button>
-        <Button variant="secondary" size="md">
-          <SlidersHorizontal className="w-4 h-4" strokeWidth={2} />
-          筛选
-        </Button>
-        <Button variant="primary" size="md" onClick={() => navigate("/notes")}>
-          <Plus className="w-4 h-4" strokeWidth={2} />
-          新建笔记
-        </Button>
-      </PageHeader>
+      <PageHeader title="笔记" subtitle="记录想法、整理资料，让 Tina 帮你沉淀知识。" />
 
       {/* 统计 */}
       <div className="flex items-center gap-4 mb-6 text-caption text-ink-tertiary">
@@ -84,7 +67,6 @@ export function NotesPage() {
           icon={NotebookPen}
           title="还没有笔记"
           description="记录想法、整理资料，或让 Tina 帮你总结文档。"
-          primaryAction={{ label: "新建第一篇笔记" }}
           secondaryAction={{ label: "从文档生成", onClick: () => navigate("/knowledge/upload") }}
           size="lg"
         />

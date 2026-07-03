@@ -18,7 +18,7 @@ from typing import Optional
 
 
 
-from app.core.config import PDF_MAX_PAGES
+from app.core.config import DOCUMENT_PIPELINE_ASYNC, PDF_MAX_PAGES
 
 
 
@@ -77,6 +77,8 @@ class ParseOutcome:
     error: Optional[str] = None
 
     ocr_used: bool = False
+
+    page_texts: Optional[list[str]] = None
 
 
 
@@ -189,9 +191,10 @@ def parse_file(file_path: str, original_filename: Optional[str] = None) -> Optio
 
 
 def parse_file_detailed(
-
-    file_path: str, original_filename: Optional[str] = None
-
+    file_path: str,
+    original_filename: Optional[str] = None,
+    *,
+    allow_ocr_fallback: bool = True,
 ) -> ParseOutcome:
 
     """
@@ -257,8 +260,9 @@ def parse_file_detailed(
         )
 
     if file_type == "pdf":
-
-        return _parse_pdf(file_path, original_filename)
+        return _parse_pdf(
+            file_path, original_filename, allow_ocr_fallback=allow_ocr_fallback
+        )
 
     if file_type == "docx":
 
@@ -319,10 +323,40 @@ def _pdf_page_limit(total_pages: int) -> int:
     return total_pages
 
 
+def is_scanned_pdf(file_path: str) -> tuple[bool, int]:
+    """
+    判定 PDF 是否为扫描件（无嵌入文本层）。
+    返回 (needs_ocr, page_count)。
+    """
+    try:
+        import fitz
+    except ImportError:
+        return False, 0
+
+    try:
+        doc = fitz.open(file_path)
+        try:
+            total = doc.page_count
+            if total == 0:
+                return False, 0
+            limit = _pdf_page_limit(total)
+            for i in range(limit):
+                if (doc[i].get_text("text") or "").strip():
+                    return False, total
+            return True, total
+        finally:
+            doc.close()
+    except Exception as e:
+        logger.warning("file_parser.is_scanned_pdf 失败: %s", e)
+        return False, 0
 
 
-
-def _parse_pdf(file_path: str, original_filename: Optional[str] = None) -> ParseOutcome:
+def _parse_pdf(
+    file_path: str,
+    original_filename: Optional[str] = None,
+    *,
+    allow_ocr_fallback: bool = True,
+) -> ParseOutcome:
 
     """解析 PDF：优先 PyMuPDF，回退 pdfplumber，再回退 PyPDF2。"""
 
@@ -367,6 +401,19 @@ def _parse_pdf(file_path: str, original_filename: Optional[str] = None) -> Parse
 
 
     detail = "；".join(errors) if errors else "所有 PDF 解析器均未能提取文本"
+
+    needs_ocr, page_count = is_scanned_pdf(file_path)
+    if needs_ocr and (DOCUMENT_PIPELINE_ASYNC or not allow_ocr_fallback):
+        return ParseOutcome(
+            text=None,
+            error=(
+                f"PDF 无嵌入文本层（扫描版，约 {page_count} 页），"
+                "已交由后台 OCR pipeline 处理"
+            ),
+        )
+
+    if not allow_ocr_fallback:
+        return ParseOutcome(text=None, error=detail)
 
     logger.info("file_parser - 常规 PDF 提取无文本，尝试 OCR 回退: %s", file_path)
 

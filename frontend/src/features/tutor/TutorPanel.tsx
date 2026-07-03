@@ -1,9 +1,42 @@
-import { useEffect, useState } from "react"
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react"
 import { Loader2, Send, Sparkles, X } from "lucide-react"
 import { tutorApi } from "@/lib/api"
 import type { TutorMessage, TutorSession } from "@/types"
 import { Button } from "@/components/ui/button"
+import {
+  MarkdownWithMath,
+  markdownProseClass,
+  markdownProseInvertClass,
+} from "@/components/blocks/MarkdownWithMath"
 import { cn } from "@/lib/utils"
+
+const SCROLL_BOTTOM_THRESHOLD = 48
+
+function TutorMessageBody({
+  content,
+  role,
+  isStreamingPlaceholder,
+}: {
+  content: string
+  role: TutorMessage["role"]
+  isStreamingPlaceholder?: boolean
+}) {
+  if (!content) {
+    return <span>{isStreamingPlaceholder ? "..." : ""}</span>
+  }
+
+  return (
+    <MarkdownWithMath
+      proseClass={role === "user" ? markdownProseInvertClass : markdownProseClass}
+    >
+      {content}
+    </MarkdownWithMath>
+  )
+}
+
+export interface TutorPanelHandle {
+  sendMessage: (text: string) => void
+}
 
 interface TutorPanelProps {
   questionId: string
@@ -12,25 +45,63 @@ interface TutorPanelProps {
   className?: string
 }
 
-export function TutorPanel({
-  questionId,
-  quizSessionId,
-  onClose,
-  className,
-}: TutorPanelProps) {
+export const TutorPanel = forwardRef<TutorPanelHandle, TutorPanelProps>(function TutorPanel(
+  { questionId, quizSessionId, onClose, className },
+  ref,
+) {
   const [session, setSession] = useState<TutorSession | null>(null)
   const [messages, setMessages] = useState<TutorMessage[]>([])
   const [input, setInput] = useState("")
   const [loading, setLoading] = useState(true)
   const [sending, setSending] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const scrollContainerRef = useRef<HTMLDivElement>(null)
+  const messagesEndRef = useRef<HTMLDivElement>(null)
+  const userScrolledUpRef = useRef(false)
+  const pendingMessageRef = useRef<string | null>(null)
+  const sessionRef = useRef<TutorSession | null>(null)
+  const sendingRef = useRef(false)
+
+  const isAtBottom = () => {
+    const el = scrollContainerRef.current
+    if (!el) return true
+    return el.scrollHeight - el.scrollTop - el.clientHeight <= SCROLL_BOTTOM_THRESHOLD
+  }
+
+  const scrollToBottom = (behavior: ScrollBehavior = "auto") => {
+    messagesEndRef.current?.scrollIntoView({ behavior, block: "end" })
+  }
+
+  const handleScroll = () => {
+    userScrolledUpRef.current = !isAtBottom()
+  }
+
+  useEffect(() => {
+    if (!userScrolledUpRef.current) {
+      scrollToBottom(sending ? "auto" : "smooth")
+    }
+  }, [messages, sending])
 
   useEffect(() => {
     let cancelled = false
     setLoading(true)
     setError(null)
-    tutorApi
-      .createSession({ question_id: questionId, quiz_session_id: quizSessionId })
+    const createTutorSession = async () => {
+      try {
+        return await tutorApi.createSession({
+          question_id: questionId,
+          quiz_session_id: quizSessionId,
+        })
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : ""
+        if (quizSessionId && msg.includes("刷题会话不存在")) {
+          return tutorApi.createSession({ question_id: questionId })
+        }
+        throw err
+      }
+    }
+
+    createTutorSession()
       .then((res) => {
         if (cancelled) return
         const s = res as unknown as TutorSession
@@ -48,20 +119,23 @@ export function TutorPanel({
     }
   }, [questionId, quizSessionId])
 
-  const handleSend = async () => {
-    const text = input.trim()
-    if (!text || !session || sending) return
+  const sendText = useCallback(async (text: string) => {
+    const trimmed = text.trim()
+    const activeSession = sessionRef.current
+    if (!trimmed || !activeSession || sendingRef.current) return
 
-    const userMsg: TutorMessage = { role: "user", content: text, created_at: new Date().toISOString() }
+    sendingRef.current = true
+    setSending(true)
+
+    const userMsg: TutorMessage = { role: "user", content: trimmed, created_at: new Date().toISOString() }
     setMessages((prev) => [...prev, userMsg])
     setInput("")
-    setSending(true)
 
     const assistantMsg: TutorMessage = { role: "assistant", content: "", created_at: new Date().toISOString() }
     setMessages((prev) => [...prev, assistantMsg])
 
     try {
-      await tutorApi.sendMessageStream(session.id, text, (chunk) => {
+      await tutorApi.sendMessageStream(activeSession.id, trimmed, (chunk) => {
         if (typeof chunk.content === "string") {
           setMessages((prev) => {
             const next = [...prev]
@@ -84,21 +158,56 @@ export function TutorPanel({
         return next
       })
     } finally {
+      sendingRef.current = false
       setSending(false)
     }
+  }, [])
+
+  useEffect(() => {
+    sessionRef.current = session
+  }, [session])
+
+  useEffect(() => {
+    sendingRef.current = sending
+  }, [sending])
+
+  useEffect(() => {
+    if (!session || loading || !pendingMessageRef.current) return
+    const text = pendingMessageRef.current
+    pendingMessageRef.current = null
+    void sendText(text)
+  }, [session, loading, sendText])
+
+  useImperativeHandle(ref, () => ({
+    sendMessage: (text: string) => {
+      const trimmed = text.trim()
+      if (!trimmed) return
+      setInput(trimmed)
+      if (!sessionRef.current || loading || sendingRef.current) {
+        pendingMessageRef.current = trimmed
+        return
+      }
+      void sendText(trimmed)
+    },
+  }), [loading, sendText])
+
+  const handleSend = () => {
+    void sendText(input)
   }
 
   return (
-    <div className={cn("flex flex-col h-full bg-surface border border-line-soft rounded-lg", className)}>
-      <div className="flex items-center gap-2 px-4 py-3 border-b border-line-soft">
+    <div
+      className={cn(
+        "flex flex-col h-full min-h-0 overflow-hidden bg-surface border border-line-soft rounded-lg",
+        className,
+      )}
+    >
+      <div className="flex items-center gap-2 px-4 py-3 border-b border-line-soft shrink-0">
         <div className="w-8 h-8 rounded-full bg-gradient-primary flex items-center justify-center shrink-0">
           <Sparkles className="w-4 h-4 text-white" strokeWidth={2} />
         </div>
-        <div className="flex-1 min-w-0">
-          <div className="text-card-title font-semibold text-ink-primary">苏格拉底辅导</div>
-          <div className="text-caption text-ink-tertiary truncate">
-            {session?.question_stem || "基于题目与原文引导思考"}
-          </div>
+        <div className="flex-1 min-w-0 text-card-title font-semibold text-ink-primary">
+          AI辅导
         </div>
         {onClose && (
           <button
@@ -111,13 +220,11 @@ export function TutorPanel({
         )}
       </div>
 
-      {session?.segment_context?.snippet && (
-        <div className="px-4 py-2.5 bg-surface-soft border-b border-line-soft text-caption text-ink-secondary line-clamp-3">
-          📖 {session.segment_context.title}: {session.segment_context.snippet}
-        </div>
-      )}
-
-      <div className="flex-1 overflow-y-auto scroll-thin p-4 space-y-3 min-h-[200px]">
+      <div
+        ref={scrollContainerRef}
+        onScroll={handleScroll}
+        className="flex-1 min-h-0 overflow-y-auto scroll-thin p-4 space-y-3"
+      >
         {loading ? (
           <div className="flex items-center justify-center py-8 text-ink-tertiary gap-2">
             <Loader2 className="w-5 h-5 animate-spin" />
@@ -127,7 +234,7 @@ export function TutorPanel({
           <div className="text-body text-danger">{error}</div>
         ) : messages.length === 0 ? (
           <div className="text-small text-ink-tertiary text-center py-6">
-            说说哪里不懂，Agent 会结合原文引导你思考
+            说说哪里不懂，AI 辅导会结合原文引导你思考
           </div>
         ) : (
           messages.map((m, i) => (
@@ -153,14 +260,19 @@ export function TutorPanel({
                     : "bg-surface border border-line-soft text-ink-primary rounded-tl-sm"
                 )}
               >
-                {m.content || (sending && i === messages.length - 1 ? "..." : "")}
+                <TutorMessageBody
+                  content={m.content}
+                  role={m.role}
+                  isStreamingPlaceholder={sending && i === messages.length - 1 && m.role === "assistant"}
+                />
               </div>
             </div>
           ))
         )}
+        <div ref={messagesEndRef} aria-hidden />
       </div>
 
-      <div className="p-3 border-t border-line-soft">
+      <div className="p-3 border-t border-line-soft shrink-0">
         <div className="flex items-end gap-2">
           <textarea
             value={input}
@@ -189,4 +301,4 @@ export function TutorPanel({
       </div>
     </div>
   )
-}
+})

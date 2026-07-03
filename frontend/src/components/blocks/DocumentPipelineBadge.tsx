@@ -32,7 +32,7 @@ export function getDocumentPipelineStatus(
     return { label: "出题中", variant: "warning" }
   }
   if (qgen === "completed" && (info.questionCount ?? 0) > 0) {
-    return { label: `可刷题 · ${info.questionCount} 题`, variant: "primary" }
+    return { label: `题库 · ${info.questionCount} 题`, variant: "primary" }
   }
   if (qgen === "completed") {
     return { label: "已出题", variant: "primary" }
@@ -56,7 +56,7 @@ export function formatDocumentOptionLabel(
   if (status && info.zone !== "life") {
     parts.push(status.label)
   } else if (info.zone === "life") {
-    parts.push("仅学习区可刷题")
+    parts.push("仅学习区可练习")
   }
   return parts.join(" · ")
 }

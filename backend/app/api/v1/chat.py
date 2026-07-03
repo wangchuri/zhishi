@@ -83,7 +83,7 @@ def _file_delete_session(user_id: int, session_id: str) -> bool:
         return False
 
 
-# ─── Redis 辅助函数 ────────────────────────────────────
+# ─── 会话缓存（MemoryCache + 文件持久化） ────────────────
 
 def _load_session_meta(user_id: int, session_id: str) -> Optional[dict]:
     raw = cache.get_value(_session_meta_key(user_id, session_id))
@@ -104,7 +104,7 @@ def _save_message(user_id: int, session_id: str, role: str, content: str) -> dic
         "created_at": now,
     }
 
-    # 1. 写入 Redis
+    # 1. 写入内存缓存
     cache.rpush(_session_history_key(user_id, session_id), json.dumps(message))
 
     # 2. 更新或创建 meta
@@ -133,32 +133,23 @@ def _save_message(user_id: int, session_id: str, role: str, content: str) -> dic
 
 
 def _load_history(user_id: int, session_id: str) -> List[dict]:
-    # 优先从 Redis 读取
     raw_messages = cache.lrange(_session_history_key(user_id, session_id), 0, -1)
     if raw_messages:
         return [json.loads(item) for item in raw_messages]
 
-    # Redis 为空时，从文件读取回退
     full = _file_load_full(user_id, session_id)
-    if full and full.get("messages"):
-        return full["messages"]
-
-    return []
+    return full.get("messages", []) if full else []
 
 
 def _load_sessions(user_id: int) -> List[dict]:
-    # 优先从 Redis 读取
     session_ids = cache.lrange(_session_list_key(user_id), 0, -1) or []
     sessions = []
     for session_id in session_ids:
         meta = _load_session_meta(user_id, session_id)
         if meta:
             sessions.append(meta)
-
     if sessions:
         return sessions
-
-    # Redis 为空时，从文件读取回退
     return _file_list_sessions(user_id)
 
 
@@ -167,12 +158,10 @@ def _delete_session(user_id: int, session_id: str) -> bool:
     history_key = _session_history_key(user_id, session_id)
     list_key = _session_list_key(user_id)
 
-    # 删除 Redis
     cache.delete_key(meta_key)
     cache.delete_key(history_key)
     cache.lrem(list_key, 0, session_id)
 
-    # 删除文件
     _file_delete_session(user_id, session_id)
     return True
 

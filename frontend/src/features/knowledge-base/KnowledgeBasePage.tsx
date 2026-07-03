@@ -3,7 +3,6 @@ import { useNavigate } from "react-router-dom"
 import {
   Library,
   FileText,
-  Type,
   Hash,
   Activity,
   Clock,
@@ -17,11 +16,22 @@ import { EmptyState } from "@/components/ui/empty-state"
 import { StatCard } from "@/components/ui/stat-card"
 import { SearchInput } from "@/components/ui/search-input"
 import { Button } from "@/components/ui/button"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 import { DocRow } from "@/components/blocks/DocRow"
+import { getDocumentViewPath } from "@/components/blocks/DocumentPreviewModal"
 import { SegmentedTabs } from "@/components/ui/segmented-tabs"
 import { Badge } from "@/components/ui/badge"
-import { DocumentPreviewModal } from "@/components/blocks/DocumentPreviewModal"
 import { kbApi } from "@/lib/api"
+import { mapKbDocument } from "@/lib/mapKbDocument"
 import type { KbCollection, KnowledgeDoc } from "@/types"
 
 export function KnowledgeBasePage() {
@@ -30,34 +40,24 @@ export function KnowledgeBasePage() {
   const [selectedCollectionId, setSelectedCollectionId] = useState<string>("")
   const [docs, setDocs] = useState<KnowledgeDoc[]>([])
   const [loading, setLoading] = useState(true)
-  const [previewDocId, setPreviewDocId] = useState<string | null>(null)
-  const [previewTitle, setPreviewTitle] = useState<string>("")
+  const [deleteTarget, setDeleteTarget] = useState<KnowledgeDoc | null>(null)
+  const [deleting, setDeleting] = useState(false)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
 
   const selectedCollection = collections.find((c) => c.id === selectedCollectionId)
 
-  const loadDocuments = useCallback(async (collectionId: string, zone?: string) => {
-    setLoading(true)
+  const loadDocuments = useCallback(async (collectionId: string, zone?: string, silent = false) => {
+    if (!silent) setLoading(true)
     try {
       const res = await kbApi.listDocuments(1, 50, collectionId || undefined)
       const items = res.documents || []
       setDocs(
-        items.map((d: Record<string, unknown>) => ({
-          id: String(d.id),
-          name: String(d.name || d.file_name || d.id),
-          type: mapFileType(d),
-          tags: (d.tags as string[]) || [],
-          status: mapStatus(d),
-          segment_status: String(d.segment_status || "not_started"),
-          question_gen_status: String(d.question_gen_status || "not_started"),
-          zone,
-          wordCount: Number(d.word_count || d.wordCount || 0),
-          updatedAt: String(d.updated_at || d.updatedAt || "—"),
-        }))
+        items.map((d: Record<string, unknown>) => mapKbDocument(d, zone))
       )
     } catch {
-      setDocs([])
+      if (!silent) setDocs([])
     } finally {
-      setLoading(false)
+      if (!silent) setLoading(false)
     }
   }, [])
 
@@ -79,9 +79,40 @@ export function KnowledgeBasePage() {
     }
   }, [selectedCollectionId, selectedCollection?.zone, loadDocuments])
 
-  const handleDocClick = (doc: KnowledgeDoc) => {
-    setPreviewDocId(doc.id)
-    setPreviewTitle(doc.name)
+  const hasOcrInProgress = docs.some((d) => d.ocr_status === "processing")
+
+  useEffect(() => {
+    if (!selectedCollectionId || !hasOcrInProgress) return
+    const timer = window.setInterval(() => {
+      void loadDocuments(selectedCollectionId, selectedCollection?.zone, true)
+    }, 2500)
+    return () => window.clearInterval(timer)
+  }, [selectedCollectionId, selectedCollection?.zone, hasOcrInProgress, loadDocuments])
+
+  const handleViewDoc = (doc: KnowledgeDoc, e: React.MouseEvent) => {
+    e.stopPropagation()
+    navigate(getDocumentViewPath(doc.id, { title: doc.name }))
+  }
+
+  const handleDeleteClick = (doc: KnowledgeDoc, e: React.MouseEvent) => {
+    e.stopPropagation()
+    setDeleteError(null)
+    setDeleteTarget(doc)
+  }
+
+  const handleConfirmDelete = async () => {
+    if (!deleteTarget || !selectedCollectionId) return
+    setDeleting(true)
+    setDeleteError(null)
+    try {
+      await kbApi.deleteDocument(deleteTarget.id)
+      setDeleteTarget(null)
+      await loadDocuments(selectedCollectionId, selectedCollection?.zone)
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : "删除失败，请稍后重试")
+    } finally {
+      setDeleting(false)
+    }
   }
 
   const kbStats = {
@@ -102,12 +133,8 @@ export function KnowledgeBasePage() {
     <AppShell maxWidth={1180}>
       <PageHeader
         title="知识库管理"
-        subtitle="按分区管理文档，学习区支持分段与刷题"
+        subtitle="按分区管理文档，学习区支持分段与题库练习"
       >
-        <Button variant="secondary" size="md">
-          <Type className="w-4 h-4" strokeWidth={2} />
-          输入文本
-        </Button>
         <Button variant="primary" size="md" onClick={() => navigate("/knowledge/upload")}>
           <Upload className="w-4 h-4" strokeWidth={2} />
           上传文件
@@ -169,48 +196,61 @@ export function KnowledgeBasePage() {
         </div>
       ) : (
         <div className="bg-surface border border-line-soft rounded-lg shadow-xs overflow-hidden">
-          <div className="hidden sm:grid grid-cols-[minmax(0,2fr)_auto_auto_auto_auto] gap-x-4 px-5 py-3 border-b border-line-soft bg-surface-soft text-small text-ink-tertiary font-medium">
+          <div className="hidden sm:grid grid-cols-[minmax(0,2fr)_auto_auto_auto_auto_auto] gap-x-4 px-5 py-3 border-b border-line-soft bg-surface-soft text-small text-ink-tertiary font-medium">
             <div>文档名</div>
             <div className="min-w-[60px]">类型</div>
             <div className="min-w-[60px]">字数</div>
             <div className="min-w-[80px]">更新时间</div>
             <div className="min-w-[80px] text-right">状态</div>
+            <div className="min-w-[40px]" />
           </div>
           <div className="divide-y divide-line-soft">
             {docs.map((doc) => (
-              <div key={doc.id} onClick={() => handleDocClick(doc)} className="cursor-pointer">
-                <DocRow doc={doc} />
-              </div>
+              <DocRow
+                key={doc.id}
+                doc={doc}
+                onView={(e) => handleViewDoc(doc, e)}
+                onDelete={(e) => handleDeleteClick(doc, e)}
+              />
             ))}
           </div>
         </div>
       )}
 
-      {previewDocId && (
-        <DocumentPreviewModal
-          docId={previewDocId}
-          title={previewTitle}
-          onClose={() => setPreviewDocId(null)}
-        />
-      )}
+      <AlertDialog
+        open={!!deleteTarget}
+        onOpenChange={(open) => {
+          if (!open && !deleting) {
+            setDeleteTarget(null)
+            setDeleteError(null)
+          }
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>确认删除文档？</AlertDialogTitle>
+            <AlertDialogDescription>
+              将永久删除「{deleteTarget?.name}」，包括分段、向量索引与关联题目引用。此操作不可撤销。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          {deleteError && (
+            <p className="text-small text-danger px-1">{deleteError}</p>
+          )}
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>取消</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault()
+                void handleConfirmDelete()
+              }}
+              disabled={deleting}
+              className="bg-danger text-white hover:bg-danger/90"
+            >
+              {deleting ? "删除中..." : "删除"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </AppShell>
   )
-}
-
-function mapFileType(d: Record<string, unknown>): KnowledgeDoc["type"] {
-  const name = String(d.name || d.file_name || "").toLowerCase()
-  if (name.endsWith(".pdf")) return "pdf"
-  if (name.endsWith(".txt")) return "txt"
-  if (name.endsWith(".md")) return "md"
-  if (name.endsWith(".docx") || name.endsWith(".doc")) return "docx"
-  return "txt"
-}
-
-function mapStatus(d: Record<string, unknown>): KnowledgeDoc["status"] {
-  const s = String(d.indexing_status || d.status || "").toLowerCase()
-  if (s === "completed" || s === "indexed") return "indexed"
-  if (s === "processing" || s === "parsing" || s === "splitting" || s === "indexing")
-    return "processing"
-  if (s === "error" || s === "failed") return "failed"
-  return "pending"
 }

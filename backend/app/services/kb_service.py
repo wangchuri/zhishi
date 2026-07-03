@@ -11,7 +11,14 @@ from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.crud import kb as kb_crud
-from app.core.config import DIFY_MAX_UPLOAD_SIZE, is_local_rag
+from app.core.config import (
+    DIFY_MAX_UPLOAD_SIZE,
+    DOCUMENT_PIPELINE_ASYNC,
+    IMAGE_OCR_ASYNC,
+    is_local_rag,
+)
+from app.core.database import SessionLocal
+from app.core.job_runner import run_in_background
 from app.models import Document, KbCollection
 from app.schemas.kb import (
     CollectionCreate,
@@ -23,7 +30,13 @@ from app.schemas.kb import (
     UploadResponse,
 )
 from app.services.dify_kb import DifyKB
-from app.services.file_parser import IMAGE_EXTENSIONS, SUPPORTED_EXTENSIONS, parse_file, parse_file_detailed
+from app.services.file_parser import (
+    IMAGE_EXTENSIONS,
+    SUPPORTED_EXTENSIONS,
+    is_scanned_pdf,
+    parse_file_detailed,
+)
+from app.services.ocr_progress import get_ocr_progress, set_ocr_progress
 from app.services.ocr_service import extract_text_from_image
 from app.services.storage_service import storage_service
 
@@ -103,7 +116,7 @@ def _guess_mime(suffix: str) -> Optional[str]:
 
 
 def _maybe_trigger_segment(db: Session, document: Document) -> None:
-    """学习区文档上传后同步分段"""
+    """学习区文档上传后分段（及本地 RAG 索引）。"""
     if document.zone != "study":
         return
     from app.services.segment_service import segment_document
@@ -114,6 +127,297 @@ def _maybe_trigger_segment(db: Session, document: Document) -> None:
     except Exception:
         logger.exception("segment hook failed: document_id=%s", document.id)
         db.rollback()
+
+
+def _finish_indexing_status(db: Session, doc: Document) -> None:
+    """根据分段结果更新 indexing_status（非 study 区直接完成）。"""
+    if (
+        is_local_rag()
+        and doc.zone != "study"
+        and doc.indexing_status == "processing"
+    ):
+        doc.indexing_status = "completed"
+        db.commit()
+    elif doc.segment_status == "failed":
+        doc.indexing_status = "failed"
+        db.commit()
+
+
+def _ensure_document_parsed(db: Session, doc: Document) -> bool:
+    """解析文档文本并写入 global 缓存。成功返回 True。"""
+    if doc.parsed_cache_key:
+        return True
+    global_doc = doc.global_document
+    if global_doc and global_doc.parsed_text_path:
+        doc.parsed_cache_key = global_doc.parsed_text_path
+        db.commit()
+        return True
+    if not global_doc or not global_doc.storage_path:
+        if doc.zone == "study":
+            doc.segment_status = "failed"
+        doc.indexing_status = "failed"
+        db.commit()
+        return False
+
+    parse_outcome = parse_file_detailed(
+        global_doc.storage_path,
+        original_filename=global_doc.original_filename or doc.display_name,
+    )
+    if parse_outcome.text:
+        parsed_text_path = storage_service.save_global_parsed_content(
+            doc.content_hash,
+            parse_outcome.text,
+            page_texts=parse_outcome.page_texts,
+            original_filename=global_doc.original_filename or doc.display_name,
+            ocr_used=parse_outcome.ocr_used,
+        )
+        global_doc.parsed_text_path = parsed_text_path
+        doc.parsed_cache_key = parsed_text_path
+        db.commit()
+        return True
+
+    err = parse_outcome.error or "无法提取文档文本"
+    logger.warning(
+        "pipeline parse failed: document_id=%s, error=%s", doc.id, err
+    )
+    if doc.zone == "study":
+        doc.segment_status = "failed"
+    doc.indexing_status = "failed"
+    db.commit()
+    return False
+
+
+def _run_document_pipeline(
+    document_id: str,
+    content_hash: str,
+    *,
+    ocr_mode: bool = False,
+    image_ocr_mode: bool = False,
+    storage_path: Optional[str] = None,
+    original_filename: Optional[str] = None,
+    total_pages: int = 0,
+) -> None:
+    """
+    后台线程：OCR（可选）→ 解析 → 分段 → 索引。
+    与扫描 PDF / 图片异步 OCR 共用同一入口。
+    """
+    from app.services.pdf_ocr_service import parse_pdf_with_ocr_fallback
+
+    def on_page_progress(current: int, total: int) -> None:
+        set_ocr_progress(
+            document_id,
+            content_hash,
+            "processing",
+            current_page=current,
+            total_pages=total,
+        )
+
+    if ocr_mode or image_ocr_mode:
+        set_ocr_progress(
+            document_id,
+            content_hash,
+            "processing",
+            current_page=0,
+            total_pages=total_pages or 1,
+        )
+
+    db = SessionLocal()
+    try:
+        doc = kb_crud.get_document_by_id_internal(db, document_id)
+        if not doc:
+            return
+
+        if image_ocr_mode and storage_path:
+            ocr_text = extract_text_from_image(storage_path)
+            if ocr_text is None or not ocr_text.strip():
+                err = "OCR 识别失败，请确认图片包含文字"
+                set_ocr_progress(
+                    document_id,
+                    content_hash,
+                    "failed",
+                    current_page=0,
+                    total_pages=1,
+                    error=err,
+                )
+                doc.indexing_status = "failed"
+                if doc.zone == "study":
+                    doc.segment_status = "failed"
+                db.commit()
+                return
+
+            parsed_text_path = storage_service.save_global_parsed(
+                content_hash, ocr_text
+            )
+            global_doc = doc.global_document
+            if global_doc:
+                global_doc.parsed_text_path = parsed_text_path
+            doc.parsed_cache_key = parsed_text_path
+            db.commit()
+
+            set_ocr_progress(
+                document_id,
+                content_hash,
+                "completed",
+                current_page=1,
+                total_pages=1,
+            )
+        elif ocr_mode and storage_path:
+            outcome = parse_pdf_with_ocr_fallback(
+                storage_path,
+                original_filename=original_filename,
+                on_page_progress=on_page_progress,
+            )
+            if not outcome.text:
+                err = outcome.error or "OCR 未识别到文字"
+                set_ocr_progress(
+                    document_id,
+                    content_hash,
+                    "failed",
+                    current_page=0,
+                    total_pages=total_pages,
+                    error=err,
+                )
+                if doc.zone == "study":
+                    doc.segment_status = "failed"
+                doc.indexing_status = "failed"
+                db.commit()
+                return
+
+            parsed_text_path = storage_service.save_global_parsed_content(
+                content_hash,
+                outcome.text,
+                page_texts=outcome.page_texts,
+                original_filename=original_filename or doc.display_name,
+                ocr_used=True,
+            )
+            global_doc = doc.global_document
+            if global_doc:
+                global_doc.parsed_text_path = parsed_text_path
+            doc.parsed_cache_key = parsed_text_path
+            db.commit()
+
+            set_ocr_progress(
+                document_id,
+                content_hash,
+                "completed",
+                current_page=total_pages,
+                total_pages=total_pages,
+            )
+        elif not _ensure_document_parsed(db, doc):
+            return
+
+        _maybe_trigger_segment(db, doc)
+        db.refresh(doc)
+        _finish_indexing_status(db, doc)
+    except Exception:
+        logger.exception("document pipeline failed: document_id=%s", document_id)
+        if ocr_mode:
+            set_ocr_progress(
+                document_id,
+                content_hash,
+                "failed",
+                current_page=0,
+                total_pages=total_pages or 0,
+                error="OCR 处理异常",
+            )
+        try:
+            doc = kb_crud.get_document_by_id_internal(db, document_id)
+            if doc:
+                doc.indexing_status = "failed"
+                if doc.zone == "study":
+                    doc.segment_status = "failed"
+                db.commit()
+        except Exception:
+            db.rollback()
+    finally:
+        db.close()
+
+
+def _start_document_pipeline(
+    document: Document,
+    *,
+    ocr_mode: bool = False,
+    image_ocr_mode: bool = False,
+    storage_path: Optional[str] = None,
+    original_filename: Optional[str] = None,
+    total_pages: int = 0,
+) -> None:
+    run_in_background(
+        lambda: _run_document_pipeline(
+            document.id,
+            document.content_hash,
+            ocr_mode=ocr_mode,
+            image_ocr_mode=image_ocr_mode,
+            storage_path=storage_path,
+            original_filename=original_filename,
+            total_pages=total_pages,
+        ),
+        name="doc-pipeline",
+    )
+
+
+def _run_async_pdf_ocr(
+    document_id: str,
+    content_hash: str,
+    storage_path: str,
+    original_filename: str,
+    total_pages: int,
+) -> None:
+    """兼容旧调用：委托统一 document pipeline（OCR 模式）。"""
+    _run_document_pipeline(
+        document_id,
+        content_hash,
+        ocr_mode=True,
+        storage_path=storage_path,
+        original_filename=original_filename,
+        total_pages=total_pages,
+    )
+
+
+def _ocr_fields_for_doc(doc: Document) -> dict:
+    progress = get_ocr_progress(document_id=doc.id, content_hash=doc.content_hash)
+    if not progress:
+        return {}
+    return {
+        "ocr_status": progress["status"],
+        "ocr_current_page": progress.get("current_page", 0),
+        "ocr_total_pages": progress.get("total_pages", 0),
+    }
+
+
+def _start_async_pdf_ocr(
+    document: Document,
+    storage_path: str,
+    original_filename: str,
+    total_pages: int,
+) -> None:
+    _start_document_pipeline(
+        document,
+        ocr_mode=True,
+        storage_path=storage_path,
+        original_filename=original_filename,
+        total_pages=total_pages,
+    )
+
+
+def _start_async_image_ocr(
+    document: Document,
+    storage_path: str,
+) -> None:
+    _start_document_pipeline(
+        document,
+        image_ocr_mode=True,
+        storage_path=storage_path,
+        total_pages=1,
+    )
+
+
+def _should_defer_pdf_ocr(
+    file_path: str, suffix: str, has_parsed_text: bool
+) -> tuple[bool, int]:
+    if suffix != ".pdf" or has_parsed_text or not is_local_rag():
+        return False, 0
+    return is_scanned_pdf(file_path)
 
 
 def _load_hash_store_fallback() -> dict:
@@ -204,15 +508,21 @@ def _check_dify_upload_size(file_path: str) -> None:
 def _duplicate_response(
     existing: Document, dataset_id: str, file_name: str
 ) -> UploadResponse:
+    ocr_fields = _ocr_fields_for_doc(existing)
+    status = "duplicate"
+    if ocr_fields.get("ocr_status") == "processing":
+        status = "indexing"
     return UploadResponse(
         message="该文件已上传过，无需重复上传",
-        batch_id=existing.dify_batch_id,
-        document_id=existing.dify_document_id,
+        batch_id=existing.dify_batch_id or existing.id,
+        document_id=existing.dify_document_id or existing.id,
         id=existing.id,
         file_name=file_name,
         dataset_id=dataset_id,
         collection_id=existing.collection_id,
-        status="duplicate",
+        status=status,
+        segment_status=existing.segment_status,
+        **ocr_fields,
     )
 
 
@@ -311,6 +621,9 @@ def upload_document(
     is_image = suffix in IMAGE_EXTENSIONS
     ocr_processed = False
     last_parse_error: Optional[str] = None
+    defer_pdf_ocr = False
+    defer_image_ocr = False
+    ocr_total_pages = 0
     global_doc = kb_crud.get_global_document_by_hash(db, file_hash)
     upload_path: str
     display_name = safe_filename
@@ -325,6 +638,13 @@ def upload_document(
         if not safe_filename and global_doc.original_filename:
             safe_filename = global_doc.original_filename
         logger.info("命中全局去重: hash=%s, path=%s", file_hash[:16], upload_path)
+        if not parsed_text_path and raw_storage_path:
+            if is_image and IMAGE_OCR_ASYNC:
+                defer_image_ocr = True
+            else:
+                defer_pdf_ocr, ocr_total_pages = _should_defer_pdf_ocr(
+                    raw_storage_path, suffix, has_parsed_text=False
+                )
     else:
         raw_storage_path = storage_service.save_global_file(
             file_hash, content_bytes, suffix
@@ -332,39 +652,62 @@ def upload_document(
         upload_path = raw_storage_path
 
         if is_image:
-            ocr_text = extract_text_from_image(raw_storage_path)
-            if ocr_text is None:
-                raise HTTPException(
-                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                    detail="OCR 识别失败，请确认图片包含文字；本地模式需安装 paddleocr",
-                )
-            if not ocr_text.strip():
-                raise HTTPException(
-                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                    detail="图片中未检测到文字",
-                )
-            parsed_text_path = storage_service.save_global_parsed(file_hash, ocr_text)
-            display_name = f"{Path(safe_filename).stem}_ocr.txt"
-            upload_path = parsed_text_path
-            ocr_processed = True
-        else:
-            parse_outcome = parse_file_detailed(
-                raw_storage_path, original_filename=safe_filename
-            )
-            parsed_content = parse_outcome.text
-            if parse_outcome.ocr_used:
+            if IMAGE_OCR_ASYNC:
+                defer_image_ocr = True
+                logger.info("图片异步 OCR: hash=%s", file_hash[:16])
+            else:
+                ocr_text = extract_text_from_image(raw_storage_path)
+                if ocr_text is None:
+                    raise HTTPException(
+                        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                        detail="OCR 识别失败，请确认图片包含文字；本地模式需安装 paddleocr",
+                    )
+                if not ocr_text.strip():
+                    raise HTTPException(
+                        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                        detail="图片中未检测到文字",
+                    )
+                parsed_text_path = storage_service.save_global_parsed(file_hash, ocr_text)
+                display_name = f"{Path(safe_filename).stem}_ocr.txt"
+                upload_path = parsed_text_path
                 ocr_processed = True
-            if parsed_content:
-                parsed_text_path = storage_service.save_global_parsed(
-                    file_hash, parsed_content
-                )
-            elif parse_outcome.error:
-                last_parse_error = parse_outcome.error
-                logger.warning(
-                    "上传时文本解析失败: hash=%s, error=%s",
+        else:
+            defer_pdf_ocr, ocr_total_pages = _should_defer_pdf_ocr(
+                raw_storage_path, suffix, has_parsed_text=False
+            )
+            if defer_pdf_ocr:
+                logger.info(
+                    "扫描 PDF 异步 OCR: hash=%s, pages=%d",
                     file_hash[:16],
-                    parse_outcome.error,
+                    ocr_total_pages,
                 )
+            elif DOCUMENT_PIPELINE_ASYNC:
+                logger.info(
+                    "异步文档 pipeline: hash=%s, 解析/分段延后",
+                    file_hash[:16],
+                )
+            else:
+                parse_outcome = parse_file_detailed(
+                    raw_storage_path, original_filename=safe_filename
+                )
+                parsed_content = parse_outcome.text
+                if parse_outcome.ocr_used:
+                    ocr_processed = True
+                if parsed_content:
+                    parsed_text_path = storage_service.save_global_parsed_content(
+                        file_hash,
+                        parsed_content,
+                        page_texts=parse_outcome.page_texts,
+                        original_filename=safe_filename,
+                        ocr_used=parse_outcome.ocr_used,
+                    )
+                elif parse_outcome.error:
+                    last_parse_error = parse_outcome.error
+                    logger.warning(
+                        "上传时文本解析失败: hash=%s, error=%s",
+                        file_hash[:16],
+                        parse_outcome.error,
+                    )
 
         global_doc = kb_crud.create_global_document(
             db,
@@ -423,25 +766,42 @@ def upload_document(
     db.commit()
     db.refresh(document)
 
-    _maybe_trigger_segment(db, document)
-    if (
-        is_local_rag()
-        and document.zone != "study"
-        and document.indexing_status == "processing"
-    ):
-        document.indexing_status = "completed"
-        db.commit()
-    if document.segment_status == "failed":
-        document.indexing_status = "failed"
-        db.commit()
+    if defer_pdf_ocr and raw_storage_path:
+        in_progress = get_ocr_progress(content_hash=file_hash)
+        if in_progress and in_progress.get("status") == "processing":
+            set_ocr_progress(
+                document.id,
+                file_hash,
+                "processing",
+                current_page=in_progress.get("current_page", 0),
+                total_pages=in_progress.get("total_pages", ocr_total_pages),
+            )
+        else:
+            _start_async_pdf_ocr(
+                document,
+                raw_storage_path,
+                safe_filename,
+                ocr_total_pages,
+            )
+    elif defer_image_ocr and raw_storage_path:
+        set_ocr_progress(document.id, file_hash, "processing", current_page=0, total_pages=1)
+        _start_async_image_ocr(document, raw_storage_path)
+    elif DOCUMENT_PIPELINE_ASYNC and not is_image:
+        _start_document_pipeline(document)
+    else:
+        _maybe_trigger_segment(db, document)
+        _finish_indexing_status(db, document)
     db.refresh(document)
 
     resp_doc_id = document.dify_document_id or document.id
     resp_batch_id = document.dify_batch_id or document.id
+    ocr_fields = _ocr_fields_for_doc(document)
     if document.segment_status == "failed":
         resp_status = "error"
     elif document.indexing_status == "completed":
         resp_status = "completed"
+    elif defer_pdf_ocr or defer_image_ocr or ocr_fields.get("ocr_status") == "processing":
+        resp_status = "indexing"
     else:
         resp_status = "indexing"
 
@@ -452,6 +812,8 @@ def upload_document(
         parse_warning = last_parse_error or (
             "PDF 无嵌入文本层（可能是扫描版），请安装 paddleocr 或上传可复制文字的 PDF"
         )
+    elif defer_pdf_ocr or defer_image_ocr or ocr_fields.get("ocr_status") == "processing":
+        message += "，正在 OCR 识别"
     elif resp_status == "completed":
         message += "，索引完成"
     else:
@@ -470,8 +832,47 @@ def upload_document(
         status=resp_status,
         segment_status=document.segment_status,
         parse_warning=parse_warning,
-        ocr_processed=ocr_processed,
+        ocr_processed=ocr_processed or bool(defer_pdf_ocr) or bool(defer_image_ocr),
+        **ocr_fields,
     )
+
+
+def document_status_payload(doc: Document, batch_id: str) -> dict:
+    """本地 RAG 文档状态（含 OCR 进度）。"""
+    ocr_fields = _ocr_fields_for_doc(doc)
+    if doc.segment_status == "failed":
+        ocr_err = ocr_fields.get("ocr_status") == "failed"
+        err_msg = (
+            "PDF OCR 识别失败，请确认已安装 paddleocr"
+            if ocr_err
+            else (
+                "文档文本提取失败，可能是扫描版 PDF，"
+                "请上传可复制文字的 PDF 或使用 OCR"
+            )
+        )
+        progress = get_ocr_progress(document_id=doc.id, content_hash=doc.content_hash)
+        if progress and progress.get("error"):
+            err_msg = progress["error"]
+        return {
+            "batch_id": batch_id,
+            "status": "error",
+            "segment_status": doc.segment_status,
+            "error_message": err_msg,
+            "document_id": doc.id,
+            **ocr_fields,
+        }
+
+    status = doc.indexing_status
+    if ocr_fields.get("ocr_status") == "processing":
+        status = "processing"
+
+    return {
+        "batch_id": batch_id,
+        "status": status,
+        "segment_status": doc.segment_status,
+        "document_id": doc.id,
+        **ocr_fields,
+    }
 
 
 def list_documents(
@@ -542,6 +943,7 @@ def list_documents(
                 dify_document_id=doc.dify_document_id,
                 created_at=doc.created_at,
                 updated_at=doc.updated_at,
+                **_ocr_fields_for_doc(doc),
             )
         )
 
@@ -618,40 +1020,62 @@ def delete_document(
         if coll:
             dataset_id = _resolve_dataset_id(coll, user_dataset_id)
 
-    if doc.dify_document_id and dataset_id and not is_local_rag():
-        kb = _get_kb(dataset_id)
-        if not kb.delete_document(doc.dify_document_id):
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="删除文档失败，请检查文档是否存在",
-            )
+    try:
+        if doc.dify_document_id and dataset_id and not is_local_rag():
+            kb = _get_kb(dataset_id)
+            if not kb.delete_document(doc.dify_document_id):
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="删除文档失败，请检查文档是否存在",
+                )
 
-    if is_local_rag():
-        from app.services.index_service import delete_document_index
+        if is_local_rag():
+            from app.services.index_service import delete_document_index
 
-        delete_document_index(doc.id)
+            delete_document_index(doc.id)
 
-    content_hash = doc.content_hash
-    global_doc = doc.global_document
+        content_hash = doc.content_hash
+        global_doc = doc.global_document
+        parsed_cache_key = doc.parsed_cache_key
 
-    global_document_id = kb_crud.delete_document_row(db, doc)
+        kb_crud.delete_related_for_document(db, doc.id)
+        global_document_id = kb_crud.delete_document_row(db, doc)
 
-    if global_document_id and global_doc:
-        remaining = kb_crud.count_documents_for_global(db, global_document_id)
-        if remaining == 0:
-            storage_service.delete_file_at_path(global_doc.storage_path)
-            if global_doc.parsed_text_path:
-                storage_service.delete_file_at_path(global_doc.parsed_text_path)
-            kb_crud.delete_global_document(db, global_doc)
-    elif global_document_id:
-        remaining = kb_crud.count_documents_for_global(db, global_document_id)
-        if remaining == 0:
-            orphan = kb_crud.get_global_document_by_hash(db, content_hash)
-            if orphan:
-                storage_service.delete_file_at_path(orphan.storage_path)
-                if orphan.parsed_text_path:
-                    storage_service.delete_file_at_path(orphan.parsed_text_path)
-                kb_crud.delete_global_document(db, orphan)
+        if parsed_cache_key and (
+            not global_doc or parsed_cache_key != global_doc.parsed_text_path
+        ):
+            storage_service.delete_file_at_path(parsed_cache_key)
 
-    db.commit()
-    return {"message": "文档已删除", "doc_id": doc_id}
+        if global_document_id and global_doc:
+            remaining = kb_crud.count_documents_for_global(db, global_document_id)
+            if remaining == 0:
+                kb_crud.delete_provenance_for_global(db, global_document_id)
+                storage_service.delete_file_at_path(global_doc.storage_path)
+                if global_doc.parsed_text_path:
+                    storage_service.delete_file_at_path(global_doc.parsed_text_path)
+                kb_crud.delete_global_document(db, global_doc)
+        elif global_document_id:
+            remaining = kb_crud.count_documents_for_global(db, global_document_id)
+            if remaining == 0:
+                orphan = kb_crud.get_global_document_by_hash(db, content_hash)
+                if orphan:
+                    kb_crud.delete_provenance_for_global(db, orphan.id)
+                    storage_service.delete_file_at_path(orphan.storage_path)
+                    if orphan.parsed_text_path:
+                        storage_service.delete_file_at_path(orphan.parsed_text_path)
+                    kb_crud.delete_global_document(db, orphan)
+
+        db.commit()
+        return {"message": "文档已删除", "doc_id": doc_id}
+    except HTTPException:
+        db.rollback()
+        raise
+    except Exception:
+        db.rollback()
+        logger.exception(
+            "delete_document failed doc_id=%s user_id=%s", doc_id, user_id
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="删除文档失败，请稍后重试",
+        )

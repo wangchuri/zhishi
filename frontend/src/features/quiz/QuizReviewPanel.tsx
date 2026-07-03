@@ -1,5 +1,6 @@
 import type { QuizReviewItem } from "@/types"
 import { CitationCard } from "@/components/blocks/CitationCard"
+import { MarkdownWithMath } from "@/components/blocks/MarkdownWithMath"
 import { Badge } from "@/components/ui/badge"
 import { cn } from "@/lib/utils"
 
@@ -26,7 +27,9 @@ export function QuizReviewPanel({ items, onAskTutor, className }: QuizReviewPane
           className="rounded-lg border border-line-soft bg-surface-soft p-4 space-y-2"
         >
           <div className="flex items-start justify-between gap-2">
-            <div className="text-body text-ink-primary font-medium leading-snug">{item.stem}</div>
+            <MarkdownWithMath className="text-body font-medium leading-snug flex-1 min-w-0">
+              {item.stem}
+            </MarkdownWithMath>
             <Badge variant={item.status === "unknown" ? "warning" : "danger"}>
               {item.status === "unknown" ? "我不会" : "答错"}
             </Badge>
@@ -36,7 +39,9 @@ export function QuizReviewPanel({ items, onAskTutor, className }: QuizReviewPane
           </div>
           {item.explanation && (
             <div className="text-small text-ink-primary bg-surface rounded-md p-2.5 border border-line-soft">
-              {item.explanation}
+              <MarkdownWithMath proseClass="prose prose-sm max-w-none prose-p:my-0 prose-p:text-ink-primary">
+                {item.explanation}
+              </MarkdownWithMath>
             </div>
           )}
           {item.citation && (

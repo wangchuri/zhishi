@@ -30,9 +30,11 @@ def create_session(
     current_user: dict = Depends(get_current_active_user),
 ):
     """从题目创建辅导会话，绑定 question_provenance 分段上下文。"""
-    return tutor_service.create_tutor_session(
+    result = tutor_service.create_tutor_session(
         db=db, user_id=current_user["user_id"], payload=payload
     )
+    db.commit()
+    return result
 
 
 @router.get("/sessions/{session_id}", response_model=TutorSessionOut)
@@ -61,13 +63,20 @@ def send_message(
     user_id = current_user["user_id"]
 
     if payload.stream:
+
+        def stream_with_commit():
+            try:
+                yield from tutor_service.stream_tutor_message(
+                    db=db,
+                    user_id=user_id,
+                    session_id=session_id,
+                    content=payload.content,
+                )
+            finally:
+                db.commit()
+
         return StreamingResponse(
-            tutor_service.stream_tutor_message(
-                db=db,
-                user_id=user_id,
-                session_id=session_id,
-                content=payload.content,
-            ),
+            stream_with_commit(),
             media_type="text/event-stream",
             headers={
                 "Cache-Control": "no-cache",
@@ -76,9 +85,11 @@ def send_message(
             },
         )
 
-    return tutor_service.send_tutor_message(
+    result = tutor_service.send_tutor_message(
         db=db,
         user_id=user_id,
         session_id=session_id,
         content=payload.content,
     )
+    db.commit()
+    return result

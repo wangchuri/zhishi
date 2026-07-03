@@ -17,8 +17,9 @@ if str(_BACKEND_ROOT) not in sys.path:
 from app.core import paddle_env  # noqa: F401
 
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 import logging
 
 from lekt_service import LEKTService
@@ -81,6 +82,18 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception):
+    """确保未捕获异常也返回 JSON，便于 CORSMiddleware 附加 CORS 头。"""
+    if isinstance(exc, HTTPException):
+        raise exc
+    logger.exception("Unhandled error %s %s", request.method, request.url.path)
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "服务器内部错误，请稍后重试"},
+    )
 
 
 def _get_lekt() -> LEKTService:

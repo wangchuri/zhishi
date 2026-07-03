@@ -1,6 +1,7 @@
 from datetime import datetime
-from typing import List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.models import GlobalQuestion, QuizAnswer, QuizSession, QuizSessionQuestion
@@ -144,3 +145,85 @@ def complete_session(db: Session, session: QuizSession) -> QuizSession:
     session.finished_at = datetime.utcnow()
     db.flush()
     return session
+
+
+def count_session_questions(db: Session, session_id: str) -> int:
+    return (
+        db.query(QuizSessionQuestion)
+        .filter(QuizSessionQuestion.session_id == session_id)
+        .count()
+    )
+
+
+def list_recent_sessions(
+    db: Session, user_id: int, limit: int = 5
+) -> List[QuizSession]:
+    return (
+        db.query(QuizSession)
+        .filter(QuizSession.user_id == user_id)
+        .order_by(QuizSession.started_at.desc())
+        .limit(limit)
+        .all()
+    )
+
+
+def list_recent_answers(
+    db: Session, user_id: int, limit: int = 10
+) -> List[Tuple[QuizAnswer, GlobalQuestion, QuizSession]]:
+    return (
+        db.query(QuizAnswer, GlobalQuestion, QuizSession)
+        .join(GlobalQuestion, QuizAnswer.question_id == GlobalQuestion.id)
+        .join(QuizSession, QuizAnswer.session_id == QuizSession.id)
+        .filter(QuizAnswer.user_id == user_id)
+        .order_by(QuizAnswer.answered_at.desc())
+        .limit(limit)
+        .all()
+    )
+
+
+def get_user_answer_stats_for_questions(
+    db: Session, user_id: int, question_ids: List[str]
+) -> Dict[str, Tuple[Optional[str], int]]:
+    """Return question_id -> (latest_status, attempt_count) for the user."""
+    if not question_ids:
+        return {}
+
+    attempt_rows = (
+        db.query(QuizAnswer.question_id, func.count(QuizAnswer.id))
+        .filter(
+            QuizAnswer.user_id == user_id,
+            QuizAnswer.question_id.in_(question_ids),
+        )
+        .group_by(QuizAnswer.question_id)
+        .all()
+    )
+    attempt_map = {qid: int(cnt) for qid, cnt in attempt_rows}
+
+    latest_subq = (
+        db.query(
+            QuizAnswer.question_id.label("question_id"),
+            func.max(QuizAnswer.answered_at).label("max_answered_at"),
+        )
+        .filter(
+            QuizAnswer.user_id == user_id,
+            QuizAnswer.question_id.in_(question_ids),
+        )
+        .group_by(QuizAnswer.question_id)
+        .subquery()
+    )
+    latest_rows = (
+        db.query(QuizAnswer.question_id, QuizAnswer.status)
+        .join(
+            latest_subq,
+            (QuizAnswer.question_id == latest_subq.c.question_id)
+            & (QuizAnswer.answered_at == latest_subq.c.max_answered_at),
+        )
+        .filter(QuizAnswer.user_id == user_id)
+        .all()
+    )
+    latest_map = {qid: status for qid, status in latest_rows}
+
+    return {
+        qid: (latest_map.get(qid), attempt_map.get(qid, 0))
+        for qid in question_ids
+    }

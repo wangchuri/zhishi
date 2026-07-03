@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react"
-import { Search, Sparkles, Plus, Bell, PanelRight, LogOut } from "lucide-react"
+import { Search, PanelRight, LogOut } from "lucide-react"
 import { useLocation, useNavigate } from "react-router-dom"
 import { useUI } from "@/context/UIContext"
 import { useAuth } from "@/context/AuthContext"
@@ -70,26 +70,6 @@ export function Topbar() {
 
       {/* 右侧：操作 */}
       <div className="flex items-center gap-2 shrink-0">
-        <button className="hidden md:inline-flex items-center gap-1.5 h-9 px-3.5 rounded-md bg-gradient-primary text-white text-caption font-medium shadow-primary hover:shadow-lg hover:-translate-y-0.5 active:scale-[0.98] transition-all">
-          <Sparkles className="w-4 h-4" strokeWidth={2} />
-          AI 搜索
-        </button>
-
-        <button
-          className="inline-flex items-center justify-center w-9 h-9 rounded-md text-ink-secondary hover:bg-primary-subtle hover:text-primary transition-colors"
-          aria-label="新建"
-        >
-          <Plus className="w-[18px] h-[18px]" strokeWidth={2} />
-        </button>
-
-        <button
-          className="relative inline-flex items-center justify-center w-9 h-9 rounded-md text-ink-secondary hover:bg-primary-subtle hover:text-primary transition-colors"
-          aria-label="通知"
-        >
-          <Bell className="w-[18px] h-[18px]" strokeWidth={2} />
-          <span className="absolute top-2 right-2 w-1.5 h-1.5 rounded-full bg-danger" />
-        </button>
-
         <button
           onClick={toggleRightPanel}
           className={cn(

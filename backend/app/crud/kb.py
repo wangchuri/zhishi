@@ -1,5 +1,6 @@
 from typing import List, Optional, Tuple
 
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.models import Document, GlobalDocument, KbCollection
@@ -214,6 +215,10 @@ def get_document_by_id_or_dify(
     )
 
 
+def get_document_by_id_internal(db: Session, document_id: str) -> Optional[Document]:
+    return db.query(Document).filter(Document.id == document_id).first()
+
+
 def get_document_by_batch_id(
     db: Session, user_id: int, batch_id: str
 ) -> Optional[Document]:
@@ -225,6 +230,61 @@ def get_document_by_batch_id(
         )
         .first()
     )
+
+
+def delete_related_for_document(db: Session, document_id: str) -> None:
+    """删除文档前清理 segments、题目关联、辅导会话等外键引用。"""
+    from app.models import (
+        DocumentSegment,
+        QuestionProvenance,
+        QuizSession,
+        TutorSession,
+        UserQuestionRef,
+    )
+
+    segment_ids = [
+        row[0]
+        for row in db.query(DocumentSegment.id)
+        .filter(DocumentSegment.document_id == document_id)
+        .all()
+    ]
+
+    db.query(TutorSession).filter(TutorSession.document_id == document_id).delete(
+        synchronize_session=False
+    )
+    db.query(UserQuestionRef).filter(UserQuestionRef.document_id == document_id).delete(
+        synchronize_session=False
+    )
+
+    prov_query = db.query(QuestionProvenance).filter(
+        QuestionProvenance.document_id == document_id
+    )
+    if segment_ids:
+        prov_query = db.query(QuestionProvenance).filter(
+            or_(
+                QuestionProvenance.document_id == document_id,
+                QuestionProvenance.segment_id.in_(segment_ids),
+            )
+        )
+    prov_query.delete(synchronize_session=False)
+
+    db.query(DocumentSegment).filter(DocumentSegment.document_id == document_id).delete(
+        synchronize_session=False
+    )
+    db.query(QuizSession).filter(QuizSession.document_id == document_id).update(
+        {QuizSession.document_id: None},
+        synchronize_session=False,
+    )
+    db.flush()
+
+
+def delete_provenance_for_global(db: Session, global_document_id: str) -> None:
+    from app.models import QuestionProvenance
+
+    db.query(QuestionProvenance).filter(
+        QuestionProvenance.global_document_id == global_document_id
+    ).delete(synchronize_session=False)
+    db.flush()
 
 
 def delete_document_row(db: Session, document: Document) -> Optional[str]:

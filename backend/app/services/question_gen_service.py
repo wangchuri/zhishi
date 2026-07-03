@@ -10,11 +10,17 @@ from typing import Callable, List, Optional, Tuple
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
+from app.core.config import MAX_QUESTIONS_PER_DOCUMENT, QUESTION_GEN_ASYNC
+from app.core.database import SessionLocal
+from app.core.job_runner import run_in_background
+
 from app.crud import kb as kb_crud
 from app.crud import question as question_crud
+from app.crud import quiz as quiz_crud
 from app.crud import segment as segment_crud
 from app.models import Document, DocumentSegment, UserQuestionRef
 from app.schemas.question import (
+    PageQuestionResponse,
     QuestionDetailOut,
     QuestionGenerateResponse,
     QuestionListOut,
@@ -22,11 +28,12 @@ from app.schemas.question import (
     QuestionOut,
     ProvenanceOut,
 )
+from app.services.page_service import get_pages_by_numbers
 from app.services.question_hash import compute_content_hash
+from app.services.llm_runner import llm_predict_no_stream
 
 logger = logging.getLogger(__name__)
 
-MAX_QUESTIONS_PER_DOCUMENT = 20
 QUESTIONS_PER_SEGMENT = 1
 EXCERPT_MAX_LEN = 500
 
@@ -35,7 +42,13 @@ SYSTEM_PROMPT = """你是知拾学习助手，根据给定文档段落生成单�
 {"stem":"题干","options":[{"key":"A","text":"..."},{"key":"B","text":"..."},{"key":"C","text":"..."},{"key":"D","text":"..."}],"answer":"A","explanation":"解析","tags":["标签"]}
 要求：1-2 道单选题，答案必须是 A/B/C/D 之一，不要输出 markdown 代码块。"""
 
+EXTRACT_SYSTEM_PROMPT = """你是知拾学习助手。给定教材页面内容，识别并提取其中自带的练习题（优先单选题）。
+严格输出 JSON 数组，每项格式：
+{"stem":"题干","options":[{"key":"A","text":"..."},{"key":"B","text":"..."},{"key":"C","text":"..."},{"key":"D","text":"..."}],"answer":"A","explanation":"解析","tags":["标签"]}
+若页面无现成题目，返回空数组 []。不要输出 markdown 代码块。"""
+
 QuestionProvider = Callable[[DocumentSegment], List[dict]]
+PageProvider = Callable[[dict], List[dict]]
 
 _llm_instance = None
 
@@ -108,6 +121,104 @@ def _normalize_question(raw: dict) -> Optional[dict]:
     }
 
 
+def _template_questions_for_page(page: dict) -> List[dict]:
+    title = page.get("title") or f"第 {page.get('page_number', '?')} 页"
+    snippet = page["content"][:120].replace("\n", " ").strip()
+    return [
+        {
+            "stem": f"关于「{title}」，以下哪项最符合原文内容？",
+            "options": [
+                {"key": "A", "text": snippet or "与原文核心内容一致"},
+                {"key": "B", "text": "与原文无关的干扰项"},
+                {"key": "C", "text": "片面或不完整的描述"},
+                {"key": "D", "text": "明显错误的描述"},
+            ],
+            "answer": "A",
+            "explanation": "请参考原文页面。",
+            "tags": ["自动生成", title],
+        }
+    ]
+
+
+def _llm_generate_for_page(page: dict, *, count: int = 1) -> List[dict]:
+    llm = _get_llm()
+    if not llm:
+        return _template_questions_for_page(page)
+
+    title = page.get("title") or f"第 {page.get('page_number', '?')} 页"
+    user_input = (
+        f"页面：{title}\n\n页面内容：\n{page['content'][:3000]}\n\n"
+        f"请生成 {count} 道单选题，覆盖本页核心知识点。"
+    )
+    try:
+        resp = llm_predict_no_stream(
+            llm,
+            input_text=user_input,
+            sys_prompt=SYSTEM_PROMPT,
+            format="json",
+            temperature=0.3,
+        )
+        content = resp.get("content", "") if isinstance(resp, dict) else str(resp)
+        items = _extract_json_array(content) or []
+        normalized = [_normalize_question(item) for item in items]
+        result = [q for q in normalized if q][:count]
+        if result:
+            return result
+    except Exception:
+        logger.warning(
+            "LLM 按页出题失败，回退模板: page=%s",
+            page.get("page_number"),
+            exc_info=True,
+        )
+    return _template_questions_for_page(page)
+
+
+def _llm_extract_for_page(page: dict) -> List[dict]:
+    llm = _get_llm()
+    if not llm:
+        return []
+
+    title = page.get("title") or f"第 {page.get('page_number', '?')} 页"
+    user_input = f"页面：{title}\n\n页面内容：\n{page['content'][:4000]}\n\n请提取本页自带题目。"
+    try:
+        resp = llm_predict_no_stream(
+            llm,
+            input_text=user_input,
+            sys_prompt=EXTRACT_SYSTEM_PROMPT,
+            format="json",
+            temperature=0.2,
+        )
+        content = resp.get("content", "") if isinstance(resp, dict) else str(resp)
+        items = _extract_json_array(content) or []
+        normalized = [_normalize_question(item) for item in items]
+        return [q for q in normalized if q]
+    except Exception:
+        logger.warning(
+            "LLM 按页提取失败: page=%s", page.get("page_number"), exc_info=True
+        )
+        return []
+
+
+def batch_generate_questions(
+    pages: List[dict],
+    *,
+    questions_per_page: int = 1,
+    provider: Optional[PageProvider] = None,
+) -> List[tuple[dict, dict]]:
+    """
+    批量按页出题 — 可供 Tina Agent 工具注册。
+    返回 [(page_dict, question_dict), ...]
+    """
+    gen = provider or (lambda p: _llm_generate_for_page(p, count=questions_per_page))
+    results: List[tuple[dict, dict]] = []
+    for page in pages:
+        for qdata in gen(page)[:questions_per_page]:
+            normalized = _normalize_question(qdata) if isinstance(qdata, dict) else None
+            if normalized:
+                results.append((page, normalized))
+    return results
+
+
 def _template_questions(segment: DocumentSegment) -> List[dict]:
     title = segment.title or "本节内容"
     snippet = segment.content[:120].replace("\n", " ").strip()
@@ -138,12 +249,12 @@ def _llm_generate(segment: DocumentSegment) -> List[dict]:
         f"请生成 {QUESTIONS_PER_SEGMENT} 道单选题。"
     )
     try:
-        resp = llm.predict(
+        resp = llm_predict_no_stream(
+            llm,
             input_text=user_input,
             sys_prompt=SYSTEM_PROMPT,
             format="json",
             temperature=0.3,
-            stream=False,
         )
         content = resp.get("content", "") if isinstance(resp, dict) else str(resp)
         items = _extract_json_array(content) or []
@@ -172,6 +283,54 @@ def _persist_question(
     document: Document,
     segment: DocumentSegment,
     qdata: dict,
+    source_type: str = "generated",
+) -> Tuple[bool, bool]:
+    """返回 (created, reused)。"""
+    return _persist_question_core(
+        db,
+        user_id=user_id,
+        document=document,
+        qdata=qdata,
+        source_type=source_type,
+        segment_id=segment.id,
+        excerpt=_make_excerpt(segment),
+    )
+
+
+def _persist_question_from_page(
+    db: Session,
+    *,
+    user_id: int,
+    document: Document,
+    page: dict,
+    qdata: dict,
+    source_type: str = "generated",
+) -> Tuple[bool, bool]:
+    title = page.get("title") or f"第 {page.get('page_number', '?')} 页"
+    excerpt = page["content"].strip()
+    if len(excerpt) > EXCERPT_MAX_LEN:
+        excerpt = excerpt[:EXCERPT_MAX_LEN] + "…"
+    excerpt = f"[{title}] {excerpt}"
+    return _persist_question_core(
+        db,
+        user_id=user_id,
+        document=document,
+        qdata=qdata,
+        source_type=source_type,
+        segment_id=page.get("segment_id"),
+        excerpt=excerpt,
+    )
+
+
+def _persist_question_core(
+    db: Session,
+    *,
+    user_id: int,
+    document: Document,
+    qdata: dict,
+    source_type: str,
+    segment_id: Optional[str],
+    excerpt: str,
 ) -> Tuple[bool, bool]:
     """返回 (created, reused)。"""
     options_json = json.dumps(qdata["options"], ensure_ascii=False)
@@ -193,18 +352,30 @@ def _persist_question(
             answer=qdata["answer"],
             explanation=qdata.get("explanation"),
             tags_json=tags_json,
-            source_type="generated",
+            source_type=source_type,
         )
         created = True
         reused = False
 
-    if not question_crud.get_provenance_for_segment(db, question.id, segment.id):
+    if segment_id:
+        if not question_crud.get_provenance_for_segment(db, question.id, segment_id):
+            question_crud.create_provenance(
+                db,
+                question_id=question.id,
+                document_id=document.id,
+                segment_id=segment_id,
+                excerpt=excerpt,
+                global_document_id=document.global_document_id,
+            )
+    elif not question_crud.get_provenance_for_document_excerpt(
+        db, question.id, document.id, excerpt
+    ):
         question_crud.create_provenance(
             db,
             question_id=question.id,
             document_id=document.id,
-            segment_id=segment.id,
-            excerpt=_make_excerpt(segment),
+            segment_id=None,
+            excerpt=excerpt,
             global_document_id=document.global_document_id,
         )
 
@@ -214,7 +385,7 @@ def _persist_question(
             user_id=user_id,
             question_id=question.id,
             document_id=document.id,
-            segment_id=segment.id,
+            segment_id=segment_id,
             collection_id=document.collection_id,
         )
 
@@ -228,6 +399,15 @@ def _validate_document_for_generation(doc: Optional[Document]) -> Document:
         raise HTTPException(status_code=400, detail="仅学习区文档可出题")
     if doc.segment_status != "completed":
         raise HTTPException(status_code=400, detail="文档分段未完成，无法出题")
+    return doc
+
+
+def _validate_document_for_page_ops(doc: Optional[Document]) -> Document:
+    """按页出题/提取：仅需学习区 + 可读 parsed 文本，不依赖 segment。"""
+    if not doc:
+        raise HTTPException(status_code=404, detail="文档不存在")
+    if doc.zone != "study":
+        raise HTTPException(status_code=400, detail="仅学习区文档可出题")
     return doc
 
 
@@ -338,7 +518,194 @@ def generate_questions(
         raise
 
 
-def _to_question_out(ref, question) -> QuestionOut:
+def _start_question_gen_thread(worker) -> None:
+    run_in_background(worker, name="question-gen")
+
+
+def schedule_generate_questions(
+    db: Session,
+    user_id: int,
+    document_id: Optional[str] = None,
+    segment_ids: Optional[List[str]] = None,
+) -> QuestionGenerateResponse:
+    """校验后立即返回 processing，后台线程执行出题。"""
+    document: Optional[Document] = None
+    target_doc_id: Optional[str] = None
+
+    if segment_ids:
+        for sid in segment_ids:
+            seg = db.query(DocumentSegment).filter(DocumentSegment.id == sid).first()
+            if not seg:
+                raise HTTPException(status_code=404, detail=f"分段不存在: {sid}")
+            doc = kb_crud.get_document_by_id_or_dify(db, user_id, seg.document_id)
+            doc = _validate_document_for_generation(doc)
+            if document is None:
+                document = doc
+            elif document.id != doc.id:
+                raise HTTPException(
+                    status_code=400, detail="segment_ids 必须属于同一文档"
+                )
+        target_doc_id = document.id if document else None
+    else:
+        document = kb_crud.get_document_by_id_or_dify(db, user_id, document_id)
+        document = _validate_document_for_generation(document)
+        target_doc_id = document.id
+
+    document.question_gen_status = "processing"
+    db.flush()
+
+    def worker() -> None:
+        wdb = SessionLocal()
+        try:
+            generate_questions(
+                wdb,
+                user_id=user_id,
+                document_id=document_id,
+                segment_ids=segment_ids,
+            )
+            wdb.commit()
+        except Exception:
+            wdb.rollback()
+            logger.exception(
+                "async generate_questions failed: document_id=%s", target_doc_id
+            )
+            try:
+                doc = kb_crud.get_document_by_id_internal(wdb, target_doc_id)
+                if doc:
+                    doc.question_gen_status = "failed"
+                    wdb.commit()
+            except Exception:
+                wdb.rollback()
+        finally:
+            wdb.close()
+
+    _start_question_gen_thread(worker)
+    return QuestionGenerateResponse(
+        document_id=target_doc_id,
+        question_gen_status="processing",
+        questions_created=0,
+        questions_reused=0,
+        total_questions=0,
+    )
+
+
+def schedule_generate_from_pages(
+    db: Session,
+    user_id: int,
+    document_id: str,
+    page_numbers: List[int],
+    questions_per_page: int = 1,
+    provider: Optional[PageProvider] = None,
+) -> PageQuestionResponse:
+    doc = kb_crud.get_document_by_id_or_dify(db, user_id, document_id)
+    doc = _validate_document_for_page_ops(doc)
+    get_pages_by_numbers(db, doc, page_numbers)
+
+    doc.question_gen_status = "processing"
+    db.flush()
+
+    def worker() -> None:
+        wdb = SessionLocal()
+        try:
+            generate_from_pages(
+                wdb,
+                user_id=user_id,
+                document_id=doc.id,
+                page_numbers=page_numbers,
+                questions_per_page=questions_per_page,
+                provider=provider,
+            )
+            wdb.commit()
+        except Exception:
+            wdb.rollback()
+            logger.exception(
+                "async generate_from_pages failed: document_id=%s", doc.id
+            )
+            try:
+                failed = kb_crud.get_document_by_id_internal(wdb, doc.id)
+                if failed:
+                    failed.question_gen_status = "failed"
+                    wdb.commit()
+            except Exception:
+                wdb.rollback()
+        finally:
+            wdb.close()
+
+    _start_question_gen_thread(worker)
+    return PageQuestionResponse(
+        document_id=doc.id,
+        page_numbers=page_numbers,
+        mode="generate",
+        question_gen_status="processing",
+        questions_created=0,
+        questions_reused=0,
+        total_questions=0,
+    )
+
+
+def schedule_extract_from_pages(
+    db: Session,
+    user_id: int,
+    document_id: str,
+    page_numbers: List[int],
+    provider: Optional[PageProvider] = None,
+) -> PageQuestionResponse:
+    doc = kb_crud.get_document_by_id_or_dify(db, user_id, document_id)
+    doc = _validate_document_for_page_ops(doc)
+    get_pages_by_numbers(db, doc, page_numbers)
+
+    doc.question_gen_status = "processing"
+    db.flush()
+
+    def worker() -> None:
+        wdb = SessionLocal()
+        try:
+            extract_from_pages(
+                wdb,
+                user_id=user_id,
+                document_id=doc.id,
+                page_numbers=page_numbers,
+                provider=provider,
+            )
+            wdb.commit()
+        except Exception:
+            wdb.rollback()
+            logger.exception(
+                "async extract_from_pages failed: document_id=%s", doc.id
+            )
+            try:
+                failed = kb_crud.get_document_by_id_internal(wdb, doc.id)
+                if failed:
+                    failed.question_gen_status = "failed"
+                    wdb.commit()
+            except Exception:
+                wdb.rollback()
+        finally:
+            wdb.close()
+
+    _start_question_gen_thread(worker)
+    return PageQuestionResponse(
+        document_id=doc.id,
+        page_numbers=page_numbers,
+        mode="extract",
+        question_gen_status="processing",
+        questions_created=0,
+        questions_reused=0,
+        total_questions=0,
+    )
+
+
+def is_question_gen_async() -> bool:
+    return QUESTION_GEN_ASYNC
+
+
+def _to_question_out(
+    ref,
+    question,
+    *,
+    user_answer_status: Optional[str] = None,
+    attempt_count: int = 0,
+) -> QuestionOut:
     options_raw = question_crud.parse_options_json(question.options)
     options = (
         [QuestionOption(**o) for o in options_raw] if options_raw else None
@@ -356,6 +723,8 @@ def _to_question_out(ref, question) -> QuestionOut:
         document_id=ref.document_id,
         collection_id=ref.collection_id,
         created_at=question.created_at,
+        user_answer_status=user_answer_status,
+        attempt_count=attempt_count,
     )
 
 
@@ -374,13 +743,168 @@ def list_questions(
     rows = question_crud.list_user_questions(
         db, user_id, document_id=document_id, collection_id=collection_id
     )
-    questions = [_to_question_out(ref, q) for ref, q in rows]
+    question_ids = [q.id for _, q in rows]
+    stats_map = quiz_crud.get_user_answer_stats_for_questions(
+        db, user_id, question_ids
+    )
+
+    questions: List[QuestionOut] = []
+    answered_count = 0
+    correct_count = 0
+    wrong_count = 0
+    unknown_count = 0
+
+    for ref, q in rows:
+        latest_status, attempt_count = stats_map.get(q.id, (None, 0))
+        questions.append(
+            _to_question_out(
+                ref,
+                q,
+                user_answer_status=latest_status,
+                attempt_count=attempt_count,
+            )
+        )
+        if attempt_count > 0:
+            answered_count += 1
+            if latest_status == "correct":
+                correct_count += 1
+            elif latest_status == "wrong":
+                wrong_count += 1
+            elif latest_status == "unknown":
+                unknown_count += 1
+
     return QuestionListOut(
         questions=questions,
         total=len(questions),
         document_id=document_id,
         collection_id=collection_id,
+        answered_count=answered_count,
+        correct_count=correct_count,
+        wrong_count=wrong_count,
+        unknown_count=unknown_count,
     )
+
+
+def generate_from_pages(
+    db: Session,
+    user_id: int,
+    document_id: str,
+    page_numbers: List[int],
+    questions_per_page: int = 1,
+    provider: Optional[PageProvider] = None,
+) -> PageQuestionResponse:
+    """模式 B：对选中页批量 AI 出题。"""
+    doc = kb_crud.get_document_by_id_or_dify(db, user_id, document_id)
+    doc = _validate_document_for_page_ops(doc)
+
+    pages = get_pages_by_numbers(db, doc, page_numbers)
+    created_count = 0
+    reused_count = 0
+    total_questions = 0
+
+    doc.question_gen_status = "processing"
+    db.flush()
+
+    try:
+        pairs = batch_generate_questions(
+            pages,
+            questions_per_page=questions_per_page,
+            provider=provider,
+        )
+        for page, qdata in pairs:
+            if total_questions >= MAX_QUESTIONS_PER_DOCUMENT:
+                break
+            created, reused = _persist_question_from_page(
+                db,
+                user_id=user_id,
+                document=doc,
+                page=page,
+                qdata=qdata,
+                source_type="generated",
+            )
+            if created:
+                created_count += 1
+            if reused:
+                reused_count += 1
+            total_questions += 1
+
+        doc.question_gen_status = "completed" if total_questions > 0 else "failed"
+        db.flush()
+        return PageQuestionResponse(
+            document_id=doc.id,
+            page_numbers=page_numbers,
+            mode="generate",
+            question_gen_status=doc.question_gen_status,
+            questions_created=created_count,
+            questions_reused=reused_count,
+            total_questions=total_questions,
+        )
+    except Exception:
+        doc.question_gen_status = "failed"
+        db.flush()
+        raise
+
+
+def extract_from_pages(
+    db: Session,
+    user_id: int,
+    document_id: str,
+    page_numbers: List[int],
+    provider: Optional[PageProvider] = None,
+) -> PageQuestionResponse:
+    """模式 A：从选中页提取教材自带题目。"""
+    doc = kb_crud.get_document_by_id_or_dify(db, user_id, document_id)
+    doc = _validate_document_for_page_ops(doc)
+
+    pages = get_pages_by_numbers(db, doc, page_numbers)
+    extract_fn = provider or _llm_extract_for_page
+    created_count = 0
+    reused_count = 0
+    total_questions = 0
+
+    doc.question_gen_status = "processing"
+    db.flush()
+
+    try:
+        for page in pages:
+            if total_questions >= MAX_QUESTIONS_PER_DOCUMENT:
+                break
+            raw_questions = extract_fn(page)
+            for qdata in raw_questions:
+                if total_questions >= MAX_QUESTIONS_PER_DOCUMENT:
+                    break
+                normalized = _normalize_question(qdata) if isinstance(qdata, dict) else None
+                if not normalized:
+                    continue
+                created, reused = _persist_question_from_page(
+                    db,
+                    user_id=user_id,
+                    document=doc,
+                    page=page,
+                    qdata=normalized,
+                    source_type="extracted",
+                )
+                if created:
+                    created_count += 1
+                if reused:
+                    reused_count += 1
+                total_questions += 1
+
+        doc.question_gen_status = "completed" if total_questions > 0 else "failed"
+        db.flush()
+        return PageQuestionResponse(
+            document_id=doc.id,
+            page_numbers=page_numbers,
+            mode="extract",
+            question_gen_status=doc.question_gen_status,
+            questions_created=created_count,
+            questions_reused=reused_count,
+            total_questions=total_questions,
+        )
+    except Exception:
+        doc.question_gen_status = "failed"
+        db.flush()
+        raise
 
 
 def get_question_detail(

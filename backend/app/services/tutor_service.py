@@ -23,6 +23,7 @@ from app.schemas.tutor import (
     TutorSessionOut,
 )
 from app.utils.tina_loader import tina_env_path
+from app.services.llm_runner import agent_predict_no_stream, iter_agent_predict_stream
 
 logger = logging.getLogger(__name__)
 
@@ -117,6 +118,8 @@ def _build_system_prompt(
         f"{SOCRATIC_RULES}\n"
         f"## 当前辅导题目\n{_format_question_block(question)}\n"
         f"{user_part}"
+        f"## 内部参考（仅供你判断，禁止直接告诉学习者）\n"
+        f"**正确答案**：{question.answer or '（未知）'}\n\n"
         f"## 教材分段（辅导依据）\n"
         f"**章节**：{title}\n\n"
         f"{segment_text}\n"
@@ -196,16 +199,21 @@ def _resolve_quiz_context(
     if quiz_session_id:
         session = quiz_crud.get_session(db, quiz_session_id, user_id)
         if not session:
-            raise HTTPException(status_code=404, detail="刷题会话不存在")
-        sq = quiz_crud.get_session_question(db, quiz_session_id, question_id)
-        if not sq:
-            raise HTTPException(status_code=400, detail="题目不在该刷题会话中")
-        document_id = session.document_id
-        if not quiz_answer_id:
-            ans = quiz_crud.get_answer(db, quiz_session_id, question_id)
-            if ans:
-                user_answer = ans.user_answer
-                unknown = ans.status == "unknown"
+            logger.warning(
+                "tutor: quiz session %s not found for user %s, continuing without quiz context",
+                quiz_session_id,
+                user_id,
+            )
+        else:
+            sq = quiz_crud.get_session_question(db, quiz_session_id, question_id)
+            if not sq:
+                raise HTTPException(status_code=400, detail="题目不在该刷题会话中")
+            document_id = session.document_id
+            if not quiz_answer_id:
+                ans = quiz_crud.get_answer(db, quiz_session_id, question_id)
+                if ans:
+                    user_answer = ans.user_answer
+                    unknown = ans.status == "unknown"
 
     return document_id, user_answer, unknown
 
@@ -257,11 +265,14 @@ class SocraticTutorAgent:
                     part = msg.get("content", "")
                     if role in ("user", "assistant"):
                         self._agent.add_message(role=role, content=part)
-            result = self._agent.predict(instruction=message, stream=False)
+            result = agent_predict_no_stream(self._agent, instruction=message)
             if isinstance(result, dict):
                 return result.get("content", "") or str(result)
             if hasattr(result, "get"):
                 return result.get("content", "") or str(result)
+            content = getattr(result, "content", None)
+            if content:
+                return content
             return str(result)
         except Exception as e:
             logger.error(f"SocraticTutorAgent.predict_sync 错误: {e}")
@@ -274,25 +285,13 @@ class SocraticTutorAgent:
             yield {"role": "assistant", "content": "抱歉，AI 辅导服务暂时不可用，请稍后重试。"}
             return
         try:
-            self._agent.clear_messages()
-            self._agent.context_manager.set_system_message(self.system_prompt)
-            if history:
-                for msg in history:
-                    role = msg.get("role", "user")
-                    part = msg.get("content", "")
-                    if role in ("user", "assistant"):
-                        self._agent.add_message(role=role, content=part)
-            for chunk in self._agent.predict(instruction=message, stream=True):
-                try:
-                    yield {
-                        "role": chunk.get("role", "assistant"),
-                        "content": chunk.get("content", ""),
-                    }
-                except AttributeError:
-                    if isinstance(chunk, dict):
-                        yield chunk
-                    else:
-                        yield {"role": "assistant", "content": str(chunk)}
+            for chunk in iter_agent_predict_stream(
+                self._agent,
+                message,
+                history=history,
+                system_prompt=self.system_prompt,
+            ):
+                yield chunk
         except Exception as e:
             logger.error(f"SocraticTutorAgent.predict_stream 错误: {e}")
             yield {"role": "assistant", "content": f"抱歉，生成辅导回复时出错了：{str(e)}"}

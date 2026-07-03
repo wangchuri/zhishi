@@ -218,9 +218,6 @@ function PathCard({
         </div>
 
         <div className="flex flex-col gap-2 shrink-0">
-          <Button variant="primary" size="sm">
-            开始学习
-          </Button>
           <Button variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); onSelect() }}>
             查看详情
             <ArrowRight className="w-3.5 h-3.5" strokeWidth={2} />
@@ -279,11 +276,6 @@ function TaskDetail({ task }: { task: PathTask }) {
           )}
         </div>
       </section>
-
-      <Button variant="primary" size="md" className="w-full">
-        开始学习
-        <ArrowRight className="w-4 h-4" strokeWidth={2} />
-      </Button>
     </div>
   )
 }

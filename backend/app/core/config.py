@@ -5,7 +5,11 @@ import urllib.parse
 from pathlib import Path
 from dotenv import load_dotenv
 
+from app.core.app_config import get_app_config
+
 load_dotenv()
+
+_app_cfg = get_app_config()
 
 SECRET_KEY = os.getenv("SECRET_KEY", "your-very-secret-key")
 ALGORITHM = os.getenv("ALGORITHM", "HS256")
@@ -75,20 +79,71 @@ WELCOME_DOC_PATH = os.getenv("WELCOME_DOC_PATH", "docs/欢迎使用知拾.md")
 USE_OSS = os.getenv("USE_OSS", "false").lower() == "true"
 LOCAL_STORAGE_DIR = os.getenv("LOCAL_STORAGE_DIR", "storage")
 
-# 上传文件大小上限（字节）；0 表示不限制。可通过环境变量 DEBUG_MAX_UPLOAD_SIZE 覆盖
-DEBUG_MAX_UPLOAD_SIZE = int(os.getenv("DEBUG_MAX_UPLOAD_SIZE", "0"))
+# 上传文件大小上限（字节）；0 表示不限制
+# 优先 DEBUG_MAX_UPLOAD_SIZE 环境变量；否则 config.json upload_max_size_mb
+_env_upload = os.getenv("DEBUG_MAX_UPLOAD_SIZE")
+if _env_upload is not None:
+    DEBUG_MAX_UPLOAD_SIZE = int(_env_upload)
+elif _app_cfg.upload_max_size_mb > 0:
+    DEBUG_MAX_UPLOAD_SIZE = _app_cfg.upload_max_size_mb * 1024 * 1024
+else:
+    DEBUG_MAX_UPLOAD_SIZE = 0
 
 # PDF 解析最多读取页数；0 表示不限制（大文件可设如 200 以控制内存/耗时）
-PDF_MAX_PAGES = int(os.getenv("PDF_MAX_PAGES", "0"))
+PDF_MAX_PAGES = int(os.getenv("PDF_MAX_PAGES", str(_app_cfg.pdf_max_pages)))
 
 # 扫描型 PDF OCR 最多处理页数；0 表示全页（大 PDF 可设如 50 控制耗时/API 配额）
-PDF_OCR_MAX_PAGES = int(os.getenv("PDF_OCR_MAX_PAGES", "0"))
+PDF_OCR_MAX_PAGES = int(
+    os.getenv("PDF_OCR_MAX_PAGES", str(_app_cfg.pdf_ocr_max_pages))
+)
 
 # PDF 页渲染 DPI（OCR 用）；过高可能导致图片超百度 OCR 4MB 限制
-PDF_OCR_RENDER_DPI = int(os.getenv("PDF_OCR_RENDER_DPI", "150"))
+PDF_OCR_RENDER_DPI = int(
+    os.getenv("PDF_OCR_RENDER_DPI", str(_app_cfg.pdf_ocr_render_dpi))
+)
+
+# OCR 单文档最大并行页数（config.json ocr_max_parallel_pages）
+OCR_MAX_PARALLEL_PAGES = max(
+    1,
+    int(os.getenv("OCR_MAX_PARALLEL_PAGES", str(_app_cfg.ocr_max_parallel_pages))),
+)
+
+# OCR 影子文档按页存放的子目录名（config.json ocr_pages_dir_name）
+OCR_PAGES_DIR_NAME = os.getenv(
+    "OCR_PAGES_DIR_NAME", _app_cfg.ocr_pages_dir_name
+)
 
 # OCR 后端：local（默认，PaddleOCR 本地）| baidu | auto（先 Paddle 再百度）
-OCR_BACKEND = os.getenv("OCR_BACKEND", "local").lower()
+OCR_BACKEND = os.getenv("OCR_BACKEND", _app_cfg.ocr_backend).lower()
+
+# 文档解析/分段/索引是否后台异步（config.json document_pipeline_async）
+DOCUMENT_PIPELINE_ASYNC = (
+    os.getenv("DOCUMENT_PIPELINE_ASYNC", str(_app_cfg.document_pipeline_async)).lower()
+    == "true"
+)
+
+# 出题 API 是否后台异步（config.json question_gen_async）
+QUESTION_GEN_ASYNC = (
+    os.getenv("QUESTION_GEN_ASYNC", str(_app_cfg.question_gen_async)).lower() == "true"
+)
+
+# Tina LLM / Agent 是否使用 apredict（config.json llm_async）
+LLM_ASYNC = (
+    os.getenv("LLM_ASYNC", str(_app_cfg.llm_async)).lower() == "true"
+)
+
+# 图片上传 OCR 是否后台异步（config.json image_ocr_async）
+IMAGE_OCR_ASYNC = (
+    os.getenv("IMAGE_OCR_ASYNC", str(_app_cfg.image_ocr_async)).lower() == "true"
+)
+
+# 单文档最多生成题目数（config.json max_questions_per_document）
+MAX_QUESTIONS_PER_DOCUMENT = int(
+    os.getenv(
+        "MAX_QUESTIONS_PER_DOCUMENT",
+        str(_app_cfg.max_questions_per_document),
+    )
+)
 
 # Dify 知识库单文件大小上限（字节）；0 表示不限制，仅在上传前做本地预检
 # 显式设置 DIFY_MAX_UPLOAD_SIZE 后才拦截；实际能否入库仍受 Dify Cloud 侧限制

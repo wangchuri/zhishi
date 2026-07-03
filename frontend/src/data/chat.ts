@@ -1,12 +1,5 @@
 import type { ChatMessage } from "@/types"
 
-export const chatModes = [
-  { label: "高效笔记", value: "notes" },
-  { label: "AI 学习", value: "learning" },
-  { label: "默认知识库", value: "kb" },
-  { label: "推理模式", value: "reasoning" },
-]
-
 export const welcomeMessage: ChatMessage = {
   id: "welcome",
   role: "assistant",

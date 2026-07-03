@@ -122,13 +122,6 @@ export function ProfilePage() {
               </Button>
             </div>
           </Card>
-
-          <div className="flex justify-end">
-            <Button variant="primary" size="lg">
-              <Check className="w-4 h-4" strokeWidth={2} />
-              保存画像
-            </Button>
-          </div>
         </div>
 
         {/* 右侧：Tina 使用说明 */}

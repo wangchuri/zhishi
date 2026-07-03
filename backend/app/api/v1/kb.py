@@ -12,6 +12,7 @@ from app.api.deps import get_current_active_user, get_db
 from app.core.config import DEBUG_MAX_UPLOAD_SIZE, USE_OSS, is_local_rag
 from app.schemas.kb import CollectionCreate, CollectionUpdate
 from app.services import kb_service
+from app.services import page_service
 from app.services import segment_service
 from app.crud import kb as kb_crud
 from app.services.file_parser import SUPPORTED_EXTENSIONS
@@ -151,23 +152,7 @@ def get_document_status(
             doc = kb_crud.get_document_by_batch_id(db, user_id, batch_id)
         if not doc:
             raise HTTPException(status_code=404, detail="文档不存在")
-        if doc.segment_status == "failed":
-            return {
-                "batch_id": batch_id,
-                "status": "error",
-                "segment_status": doc.segment_status,
-                "error_message": (
-                    "文档文本提取失败，可能是扫描版 PDF，"
-                    "请上传可复制文字的 PDF 或使用 OCR"
-                ),
-                "document_id": doc.id,
-            }
-        return {
-            "batch_id": batch_id,
-            "status": doc.indexing_status,
-            "segment_status": doc.segment_status,
-            "document_id": doc.id,
-        }
+        return kb_service.document_status_payload(doc, batch_id)
 
     from app.services.dify_kb import DifyKB
 
@@ -235,6 +220,31 @@ def list_document_segments(
     """列出文档分段（仅文档 owner 可访问）"""
     return segment_service.list_document_segments(
         db, current_user["user_id"], doc_id
+    )
+
+
+@router.get("/documents/{doc_id}/pages")
+def list_document_pages(
+    doc_id: str,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_active_user),
+):
+    """按页码平铺文档（从 parsed 文本 `## 第 N 页` 切分）"""
+    return page_service.list_document_pages(
+        db, current_user["user_id"], doc_id
+    )
+
+
+@router.get("/documents/{doc_id}/pages/{page_number}")
+def get_document_page(
+    page_number: int,
+    doc_id: str,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_active_user),
+):
+    """单页详情（双击进详情用）"""
+    return page_service.get_document_page_detail(
+        db, current_user["user_id"], doc_id, page_number
     )
 
 

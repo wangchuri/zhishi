@@ -4,6 +4,7 @@ import { DashboardPage } from "@/features/dashboard/DashboardPage"
 import { ChatPage } from "@/features/chat/ChatPage"
 import { NotesPage } from "@/features/notes/NotesPage"
 import { KnowledgeBasePage } from "@/features/knowledge-base/KnowledgeBasePage"
+import { DocumentViewPage } from "@/features/knowledge-base/DocumentViewPage"
 import { UploadPage } from "@/features/knowledge-base/UploadPage"
 import { KnowledgeGraphPage } from "@/features/knowledge-graph/KnowledgeGraphPage"
 import { LearningAnalyticsPage } from "@/features/learning/LearningAnalyticsPage"
@@ -14,6 +15,8 @@ import { SettingsPage } from "@/features/settings/SettingsPage"
 import { DiagnosticsPage } from "@/features/settings/DiagnosticsPage"
 import { LoginPage } from "@/features/auth/LoginPage"
 import { QuizPage } from "@/features/quiz/QuizPage"
+import { QuestionGenPage } from "@/features/question-gen/QuestionGenPage"
+import { QuestionGenDocPage } from "@/features/question-gen/QuestionGenDocPage"
 
 function RequireAuth({ children }: { children: React.ReactElement }) {
   const { user, isLoading } = useAuth()
@@ -41,6 +44,7 @@ export function AppRoutes() {
       <Route path="/chat" element={<RequireAuth><ChatPage /></RequireAuth>} />
       <Route path="/notes" element={<RequireAuth><NotesPage /></RequireAuth>} />
       <Route path="/knowledge" element={<RequireAuth><KnowledgeBasePage /></RequireAuth>} />
+      <Route path="/knowledge/doc/:docId" element={<RequireAuth><DocumentViewPage /></RequireAuth>} />
       <Route path="/knowledge/upload" element={<RequireAuth><UploadPage /></RequireAuth>} />
       <Route path="/graph" element={<RequireAuth><KnowledgeGraphPage /></RequireAuth>} />
       <Route path="/analytics" element={<RequireAuth><LearningAnalyticsPage /></RequireAuth>} />
@@ -49,6 +53,8 @@ export function AppRoutes() {
       <Route path="/profile" element={<RequireAuth><ProfilePage /></RequireAuth>} />
       <Route path="/settings" element={<RequireAuth><SettingsPage /></RequireAuth>} />
       <Route path="/quiz" element={<RequireAuth><QuizPage /></RequireAuth>} />
+      <Route path="/question-gen" element={<RequireAuth><QuestionGenPage /></RequireAuth>} />
+      <Route path="/question-gen/doc/:documentId" element={<RequireAuth><QuestionGenDocPage /></RequireAuth>} />
       <Route path="/settings/diagnostics" element={<RequireAuth><DiagnosticsPage /></RequireAuth>} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

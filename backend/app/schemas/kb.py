@@ -43,6 +43,9 @@ class DocumentOut(BaseModel):
     indexing_status: str = "pending"
     segment_status: str = "not_started"
     question_gen_status: str = "not_started"
+    ocr_status: Optional[str] = None
+    ocr_current_page: Optional[int] = None
+    ocr_total_pages: Optional[int] = None
     dify_document_id: Optional[str] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
@@ -71,3 +74,6 @@ class UploadResponse(BaseModel):
     segment_status: str = "not_started"
     parse_warning: Optional[str] = None
     ocr_processed: bool = False
+    ocr_status: Optional[str] = None
+    ocr_current_page: Optional[int] = None
+    ocr_total_pages: Optional[int] = None

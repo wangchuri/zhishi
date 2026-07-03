@@ -22,19 +22,24 @@ OVERLAP = 200
 HEADING_PATTERN = re.compile(r"^#{1,2}\s+.+", re.MULTILINE)
 
 
+def _resolve_parsed_path(document: Document) -> Optional[str]:
+    if document.parsed_cache_key:
+        return document.parsed_cache_key
+    global_doc = document.global_document
+    if global_doc and global_doc.parsed_text_path:
+        return global_doc.parsed_text_path
+    return None
+
+
 def _load_document_text(document: Document) -> tuple[Optional[str], Optional[str]]:
     """返回 (text, error_message)。"""
-    if document.parsed_cache_key:
-        text = storage_service.read_text_at_path(document.parsed_cache_key)
+    parsed_path = _resolve_parsed_path(document)
+    if parsed_path:
+        text = storage_service.read_text_at_path(parsed_path)
         if text:
             return text, None
 
     global_doc = document.global_document
-    if global_doc and global_doc.parsed_text_path:
-        text = storage_service.read_text_at_path(global_doc.parsed_text_path)
-        if text:
-            return text, None
-
     if global_doc and global_doc.storage_path:
         outcome = parse_file_detailed(
             global_doc.storage_path,

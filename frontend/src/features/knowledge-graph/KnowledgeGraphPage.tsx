@@ -5,7 +5,6 @@ import {
   FileText,
   Target,
   Sparkles,
-  ArrowRight,
 } from "lucide-react"
 import { AppShell } from "@/components/layout/AppShell"
 import { RightPanel } from "@/components/layout/RightPanel"
@@ -13,7 +12,6 @@ import { PageHeader } from "@/components/blocks/PageHeader"
 import { StatCard } from "@/components/ui/stat-card"
 import { SegmentedTabs } from "@/components/ui/segmented-tabs"
 import { EmptyState } from "@/components/ui/empty-state"
-import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { ktApi } from "@/lib/api"
 import type { GraphNode } from "@/types"
@@ -296,17 +294,6 @@ function NodeDetail({ node, allNodes }: { node: GraphNode; allNodes: GraphNode[]
         <h4 className="text-small font-medium text-ink-tertiary mb-2 uppercase tracking-wider">最近更新</h4>
         <div className="text-caption text-ink-secondary">—</div>
       </section>
-
-      <div className="space-y-2 pt-2">
-        <Button variant="primary" size="md" className="w-full">
-          查看详情
-          <ArrowRight className="w-4 h-4" strokeWidth={2} />
-        </Button>
-        <Button variant="secondary" size="md" className="w-full">
-          <Sparkles className="w-4 h-4" strokeWidth={2} />
-          让 Tina 解释关系
-        </Button>
-      </div>
     </div>
   )
 }

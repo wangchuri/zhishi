@@ -33,6 +33,8 @@ interface UploadTask {
   errorMessage?: string
   completedSegments?: number
   totalSegments?: number
+  ocrCurrentPage?: number
+  ocrTotalPages?: number
 }
 
 const uploadMethods = [
@@ -108,6 +110,25 @@ export function UploadPage() {
       try {
         const res = await kbApi.getDocumentStatus(task.id)
         const status = res.status
+        const ocrStatus = res.ocr_status as string | undefined
+
+        if (ocrStatus === "processing") {
+          setTasks((prev) =>
+            prev.map((t) =>
+              t.id === task.id
+                ? {
+                    ...t,
+                    status: "ocr",
+                    ocrCurrentPage: Number(res.ocr_current_page ?? 0),
+                    ocrTotalPages: Number(res.ocr_total_pages ?? 0),
+                  }
+                : t
+            )
+          )
+          setTimeout(poll, 2000)
+          return
+        }
+
         if (status === "completed" || status === "indexed") {
           setTasks((prev) =>
             prev.map((t) =>
@@ -128,7 +149,12 @@ export function UploadPage() {
         setTasks((prev) =>
           prev.map((t) =>
             t.id === task.id
-              ? { ...t, completedSegments: res.completed_segments ?? 0, totalSegments: res.total_segments ?? 0 }
+              ? {
+                  ...t,
+                  status: "indexing",
+                  completedSegments: res.completed_segments ?? 0,
+                  totalSegments: res.total_segments ?? 0,
+                }
               : t
           )
         )
@@ -140,6 +166,47 @@ export function UploadPage() {
 
     setTimeout(poll, 2000) // 等待 2 秒后开始轮询
   }, [])
+
+  // 页面加载时恢复仍在处理中的上传任务（刷新/返回页面后继续轮询）
+  useEffect(() => {
+    if (!selectedCollectionId) return
+    kbApi
+      .listDocuments(1, 50, selectedCollectionId)
+      .then((res) => {
+        const items = (res.documents || []) as Array<Record<string, unknown>>
+        const processing = items.filter((d) => {
+          const ocr = String(d.ocr_status || "") === "processing"
+          const indexing = String(d.indexing_status || "") === "processing"
+          const segment = String(d.segment_status || "") === "processing"
+          return ocr || indexing || segment
+        })
+        if (processing.length === 0) return
+
+        const restored: UploadTask[] = processing.map((d) => {
+          const batchId = String(d.dify_batch_id || d.id)
+          const ocr = String(d.ocr_status || "") === "processing"
+          return {
+            id: batchId,
+            documentId: String(d.id),
+            fileName: String(d.name || "文档"),
+            fileSize: Number(d.file_size || 0),
+            status: ocr ? "ocr" : "indexing",
+            ocrCurrentPage: Number(d.ocr_current_page ?? 0),
+            ocrTotalPages: Number(d.ocr_total_pages ?? 0),
+          }
+        })
+
+        setTasks((prev) => {
+          const existing = new Set(prev.map((t) => t.id))
+          const merged = restored.filter((t) => !existing.has(t.id))
+          if (merged.length) {
+            window.setTimeout(() => merged.forEach((task) => pollStatus(task)), 0)
+          }
+          return merged.length ? [...merged, ...prev] : prev
+        })
+      })
+      .catch(() => {})
+  }, [selectedCollectionId, pollStatus])
 
   const handleFiles = useCallback(
     async (files: FileList | File[]) => {
@@ -207,7 +274,9 @@ export function UploadPage() {
             documentId: res.document_id,
             fileName: res.file_name || file.name,
             fileSize: file.size,
-            status: "indexing",
+            status: res.ocr_status === "processing" ? "ocr" : "indexing",
+            ocrCurrentPage: Number(res.ocr_current_page ?? 0),
+            ocrTotalPages: Number(res.ocr_total_pages ?? 0),
           }
           setTasks((prev) => prev.map((t) => (t.id === tempId ? newTask : t)))
           pollStatus(newTask)
@@ -424,7 +493,9 @@ export function UploadPage() {
                   task.status === "uploading"
                     ? "正在上传到服务器..."
                     : task.status === "ocr"
-                      ? "OCR 识别中..."
+                      ? task.ocrTotalPages
+                        ? `OCR 识别中：第 ${task.ocrCurrentPage ?? 0}/${task.ocrTotalPages} 页`
+                        : "OCR 识别中..."
                       : task.status === "indexing"
                       ? `正在索引 ${task.completedSegments ?? 0}/${task.totalSegments ?? "?"} 段`
                       : task.status === "completed"

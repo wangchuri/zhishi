@@ -60,12 +60,26 @@ def get_provenance_for_segment(
     )
 
 
+def get_provenance_for_document_excerpt(
+    db: Session, question_id: str, document_id: str, excerpt: str
+) -> Optional[QuestionProvenance]:
+    return (
+        db.query(QuestionProvenance)
+        .filter(
+            QuestionProvenance.question_id == question_id,
+            QuestionProvenance.document_id == document_id,
+            QuestionProvenance.excerpt == excerpt,
+        )
+        .first()
+    )
+
+
 def create_provenance(
     db: Session,
     *,
     question_id: str,
     document_id: str,
-    segment_id: str,
+    segment_id: Optional[str],
     excerpt: Optional[str],
     global_document_id: Optional[str] = None,
 ) -> QuestionProvenance:

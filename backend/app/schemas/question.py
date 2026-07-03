@@ -30,6 +30,8 @@ class QuestionOut(BaseModel):
     document_id: Optional[str] = None
     collection_id: Optional[str] = None
     created_at: Optional[datetime] = None
+    user_answer_status: Optional[str] = None
+    attempt_count: int = 0
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -43,6 +45,10 @@ class QuestionListOut(BaseModel):
     total: int
     document_id: Optional[str] = None
     collection_id: Optional[str] = None
+    answered_count: int = 0
+    correct_count: int = 0
+    wrong_count: int = 0
+    unknown_count: int = 0
 
 
 class QuestionGenerateRequest(BaseModel):
@@ -59,6 +65,16 @@ class QuestionGenerateRequest(BaseModel):
 class QuestionGenerateResponse(BaseModel):
     document_id: Optional[str] = None
     question_gen_status: str
+    questions_created: int
+    questions_reused: int
+    total_questions: int
+
+
+class PageQuestionResponse(BaseModel):
+    document_id: str
+    page_numbers: List[int]
+    mode: str
+    question_gen_status: Optional[str] = None
     questions_created: int
     questions_reused: int
     total_questions: int

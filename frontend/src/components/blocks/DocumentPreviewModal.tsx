@@ -1,124 +1,88 @@
 import type { ReactNode } from "react"
-import { useEffect, useState } from "react"
-import { Loader2, X } from "lucide-react"
-import { kbApi } from "@/lib/api"
+import { ExternalLink } from "lucide-react"
+import { useNavigate } from "react-router-dom"
 import type { Citation } from "@/types"
+import { cn } from "@/lib/utils"
 
-interface DocumentPreviewModalProps {
-  docId: string
-  title?: string | null
-  charStart?: number | null
-  charEnd?: number | null
-  onClose: () => void
+export function getDocumentViewPath(
+  docId: string,
+  options?: {
+    title?: string | null
+    charStart?: number | null
+    charEnd?: number | null
+  }
+): string {
+  const params = new URLSearchParams()
+  if (options?.title) params.set("title", options.title)
+  if (options?.charStart != null) params.set("start", String(options.charStart))
+  if (options?.charEnd != null) params.set("end", String(options.charEnd))
+  const qs = params.toString()
+  return `/knowledge/doc/${docId}${qs ? `?${qs}` : ""}`
 }
 
-export function DocumentPreviewModal({
+/** 跳转到文档查看页 */
+export function ViewDocumentButton({
   docId,
   title,
   charStart,
   charEnd,
-  onClose,
-}: DocumentPreviewModalProps) {
-  const [fileName, setFileName] = useState(title || "文档预览")
-  const [content, setContent] = useState("")
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-
-  useEffect(() => {
-    setLoading(true)
-    setError(null)
-    kbApi
-      .getDocumentContent(docId)
-      .then((res) => {
-        setFileName(res.file_name || title || "文档预览")
-        setContent(res.content || "")
-      })
-      .catch((err: Error) => setError(err.message || "加载失败"))
-      .finally(() => setLoading(false))
-  }, [docId, title])
+  className,
+  label = "查看文档",
+  showIcon = false,
+}: {
+  docId: string
+  title?: string | null
+  charStart?: number | null
+  charEnd?: number | null
+  className?: string
+  label?: string
+  showIcon?: boolean
+}) {
+  const navigate = useNavigate()
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={onClose}>
-      <div
-        className="bg-surface rounded-xl border border-line-soft shadow-lg w-full max-w-[720px] max-h-[85vh] flex flex-col mx-4"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-center gap-3 px-5 py-4 border-b border-line-soft">
-          <div className="flex-1 min-w-0">
-            <div className="text-card-title font-semibold text-ink-primary truncate">{fileName}</div>
-            {(charStart != null && charEnd != null) && (
-              <div className="text-caption text-ink-tertiary mt-0.5">
-                高亮位置 {charStart}–{charEnd}
-              </div>
-            )}
-          </div>
-          <button
-            onClick={onClose}
-            className="w-8 h-8 rounded-md flex items-center justify-center text-ink-tertiary hover:text-ink-primary hover:bg-surface-soft transition-colors shrink-0"
-          >
-            <X className="w-5 h-5" strokeWidth={2} />
-          </button>
-        </div>
-        <div className="flex-1 overflow-y-auto scroll-thin p-5">
-          {loading ? (
-            <div className="flex items-center justify-center py-16">
-              <div className="flex items-center gap-2 text-ink-tertiary">
-                <Loader2 className="w-5 h-5 animate-spin" strokeWidth={2} />
-                <span className="text-body">加载中...</span>
-              </div>
-            </div>
-          ) : error ? (
-            <div className="text-body text-danger">{error}</div>
-          ) : (
-            <pre className="text-body text-ink-primary whitespace-pre-wrap font-sans leading-relaxed">
-              {renderHighlightedContent(content, charStart, charEnd)}
-            </pre>
-          )}
-        </div>
-      </div>
-    </div>
+    <button
+      type="button"
+      onClick={() =>
+        navigate(getDocumentViewPath(docId, { title, charStart, charEnd }))
+      }
+      className={cn(
+        "inline-flex items-center gap-1 text-small text-primary hover:underline",
+        className
+      )}
+    >
+      {showIcon && <ExternalLink className="w-3.5 h-3.5 shrink-0" strokeWidth={2} />}
+      {label}
+    </button>
   )
 }
 
-/** 从 citation 打开预览 */
-export function CitationPreviewButton({
+/** 从 citation 跳转到文档查看页 */
+export function CitationViewDocumentButton({
   citation,
   className,
-  label,
+  label = "查看文档",
 }: {
   citation: Citation
   className?: string
   label?: string
 }) {
-  const [open, setOpen] = useState(false)
   if (!citation.doc_id) return null
 
-  const displayLabel =
-    label ?? `📄 ${citation.title || citation.snippet?.slice(0, 40) || "查看原文"}`
-
   return (
-    <>
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        className={className ?? "text-left text-small text-primary hover:underline"}
-      >
-        {displayLabel}
-      </button>
-      {open && (
-        <DocumentPreviewModal
-          docId={citation.doc_id}
-          title={citation.title}
-          charStart={citation.char_start}
-          charEnd={citation.char_end}
-          onClose={() => setOpen(false)}
-        />
-      )}
-    </>
+    <ViewDocumentButton
+      docId={citation.doc_id}
+      title={citation.title}
+      charStart={citation.char_start}
+      charEnd={citation.char_end}
+      className={className}
+      label={label}
+      showIcon
+    />
   )
 }
 
-function renderHighlightedContent(
+export function renderHighlightedContent(
   content: string,
   start?: number | null,
   end?: number | null

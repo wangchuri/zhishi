@@ -3,7 +3,7 @@
  * 基址由 VITE_API_BASE 环境变量配置
  */
 
-import type { Citation } from "@/types"
+import type { Citation, DocumentPageDetail, DocumentPageList, PageQuestionResult } from "@/types"
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? "http://127.0.0.1:8765"
 
@@ -261,6 +261,17 @@ export const kbApi = {
     return request<any>("GET", `/api/v1/kb/documents/${docId}/segments`)
   },
 
+  getDocumentPages(docId: string) {
+    return request<DocumentPageList>("GET", `/api/v1/kb/documents/${docId}/pages`)
+  },
+
+  getDocumentPage(docId: string, pageNumber: number) {
+    return request<DocumentPageDetail>(
+      "GET",
+      `/api/v1/kb/documents/${docId}/pages/${pageNumber}`
+    )
+  },
+
   getConfig() {
     return request<any>("GET", "/api/v1/kb/config")
   },
@@ -283,6 +294,18 @@ export const questionsApi = {
 
   get(questionId: string) {
     return request<any>("GET", `/api/v1/questions/${questionId}`)
+  },
+
+  generateFromPages(data: {
+    document_id: string
+    page_numbers: number[]
+    questions_per_page?: number
+  }) {
+    return request<PageQuestionResult>("POST", "/api/v1/questions/generate-from-pages", data)
+  },
+
+  extractFromPages(data: { document_id: string; page_numbers: number[] }) {
+    return request<PageQuestionResult>("POST", "/api/v1/questions/extract-from-pages", data)
   },
 }
 
@@ -369,6 +392,14 @@ export const tutorApi = {
 export const dashboardApi = {
   getSuggestions() {
     return request<any>("GET", "/api/v1/dashboard/suggestions")
+  },
+}
+
+// ─── Analytics (学习分析) ────────────────────────────────
+
+export const analyticsApi = {
+  getStats() {
+    return request<import("@/types").LearningStats>("GET", "/api/v1/analytics/stats")
   },
 }
 
