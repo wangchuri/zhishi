@@ -11,7 +11,11 @@ from app.crud import note as note_crud
 from app.crud import question as question_crud
 from app.crud import training_plan as training_plan_crud
 from app.schemas.quiz import QuizSessionCreate
-from app.schemas.training import TargetedTrainingStartOut, WeakTagOut
+from app.schemas.training import (
+    TargetedTrainingActiveSessionOut,
+    TargetedTrainingStartOut,
+    WeakTagOut,
+)
 from app.services import analytics_service, quiz_service
 from app.services.training_agent import (
     MAX_TRAINING_QUESTIONS,
@@ -111,11 +115,78 @@ def _build_weak_tags_out(
     return weak_tags_out
 
 
-def start_targeted_training(db: Session, user_id: int) -> TargetedTrainingStartOut:
-    latest = note_crud.get_latest_note(db, user_id, note_type="report")
-    report_content = latest.content_md if latest else None
-    report_id = latest.id if latest else None
-    report_title = latest.title if latest else None
+def _plan_to_start_out(
+    db: Session, user_id: int, plan_row, session_out
+) -> TargetedTrainingStartOut:
+    weak_tags = json.loads(plan_row.weak_tags_json or "[]")
+    question_ids = json.loads(plan_row.question_ids_json or "[]")
+    weak_tags_out = _build_weak_tags_out(db, user_id, weak_tags)
+    return TargetedTrainingStartOut(
+        session=session_out,
+        weak_tags=weak_tags_out,
+        question_ids=question_ids,
+        report_id=plan_row.report_id,
+        rationale=plan_row.rationale,
+        agent_session_id=plan_row.agent_session_id,
+    )
+
+
+def get_active_session_for_report(
+    db: Session, user_id: int, report_id: str
+) -> Optional[TargetedTrainingActiveSessionOut]:
+    plan = training_plan_crud.get_active_by_report(db, user_id, report_id)
+    if not plan:
+        return None
+    session_out = quiz_service.get_quiz_session(db, user_id, plan.quiz_session_id)
+    return TargetedTrainingActiveSessionOut(
+        session_id=session_out.id,
+        report_id=plan.report_id,
+        answered_count=session_out.answered_count,
+        total_questions=session_out.total_questions,
+        agent_session_id=plan.agent_session_id,
+        status=session_out.status,
+    )
+
+
+def resume_targeted_training(
+    db: Session, user_id: int, session_id: str
+) -> TargetedTrainingStartOut:
+    plan = training_plan_crud.get_by_quiz_session(db, user_id, session_id)
+    if not plan:
+        raise HTTPException(status_code=404, detail="针对训练会话不存在")
+    session_out = quiz_service.get_quiz_session(db, user_id, session_id)
+    return _plan_to_start_out(db, user_id, plan, session_out)
+
+
+def start_targeted_training(
+    db: Session,
+    user_id: int,
+    *,
+    report_id: Optional[str] = None,
+    force_new: bool = False,
+) -> TargetedTrainingStartOut:
+    if report_id:
+        note = note_crud.get_note_by_id(db, user_id, report_id)
+        if not note or note.note_type != "report":
+            raise HTTPException(status_code=404, detail="学习报告不存在")
+        report_content = note.content_md
+        report_title = note.title
+        resolved_report_id = note.id
+    else:
+        latest = note_crud.get_latest_note(db, user_id, note_type="report")
+        report_content = latest.content_md if latest else None
+        resolved_report_id = latest.id if latest else None
+        report_title = latest.title if latest else None
+
+    if resolved_report_id and not force_new:
+        existing = training_plan_crud.get_active_by_report(
+            db, user_id, resolved_report_id
+        )
+        if existing:
+            session_out = quiz_service.get_quiz_session(
+                db, user_id, existing.quiz_session_id
+            )
+            return _plan_to_start_out(db, user_id, existing, session_out)
 
     coach = training_agent_manager.create_agent(user_id, db)
     plan: TrainingPlanResult
@@ -145,8 +216,6 @@ def start_targeted_training(db: Session, user_id: int) -> TargetedTrainingStartO
     if not plan.question_ids:
         raise HTTPException(status_code=409, detail="题库为空，请先生成题目")
 
-    weak_tags_out = _build_weak_tags_out(db, user_id, plan.weak_tags)
-
     session = quiz_service.create_quiz_session(
         db,
         user_id,
@@ -156,7 +225,7 @@ def start_targeted_training(db: Session, user_id: int) -> TargetedTrainingStartO
         ),
     )
 
-    training_plan_crud.create_training_plan(
+    plan_row = training_plan_crud.create_training_plan(
         db,
         user_id=user_id,
         quiz_session_id=session.id,
@@ -164,17 +233,10 @@ def start_targeted_training(db: Session, user_id: int) -> TargetedTrainingStartO
         question_ids=plan.question_ids[:MAX_TRAINING_QUESTIONS],
         weak_tags=plan.weak_tags,
         rationale=plan.rationale,
-        report_id=report_id,
+        report_id=resolved_report_id,
     )
 
-    return TargetedTrainingStartOut(
-        session=session,
-        weak_tags=weak_tags_out,
-        question_ids=plan.question_ids[:MAX_TRAINING_QUESTIONS],
-        report_id=report_id,
-        rationale=plan.rationale,
-        agent_session_id=plan.agent_session_id or coach.agent_session_id,
-    )
+    return _plan_to_start_out(db, user_id, plan_row, session)
 
 
 def _resolve_coach_agent(

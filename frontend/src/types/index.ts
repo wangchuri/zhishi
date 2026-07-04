@@ -328,6 +328,15 @@ export interface TargetedTrainingResult {
   agent_session_id?: string | null
 }
 
+export interface TargetedTrainingActiveSession {
+  session_id: string
+  report_id?: string | null
+  answered_count: number
+  total_questions: number
+  agent_session_id?: string | null
+  status: string
+}
+
 /** 辅导消息 */
 export interface TutorMessage {
   role: "user" | "assistant" | string

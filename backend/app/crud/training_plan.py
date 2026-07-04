@@ -55,3 +55,21 @@ def get_by_quiz_session(
         )
         .first()
     )
+
+
+def get_active_by_report(
+    db: Session, user_id: int, report_id: str
+) -> Optional[TrainingPlan]:
+    from app.models.quiz_session import QuizSession
+
+    return (
+        db.query(TrainingPlan)
+        .join(QuizSession, TrainingPlan.quiz_session_id == QuizSession.id)
+        .filter(
+            TrainingPlan.user_id == user_id,
+            TrainingPlan.report_id == report_id,
+            QuizSession.status == "active",
+        )
+        .order_by(TrainingPlan.created_at.desc())
+        .first()
+    )

@@ -49,7 +49,7 @@ export function AppRoutes() {
       <Route path="/knowledge/upload" element={<RequireAuth><UploadPage /></RequireAuth>} />
       <Route path="/graph" element={<RequireAuth><KnowledgeGraphPage /></RequireAuth>} />
       <Route path="/analytics" element={<RequireAuth><LearningAnalyticsPage /></RequireAuth>} />
-      <Route path="/training/targeted" element={<RequireAuth><TargetedTrainingPage /></RequireAuth>} />
+      <Route path="/training/targeted/*" element={<RequireAuth><TargetedTrainingPage /></RequireAuth>} />
       <Route path="/path" element={<RequireAuth><LearningPathPage /></RequireAuth>} />
       <Route path="/reminders" element={<RequireAuth><RemindersPage /></RequireAuth>} />
       <Route path="/profile" element={<RequireAuth><ProfilePage /></RequireAuth>} />

@@ -12,6 +12,11 @@ class WeakTagOut(BaseModel):
     accuracy_rate: Optional[int] = None
 
 
+class TargetedTrainingStartIn(BaseModel):
+    report_id: Optional[str] = None
+    force_new: bool = False
+
+
 class TargetedTrainingStartOut(BaseModel):
     session: QuizSessionOut
     weak_tags: List[WeakTagOut] = []
@@ -19,6 +24,15 @@ class TargetedTrainingStartOut(BaseModel):
     report_id: Optional[str] = None
     rationale: Optional[str] = None
     agent_session_id: Optional[str] = None
+
+
+class TargetedTrainingActiveSessionOut(BaseModel):
+    session_id: str
+    report_id: Optional[str] = None
+    answered_count: int
+    total_questions: int
+    agent_session_id: Optional[str] = None
+    status: str
 
 
 class TrainingTutorMessageCreate(BaseModel):

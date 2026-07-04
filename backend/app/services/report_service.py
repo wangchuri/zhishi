@@ -152,3 +152,10 @@ def get_latest_report(db: Session, user_id: int) -> ReportOut:
     if not note:
         raise HTTPException(status_code=404, detail="暂无学习报告，请先生成")
     return ReportOut.model_validate(note)
+
+
+def get_report_by_id(db: Session, user_id: int, report_id: str) -> ReportOut:
+    note = note_crud.get_note_by_id(db, user_id, report_id)
+    if not note or note.note_type != "report":
+        raise HTTPException(status_code=404, detail="学习报告不存在")
+    return ReportOut.model_validate(note)

@@ -471,15 +471,34 @@ export const reportsApi = {
   getLatest() {
     return request<import("@/types").LearningReport>("GET", "/api/v1/reports/latest")
   },
+
+  get(reportId: string) {
+    return request<import("@/types").LearningReport>("GET", `/api/v1/reports/${reportId}`)
+  },
 }
 
 // ─── Training (针对训练) ────────────────────────────────
 
 export const trainingApi = {
-  startTargeted() {
+  startTargeted(data?: { report_id?: string; force_new?: boolean }) {
     return request<import("@/types").TargetedTrainingResult>(
       "POST",
-      "/api/v1/training/targeted/start"
+      "/api/v1/training/targeted/start",
+      data ?? {}
+    )
+  },
+
+  getActiveSession(reportId: string) {
+    return request<import("@/types").TargetedTrainingActiveSession | null>(
+      "GET",
+      `/api/v1/training/targeted/reports/${reportId}/active-session`
+    )
+  },
+
+  resumeSession(sessionId: string) {
+    return request<import("@/types").TargetedTrainingResult>(
+      "GET",
+      `/api/v1/training/targeted/sessions/${sessionId}`
     )
   },
 
