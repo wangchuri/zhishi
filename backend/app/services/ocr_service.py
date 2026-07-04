@@ -1,19 +1,19 @@
 """
-OCR 服务 — 图片转文本（本地 PaddleOCR / 百度云端）
+OCR 服务 — 图片转文本（本地 PaddleOCR / RapidOCR / 百度云端）
 
 使用方式：
     from app.services.ocr_service import extract_text_from_image
     text = extract_text_from_image(image_path)
 
 后端选择（config.OCR_BACKEND）：
-    local — 仅 PaddleOCR
-    baidu — 仅百度 OCR（凭据见 BAIDU_OCR_* 或 baidu_ocr.json）
-    auto  — 先 PaddleOCR，失败再百度
+    paddle / local — PaddleOCR（PP-OCRv5，支持 GPU）
+    rapidocr       — RapidOCR（可选 Paddle GPU 或 ONNX CPU）
+    baidu          — 百度 OCR（凭据见 BAIDU_OCR_* 或 baidu_ocr.json）
+    auto           — 先本地引擎，失败再百度
 """
 from app.core import paddle_env  # noqa: F401
 import base64
 import logging
-import tempfile
 import time
 from pathlib import Path
 from typing import Optional
@@ -26,6 +26,11 @@ from app.core.config import (
     BAIDU_OCR_API_URL,
     OCR_BACKEND,
 )
+from app.services.ocr_backends.registry import (
+    create_local_engine,
+    get_local_engine,
+    is_local_backend,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -33,16 +38,29 @@ logger = logging.getLogger(__name__)
 _cached_token: Optional[str] = None
 _cached_token_expiry: float = 0.0
 
-_paddle_ocr_engine = None
-
 
 def is_paddle_ocr_available() -> bool:
-    """PaddleOCR 是否已安装。"""
+    """PaddleOCR 是否已安装（兼容旧调用方）。"""
     try:
         import paddleocr  # noqa: F401
         return True
     except ImportError:
         return False
+
+
+def _resolve_local_engine():
+    engine = get_local_engine()
+    if engine is not None:
+        return engine
+    if OCR_BACKEND == "auto":
+        return create_local_engine("paddle")
+    return None
+
+
+def is_local_ocr_available() -> bool:
+    """当前配置的本地 OCR 引擎是否已安装。"""
+    engine = _resolve_local_engine()
+    return engine is not None and engine.is_available()
 
 
 def _get_access_token() -> Optional[str]:
@@ -166,69 +184,14 @@ def _extract_text_baidu_bytes(image_bytes: bytes) -> Optional[str]:
     return _call_baidu_ocr_api(image_base64)
 
 
-def _parse_paddle_ocr_result(result) -> str:
-    """解析 PaddleOCR 结果，兼容 3.x（OCRResult）与 2.x（嵌套 list）格式。"""
-    if not result:
-        return ""
-
-    lines: list[str] = []
-
-    # PaddleOCR 3.x: predict() 返回 OCRResult 列表，文本在 rec_texts
-    for item in result:
-        rec_texts = None
-        if hasattr(item, "get"):
-            rec_texts = item.get("rec_texts")
-        elif isinstance(item, dict):
-            rec_texts = item.get("rec_texts")
-        if rec_texts:
-            lines.extend(str(t) for t in rec_texts if t)
-            continue
-
-        # PaddleOCR 2.x: [[box, (text, score)], ...]
-        if isinstance(item, (list, tuple)):
-            for line in item:
-                if line and len(line) >= 2 and line[1] and line[1][0]:
-                    lines.append(str(line[1][0]))
-
-    return "\n".join(lines)
-
-
-def _ocr_with_paddle(image_bytes: bytes) -> Optional[str]:
-    """PaddleOCR 本地识别。未安装返回 None；空页返回 ''。"""
-    global _paddle_ocr_engine
-
-    try:
-        from paddleocr import PaddleOCR
-    except ImportError:
+def _ocr_with_local_engine(image_bytes: bytes) -> Optional[str]:
+    """本地 OCR 引擎识别。"""
+    engine = _resolve_local_engine()
+    if engine is None:
         return None
-
-    try:
-        if _paddle_ocr_engine is None:
-            # PaddleOCR 3.x 已移除 show_log；use_angle_cls 改为 use_textline_orientation
-            _paddle_ocr_engine = PaddleOCR(
-                lang="ch",
-                use_textline_orientation=True,
-                enable_mkldnn=False,
-            )
-
-        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
-            tmp.write(image_bytes)
-            tmp_path = tmp.name
-
-        try:
-            # 3.x 推荐 predict；ocr() 为兼容别名，且不再接受 cls 等 2.x 参数
-            predict = getattr(_paddle_ocr_engine, "predict", None)
-            if callable(predict):
-                result = predict(tmp_path)
-            else:
-                result = _paddle_ocr_engine.ocr(tmp_path)
-        finally:
-            Path(tmp_path).unlink(missing_ok=True)
-
-        return _parse_paddle_ocr_result(result)
-    except Exception as e:
-        logger.warning("ocr_service: PaddleOCR 失败: %s", e)
+    if not engine.is_available():
         return None
+    return engine.recognize(image_bytes)
 
 
 def extract_text_from_image_bytes(image_bytes: bytes) -> Optional[str]:
@@ -241,16 +204,16 @@ def extract_text_from_image_bytes(image_bytes: bytes) -> Optional[str]:
     """
     backend = OCR_BACKEND
 
-    if backend == "local":
-        return _ocr_with_paddle(image_bytes)
+    if is_local_backend(backend):
+        return _ocr_with_local_engine(image_bytes)
 
     if backend == "baidu":
         return _extract_text_baidu_bytes(image_bytes)
 
-    # auto: 先 Paddle 再百度
-    paddle_text = _ocr_with_paddle(image_bytes)
-    if paddle_text is not None:
-        return paddle_text
+    # auto: 先本地再百度
+    local_text = _ocr_with_local_engine(image_bytes)
+    if local_text is not None:
+        return local_text
     return _extract_text_baidu_bytes(image_bytes)
 
 
@@ -279,12 +242,18 @@ def extract_text_from_image(image_path: str) -> Optional[str]:
     return extract_text_from_image_bytes(image_bytes)
 
 
+def _local_engine_install_hint() -> str:
+    if OCR_BACKEND == "rapidocr":
+        return "RapidOCR 未安装，请运行: pip install rapidocr onnxruntime"
+    return "PaddleOCR 未安装，请运行: pip install paddleocr paddlepaddle-gpu"
+
+
 def ocr_unavailable_message() -> str:
     """根据 OCR_BACKEND 返回未配置/未安装时的提示。"""
-    if OCR_BACKEND == "local":
-        if not is_paddle_ocr_available():
-            return "PaddleOCR 未安装，请运行: pip install paddleocr"
-        return "PaddleOCR 识别失败"
+    if is_local_backend(OCR_BACKEND):
+        if not is_local_ocr_available():
+            return _local_engine_install_hint()
+        return f"{OCR_BACKEND} OCR 识别失败"
 
     if OCR_BACKEND == "baidu":
         if not is_baidu_ocr_configured():
@@ -295,9 +264,9 @@ def ocr_unavailable_message() -> str:
         return "百度 OCR 调用失败，请检查凭据与网络"
 
     # auto
-    if not is_paddle_ocr_available() and not is_baidu_ocr_configured():
+    if not is_local_ocr_available() and not is_baidu_ocr_configured():
         return (
-            "OCR 未配置：请安装 paddleocr（pip install paddleocr），"
+            "OCR 未配置：请安装 paddleocr / rapidocr，"
             "或配置百度 OCR 凭据"
         )
-    return "OCR 识别失败，请检查 paddleocr 或百度 OCR 配置"
+    return "OCR 识别失败，请检查本地 OCR 或百度 OCR 配置"

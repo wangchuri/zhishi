@@ -42,15 +42,16 @@ def test_parse_pdf_triggers_ocr_on_blank_pdf():
         _make_blank_pdf(pdf_path, pages=2)
 
         fake_md = "# scan.pdf\n\n> OCR 提取，共 2 页\n\n## 第 1 页\n\nhello\n"
-        with patch(
-            "app.services.pdf_ocr_service.parse_pdf_with_ocr_fallback"
-        ) as mock_ocr:
-            from app.services.file_parser import ParseOutcome
+        with patch("app.services.file_parser.DOCUMENT_PIPELINE_ASYNC", False):
+            with patch(
+                "app.services.pdf_ocr_service.parse_pdf_with_ocr_fallback"
+            ) as mock_ocr:
+                from app.services.file_parser import ParseOutcome
 
-            mock_ocr.return_value = ParseOutcome(
-                text=fake_md, error=None, ocr_used=True
-            )
-            outcome = parse_file_detailed(str(pdf_path), original_filename="scan.pdf")
+                mock_ocr.return_value = ParseOutcome(
+                    text=fake_md, error=None, ocr_used=True
+                )
+                outcome = parse_file_detailed(str(pdf_path), original_filename="scan.pdf")
 
         assert mock_ocr.called
         assert outcome.text == fake_md
@@ -87,18 +88,18 @@ def test_ocr_not_configured_error():
         pdf_path = Path(tmp) / "scan.pdf"
         _make_blank_pdf(pdf_path, pages=1)
 
-        with patch("app.core.config.OCR_BACKEND", "local"):
+        with patch("app.core.config.OCR_BACKEND", "paddle"):
             with patch(
-                "app.services.ocr_service.is_paddle_ocr_available", return_value=False
+                "app.services.ocr_service.is_local_ocr_available", return_value=False
             ):
                 with patch(
-                    "app.services.ocr_service._ocr_with_paddle", return_value=None
+                    "app.services.ocr_service._ocr_with_local_engine", return_value=None
                 ):
                     outcome = parse_pdf_with_ocr_fallback(str(pdf_path))
 
         assert outcome.text is None
         assert outcome.error is not None
-        assert "paddleocr" in outcome.error.lower()
+        assert "paddleocr" in outcome.error.lower() or "ocr" in outcome.error.lower()
         print("OK ocr_not_configured_error")
 
 

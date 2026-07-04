@@ -25,8 +25,20 @@ openai>=1.0.0
 chromadb>=0.5.0
 sentence-transformers>=2.2.0
 
-# 本地 OCR（默认 OCR_BACKEND=local）
-paddleocr>=2.7.0
-# Windows CPU 需单独安装 paddlepaddle，例如：
+# 本地 OCR（默认 ocr_backend=paddle，见 config.json）
+paddleocr>=3.7.0
+opencv-python-headless>=4.8.0
+# 可选 RapidOCR 后端：ocr_backend=rapidocr
+# rapidocr>=3.9.0
+# onnxruntime>=1.17.0
+#
+# GPU 加速（推荐，RTX 等 NVIDIA 显卡）：
+#   1. 卸载 CPU 版：pip uninstall paddlepaddle
+#   2. 安装 GPU 版（CUDA 版本见 https://www.paddlepaddle.org.cn/install/quick）
+#      Windows CUDA 11.8 示例：
+#        pip install paddlepaddle-gpu==3.2.0 -i https://www.paddlepaddle.org.cn/packages/stable/cu118/
+#   3. config.json 设置 ocr_use_gpu=true, ocr_device=gpu:0
+# RapidOCR + Paddle GPU：pip install rapidocr paddlepaddle-gpu
+#
+# Windows CPU 仅推理（无 GPU 时）：
 #   pip install paddlepaddle -i https://www.paddlepaddle.org.cn/packages/stable/cpu/
-# 或见 https://www.paddlepaddle.org.cn/install/quick

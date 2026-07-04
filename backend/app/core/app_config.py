@@ -32,7 +32,12 @@ class AppConfig:
     llm_async: bool = True
     image_ocr_async: bool = True
     upload_max_size_mb: int = 0
-    ocr_backend: str = "local"
+    # paddle | rapidocr | baidu | auto；local 为 paddle 别名
+    ocr_backend: str = "paddle"
+    ocr_use_gpu: bool = True
+    ocr_device: str = "gpu:0"
+    # paddle 专用：server=PP-OCRv5 高精度，mobile=更快
+    ocr_paddle_model: str = "server"
     ocr_pages_dir_name: str = "pages"
 
     @classmethod

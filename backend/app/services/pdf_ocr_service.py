@@ -3,7 +3,7 @@
 
 流程：
     1. PyMuPDF 渲染每页为 PNG
-    2. 按 OCR_BACKEND 调用 ocr_service（默认本地 PaddleOCR）
+    2. 按 OCR_BACKEND 调用 ocr_service（默认 PaddleOCR GPU）
     3. 并行 OCR（ThreadPoolExecutor，max_workers 来自 config）
     4. 按页码排序拼接为带页标题的 Markdown
 """
@@ -20,10 +20,11 @@ from app.core.config import (
     PDF_OCR_MAX_PAGES,
     PDF_OCR_RENDER_DPI,
 )
+from app.services.ocr_backends.registry import is_local_backend
 from app.services.ocr_service import (
     extract_text_from_image_bytes,
     is_baidu_ocr_configured,
-    is_paddle_ocr_available,
+    is_local_ocr_available,
     ocr_unavailable_message,
 )
 
@@ -75,10 +76,10 @@ def _ocr_page_image(png_bytes: bytes) -> tuple[Optional[str], Optional[str]]:
     if text is not None:
         return text, None
 
-    if OCR_BACKEND == "local":
-        if not is_paddle_ocr_available():
-            return None, "PaddleOCR 未安装，请运行: pip install paddleocr"
-        return None, "PaddleOCR 识别失败"
+    if is_local_backend(OCR_BACKEND):
+        if not is_local_ocr_available():
+            return None, ocr_unavailable_message()
+        return None, ocr_unavailable_message()
 
     if OCR_BACKEND == "baidu":
         if not is_baidu_ocr_configured():

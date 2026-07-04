@@ -113,8 +113,16 @@ OCR_PAGES_DIR_NAME = os.getenv(
     "OCR_PAGES_DIR_NAME", _app_cfg.ocr_pages_dir_name
 )
 
-# OCR 后端：local（默认，PaddleOCR 本地）| baidu | auto（先 Paddle 再百度）
-OCR_BACKEND = os.getenv("OCR_BACKEND", _app_cfg.ocr_backend).lower()
+# OCR 后端：paddle | rapidocr | baidu | auto（local 为 paddle 别名）
+_raw_ocr_backend = os.getenv("OCR_BACKEND", _app_cfg.ocr_backend).lower()
+OCR_BACKEND = "paddle" if _raw_ocr_backend == "local" else _raw_ocr_backend
+
+# OCR GPU：config.json ocr_use_gpu / ocr_device
+OCR_USE_GPU = (
+    os.getenv("OCR_USE_GPU", str(_app_cfg.ocr_use_gpu)).lower() == "true"
+)
+OCR_DEVICE = os.getenv("OCR_DEVICE", _app_cfg.ocr_device)
+OCR_PADDLE_MODEL = os.getenv("OCR_PADDLE_MODEL", _app_cfg.ocr_paddle_model).lower()
 
 # 文档解析/分段/索引是否后台异步（config.json document_pipeline_async）
 DOCUMENT_PIPELINE_ASYNC = (
