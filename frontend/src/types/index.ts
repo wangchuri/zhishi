@@ -280,6 +280,52 @@ export interface LearningStats {
   recent_answers: RecentAnswer[]
 }
 
+/** Tag 维度统计 */
+export interface TagStats {
+  tag: string
+  question_type: string
+  correct_count: number
+  wrong_count: number
+  unknown_count: number
+  total_attempts: number
+  accuracy_rate: number | null
+}
+
+export interface TagStatsResult {
+  by_tag: TagStats[]
+  by_question_type: TagStats[]
+}
+
+/** 学习报告 */
+export interface LearningReport {
+  id: string
+  title: string
+  content_md: string
+  collection_id?: string | null
+  note_type?: string
+  created_at?: string | null
+}
+
+export interface LearningReportList {
+  reports: LearningReport[]
+  total: number
+}
+
+/** 针对训练 */
+export interface WeakTag {
+  tag: string
+  wrong_count: number
+  correct_count: number
+  accuracy_rate: number | null
+}
+
+export interface TargetedTrainingResult {
+  session: QuizSession
+  weak_tags: WeakTag[]
+  question_ids: string[]
+  report_id?: string | null
+}
+
 /** 辅导消息 */
 export interface TutorMessage {
   role: "user" | "assistant" | string
@@ -317,6 +363,8 @@ export interface DocumentPage {
   has_builtin_questions: boolean
   is_key_page: boolean
   segment_id?: string | null
+  preview_mode?: "pdf" | "markdown" | "text"
+  file_type?: string | null
 }
 
 export interface DocumentPageList {
@@ -324,11 +372,24 @@ export interface DocumentPageList {
   document_name: string
   total_pages: number
   has_page_markers: boolean
+  preview_mode?: "pdf" | "markdown" | "text"
+  file_type?: string | null
+  has_raw_file?: boolean
   pages: DocumentPage[]
 }
 
 export interface DocumentPageDetail extends DocumentPage {
   content: string
+}
+
+export interface DocumentContentMeta {
+  doc_id: string
+  file_name?: string
+  content: string
+  file_type?: string
+  preview_mode?: "pdf" | "text" | "markdown"
+  has_raw_file?: boolean
+  mock?: boolean
 }
 
 export interface PageQuestionResult {

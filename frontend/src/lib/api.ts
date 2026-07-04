@@ -3,7 +3,13 @@
  * 基址由 VITE_API_BASE 环境变量配置
  */
 
-import type { Citation, DocumentPageDetail, DocumentPageList, PageQuestionResult } from "@/types"
+import type {
+  Citation,
+  DocumentContentMeta,
+  DocumentPageDetail,
+  DocumentPageList,
+  PageQuestionResult,
+} from "@/types"
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? "http://127.0.0.1:8765"
 
@@ -74,6 +80,36 @@ async function request<T = any>(
   }
 
   return res.json()
+}
+
+async function requestBlob(path: string): Promise<Blob> {
+  const url = `${API_BASE}${path}`
+  const headers: Record<string, string> = {}
+  const token = getToken()
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`
+  }
+
+  const res = await fetch(url, { method: "GET", headers })
+
+  if (res.status === 401) {
+    setToken(null)
+    throw new Error("登录已过期，请重新登录")
+  }
+
+  if (!res.ok) {
+    const errText = await res.text()
+    let detail = errText
+    try {
+      const errJson = JSON.parse(errText)
+      detail = errJson.detail || errText
+    } catch {
+      /* not JSON */
+    }
+    throw new Error(typeof detail === "string" ? detail : JSON.stringify(detail))
+  }
+
+  return res.blob()
 }
 
 /** 解析 SSE 流，逐条回调 JSON data */
@@ -254,7 +290,11 @@ export const kbApi = {
   },
 
   getDocumentContent(docId: string) {
-    return request<any>("GET", `/api/v1/kb/documents/${docId}/content`)
+    return request<DocumentContentMeta>("GET", `/api/v1/kb/documents/${docId}/content`)
+  },
+
+  fetchDocumentFile(docId: string) {
+    return requestBlob(`/api/v1/kb/documents/${docId}/file`)
   },
 
   getDocumentSegments(docId: string) {
@@ -400,6 +440,47 @@ export const dashboardApi = {
 export const analyticsApi = {
   getStats() {
     return request<import("@/types").LearningStats>("GET", "/api/v1/analytics/stats")
+  },
+
+  getTagStats() {
+    return request<import("@/types").TagStatsResult>("GET", "/api/v1/analytics/tag-stats")
+  },
+
+  generateLearningReport() {
+    return request<{ report: import("@/types").LearningReport; saved_to_notes: boolean }>(
+      "POST",
+      "/api/v1/analytics/learning-report"
+    )
+  },
+}
+
+// ─── Reports (学习报告) ─────────────────────────────────
+
+export const reportsApi = {
+  generate() {
+    return request<{ report: import("@/types").LearningReport; saved_to_notes: boolean }>(
+      "POST",
+      "/api/v1/reports/generate"
+    )
+  },
+
+  list() {
+    return request<import("@/types").LearningReportList>("GET", "/api/v1/reports")
+  },
+
+  getLatest() {
+    return request<import("@/types").LearningReport>("GET", "/api/v1/reports/latest")
+  },
+}
+
+// ─── Training (针对训练) ────────────────────────────────
+
+export const trainingApi = {
+  startTargeted() {
+    return request<import("@/types").TargetedTrainingResult>(
+      "POST",
+      "/api/v1/training/targeted/start"
+    )
   },
 }
 

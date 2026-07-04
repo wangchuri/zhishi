@@ -3,6 +3,8 @@ from .kb import KbCollection, GlobalDocument, Document, DocumentSegment
 from .quiz import GlobalQuestion, QuestionProvenance, UserQuestionRef
 from .quiz_session import QuizSession, QuizSessionQuestion, QuizAnswer
 from .tutor import TutorSession
+from .tag import QuestionTag
+from .note import UserNote
 
 __all__ = [
     "User",
@@ -18,4 +20,6 @@ __all__ = [
     "QuizSessionQuestion",
     "QuizAnswer",
     "TutorSession",
+    "QuestionTag",
+    "UserNote",
 ]

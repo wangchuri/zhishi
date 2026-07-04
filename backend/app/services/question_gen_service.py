@@ -18,6 +18,7 @@ from app.crud import kb as kb_crud
 from app.crud import question as question_crud
 from app.crud import quiz as quiz_crud
 from app.crud import segment as segment_crud
+from app.crud import tag as tag_crud
 from app.models import Document, DocumentSegment, UserQuestionRef
 from app.schemas.question import (
     PageQuestionResponse,
@@ -37,15 +38,19 @@ logger = logging.getLogger(__name__)
 QUESTIONS_PER_SEGMENT = 1
 EXCERPT_MAX_LEN = 500
 
-SYSTEM_PROMPT = """你是知拾学习助手，根据给定文档段落生成单选题。
+SYSTEM_PROMPT = """你是知拾学习助手，根据给定文档段落生成练习题。
 严格输出 JSON 数组，每项格式：
-{"stem":"题干","options":[{"key":"A","text":"..."},{"key":"B","text":"..."},{"key":"C","text":"..."},{"key":"D","text":"..."}],"answer":"A","explanation":"解析","tags":["标签"]}
-要求：1-2 道单选题，答案必须是 A/B/C/D 之一，不要输出 markdown 代码块。"""
+{"stem":"题干","question_type":"single_choice","options":[{"key":"A","text":"..."},{"key":"B","text":"..."},{"key":"C","text":"..."},{"key":"D","text":"..."}],"answer":"A","explanation":"解析","tags":["标签"],"reference_text":"原文参考片段"}
+question_type 可选：single_choice（单选）、short_answer（简答）、application（应用题）。
+单选题 answer 必须是 A/B/C/D；简答/应用题 options 可为 []，answer 为标准答案要点。
+reference_text 为题目所依据的原文关键片段（100-300字）。
+tags 必须从用户已有 tag 列表中选择或复用相同含义的名称，避免同义不同名。
+不要输出 markdown 代码块。"""
 
-EXTRACT_SYSTEM_PROMPT = """你是知拾学习助手。给定教材页面内容，识别并提取其中自带的练习题（优先单选题）。
+EXTRACT_SYSTEM_PROMPT = """你是知拾学习助手。给定教材页面内容，识别并提取其中自带的练习题。
 严格输出 JSON 数组，每项格式：
-{"stem":"题干","options":[{"key":"A","text":"..."},{"key":"B","text":"..."},{"key":"C","text":"..."},{"key":"D","text":"..."}],"answer":"A","explanation":"解析","tags":["标签"]}
-若页面无现成题目，返回空数组 []。不要输出 markdown 代码块。"""
+{"stem":"题干","question_type":"single_choice","options":[{"key":"A","text":"..."},{"key":"B","text":"..."},{"key":"C","text":"..."},{"key":"D","text":"..."}],"answer":"A","explanation":"解析","tags":["标签"],"reference_text":"原文参考片段"}
+若页面无现成题目，返回空数组 []。tags 优先复用已有 tag 名。不要输出 markdown 代码块。"""
 
 QuestionProvider = Callable[[DocumentSegment], List[dict]]
 PageProvider = Callable[[dict], List[dict]]
@@ -94,10 +99,12 @@ def _extract_json_array(text: str) -> Optional[list]:
 
 def _normalize_question(raw: dict) -> Optional[dict]:
     stem = (raw.get("stem") or raw.get("question") or "").strip()
-    answer = (raw.get("answer") or "").strip().upper()
+    answer = (raw.get("answer") or "").strip()
+    qtype = (raw.get("question_type") or "single_choice").strip().lower()
     options = raw.get("options") or []
-    if not stem or not answer or len(options) < 2:
+    if not stem or not answer:
         return None
+
     norm_options = []
     for opt in options:
         if isinstance(opt, dict):
@@ -107,18 +114,44 @@ def _normalize_question(raw: dict) -> Optional[dict]:
             continue
         if key and text:
             norm_options.append({"key": key, "text": text})
-    if answer not in {o["key"] for o in norm_options}:
-        return None
+
+    if qtype == "single_choice":
+        answer = answer.upper()
+        if len(norm_options) < 2 or answer not in {o["key"] for o in norm_options}:
+            return None
+    elif qtype in ("short_answer", "application"):
+        if not norm_options:
+            norm_options = []
+    else:
+        qtype = "single_choice"
+        answer = answer.upper()
+        if len(norm_options) < 2:
+            return None
+
     tags = raw.get("tags") or []
     if isinstance(tags, str):
         tags = [tags]
+    ref_text = (raw.get("reference_text") or "").strip() or None
     return {
         "stem": stem,
         "options": norm_options,
         "answer": answer,
         "explanation": (raw.get("explanation") or "").strip() or None,
         "tags": tags,
+        "question_type": qtype,
+        "reference_text": ref_text,
     }
+
+
+def _existing_tag_names(db: Session, user_id: int, document_id: Optional[str] = None) -> List[str]:
+    rows = tag_crud.list_tags_for_user(db, user_id, document_id=document_id)
+    return [r.name for r in rows]
+
+
+def _format_tag_hint(tag_names: List[str]) -> str:
+    if not tag_names:
+        return "（暂无已有 tag，请创建简洁、可复用的知识点标签）"
+    return "已有 tag（请优先复用）：" + "、".join(tag_names[:40])
 
 
 def _template_questions_for_page(page: dict) -> List[dict]:
@@ -140,7 +173,7 @@ def _template_questions_for_page(page: dict) -> List[dict]:
     ]
 
 
-def _llm_generate_for_page(page: dict, *, count: int = 1) -> List[dict]:
+def _llm_generate_for_page(page: dict, *, count: int = 1, tag_hint: str = "") -> List[dict]:
     llm = _get_llm()
     if not llm:
         return _template_questions_for_page(page)
@@ -148,7 +181,8 @@ def _llm_generate_for_page(page: dict, *, count: int = 1) -> List[dict]:
     title = page.get("title") or f"第 {page.get('page_number', '?')} 页"
     user_input = (
         f"页面：{title}\n\n页面内容：\n{page['content'][:3000]}\n\n"
-        f"请生成 {count} 道单选题，覆盖本页核心知识点。"
+        f"{tag_hint}\n\n"
+        f"请生成 {count} 道练习题，覆盖本页核心知识点。"
     )
     try:
         resp = llm_predict_no_stream(
@@ -173,13 +207,16 @@ def _llm_generate_for_page(page: dict, *, count: int = 1) -> List[dict]:
     return _template_questions_for_page(page)
 
 
-def _llm_extract_for_page(page: dict) -> List[dict]:
+def _llm_extract_for_page(page: dict, *, tag_hint: str = "") -> List[dict]:
     llm = _get_llm()
     if not llm:
         return []
 
     title = page.get("title") or f"第 {page.get('page_number', '?')} 页"
-    user_input = f"页面：{title}\n\n页面内容：\n{page['content'][:4000]}\n\n请提取本页自带题目。"
+    user_input = (
+        f"页面：{title}\n\n页面内容：\n{page['content'][:4000]}\n\n"
+        f"{tag_hint}\n\n请提取本页自带题目。"
+    )
     try:
         resp = llm_predict_no_stream(
             llm,
@@ -238,7 +275,7 @@ def _template_questions(segment: DocumentSegment) -> List[dict]:
     ]
 
 
-def _llm_generate(segment: DocumentSegment) -> List[dict]:
+def _llm_generate(segment: DocumentSegment, *, tag_hint: str = "") -> List[dict]:
     llm = _get_llm()
     if not llm:
         return _template_questions(segment)
@@ -246,7 +283,8 @@ def _llm_generate(segment: DocumentSegment) -> List[dict]:
     title = segment.title or "（无标题）"
     user_input = (
         f"段落标题：{title}\n\n段落内容：\n{segment.content[:3000]}\n\n"
-        f"请生成 {QUESTIONS_PER_SEGMENT} 道单选题。"
+        f"{tag_hint}\n\n"
+        f"请生成 {QUESTIONS_PER_SEGMENT} 道练习题。"
     )
     try:
         resp = llm_predict_no_stream(
@@ -333,9 +371,21 @@ def _persist_question_core(
     excerpt: str,
 ) -> Tuple[bool, bool]:
     """返回 (created, reused)。"""
-    options_json = json.dumps(qdata["options"], ensure_ascii=False)
+    tag_crud.ensure_tags(
+        db,
+        user_id=user_id,
+        tag_names=qdata.get("tags") or [],
+        document_id=document.id,
+    )
+
+    ref_text = qdata.get("reference_text")
+    if ref_text:
+        excerpt = ref_text[:EXCERPT_MAX_LEN] + ("…" if len(ref_text) > EXCERPT_MAX_LEN else "")
+
+    options_json = json.dumps(qdata["options"], ensure_ascii=False) if qdata.get("options") else None
     tags_json = json.dumps(qdata.get("tags") or [], ensure_ascii=False)
-    content_hash = compute_content_hash(qdata["stem"], qdata["options"], qdata["answer"])
+    qtype = qdata.get("question_type") or "single_choice"
+    content_hash = compute_content_hash(qdata["stem"], qdata.get("options") or [], qdata["answer"])
 
     existing = question_crud.get_question_by_content_hash(db, content_hash)
     created = False
@@ -347,7 +397,7 @@ def _persist_question_core(
             db,
             content_hash=content_hash,
             stem=qdata["stem"],
-            question_type="single_choice",
+            question_type=qtype,
             options_json=options_json,
             answer=qdata["answer"],
             explanation=qdata.get("explanation"),
@@ -450,6 +500,10 @@ def generate_questions(
         segments = segment_crud.list_segments_for_document(db, document.id)
         target_doc_id = document.id
 
+    tag_hint_global = _format_tag_hint(
+        _existing_tag_names(db, user_id, document_id=target_doc_id)
+    )
+
     if not segments:
         if document:
             document.question_gen_status = "failed"
@@ -472,7 +526,10 @@ def generate_questions(
             if total_questions >= MAX_QUESTIONS_PER_DOCUMENT:
                 break
             try:
-                raw_questions = gen_provider(segment)
+                if provider:
+                    raw_questions = gen_provider(segment)
+                else:
+                    raw_questions = _llm_generate(segment, tag_hint=tag_hint_global)
             except Exception:
                 logger.warning(
                     "分段出题失败，跳过: segment_id=%s", segment.id, exc_info=True
@@ -801,16 +858,27 @@ def generate_from_pages(
     created_count = 0
     reused_count = 0
     total_questions = 0
+    tag_hint = _format_tag_hint(_existing_tag_names(db, user_id, document_id=doc.id))
 
     doc.question_gen_status = "processing"
     db.flush()
 
     try:
-        pairs = batch_generate_questions(
-            pages,
-            questions_per_page=questions_per_page,
-            provider=provider,
-        )
+        if provider:
+            pairs = batch_generate_questions(
+                pages,
+                questions_per_page=questions_per_page,
+                provider=provider,
+            )
+        else:
+            page_provider = lambda p: _llm_generate_for_page(
+                p, count=questions_per_page, tag_hint=tag_hint
+            )
+            pairs = batch_generate_questions(
+                pages,
+                questions_per_page=questions_per_page,
+                provider=page_provider,
+            )
         for page, qdata in pairs:
             if total_questions >= MAX_QUESTIONS_PER_DOCUMENT:
                 break
@@ -857,7 +925,9 @@ def extract_from_pages(
     doc = _validate_document_for_page_ops(doc)
 
     pages = get_pages_by_numbers(db, doc, page_numbers)
-    extract_fn = provider or _llm_extract_for_page
+    extract_fn = provider or (lambda p: _llm_extract_for_page(
+        p, tag_hint=_format_tag_hint(_existing_tag_names(db, user_id, document_id=doc.id))
+    ))
     created_count = 0
     reused_count = 0
     total_questions = 0

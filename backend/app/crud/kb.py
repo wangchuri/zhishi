@@ -72,6 +72,20 @@ def get_default_study_collection(
     )
 
 
+def get_default_life_collection(
+    db: Session, user_id: int
+) -> Optional[KbCollection]:
+    return (
+        db.query(KbCollection)
+        .filter(
+            KbCollection.user_id == user_id,
+            KbCollection.zone == "life",
+        )
+        .order_by(KbCollection.created_at.asc())
+        .first()
+    )
+
+
 def create_collection(
     db: Session,
     user_id: int,

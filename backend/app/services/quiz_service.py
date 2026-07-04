@@ -59,11 +59,49 @@ def _build_citation(
     )
 
 
+def _grade_short_answer(question: GlobalQuestion, user_answer: Optional[str]) -> str:
+    if not user_answer or not user_answer.strip():
+        return "wrong"
+    user = user_answer.strip().lower()
+    correct = question.answer.strip().lower()
+    if user == correct:
+        return "correct"
+    if correct in user or user in correct:
+        return "correct"
+    key_parts = [p.strip() for p in correct.replace("；", ";").split(";") if p.strip()]
+    if key_parts:
+        hit = sum(1 for p in key_parts if p in user)
+        if hit >= max(1, len(key_parts) // 2):
+            return "correct"
+    try:
+        from app.services.question_gen_service import _get_llm
+        from app.services.llm_runner import llm_predict_no_stream
+
+        llm = _get_llm()
+        if llm:
+            prompt = (
+                f"题干：{question.stem}\n标准答案：{question.answer}\n学生答案：{user_answer}\n"
+                "仅回答 correct 或 wrong。"
+            )
+            resp = llm_predict_no_stream(
+                llm, input_text=prompt, sys_prompt="你是判题助手，只输出 correct 或 wrong。", temperature=0
+            )
+            content = (resp.get("content", "") if isinstance(resp, dict) else str(resp)).strip().lower()
+            if "correct" in content and "wrong" not in content:
+                return "correct"
+    except Exception:
+        pass
+    return "wrong"
+
+
 def _grade_answer(
     question: GlobalQuestion, user_answer: Optional[str], status_hint: Optional[str]
 ) -> str:
     if status_hint == "unknown":
         return "unknown"
+    qtype = (question.question_type or "single_choice").lower()
+    if qtype in ("short_answer", "application"):
+        return _grade_short_answer(question, user_answer)
     if not user_answer or not user_answer.strip():
         return "wrong"
 

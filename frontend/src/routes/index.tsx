@@ -8,6 +8,7 @@ import { DocumentViewPage } from "@/features/knowledge-base/DocumentViewPage"
 import { UploadPage } from "@/features/knowledge-base/UploadPage"
 import { KnowledgeGraphPage } from "@/features/knowledge-graph/KnowledgeGraphPage"
 import { LearningAnalyticsPage } from "@/features/learning/LearningAnalyticsPage"
+import { TargetedTrainingPage } from "@/features/learning/TargetedTrainingPage"
 import { LearningPathPage } from "@/features/learning/LearningPathPage"
 import { RemindersPage } from "@/features/learning/RemindersPage"
 import { ProfilePage } from "@/features/profile/ProfilePage"
@@ -48,6 +49,7 @@ export function AppRoutes() {
       <Route path="/knowledge/upload" element={<RequireAuth><UploadPage /></RequireAuth>} />
       <Route path="/graph" element={<RequireAuth><KnowledgeGraphPage /></RequireAuth>} />
       <Route path="/analytics" element={<RequireAuth><LearningAnalyticsPage /></RequireAuth>} />
+      <Route path="/training/targeted" element={<RequireAuth><TargetedTrainingPage /></RequireAuth>} />
       <Route path="/path" element={<RequireAuth><LearningPathPage /></RequireAuth>} />
       <Route path="/reminders" element={<RequireAuth><RemindersPage /></RequireAuth>} />
       <Route path="/profile" element={<RequireAuth><ProfilePage /></RequireAuth>} />

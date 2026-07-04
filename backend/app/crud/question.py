@@ -174,3 +174,32 @@ def parse_tags_json(raw: Optional[str]) -> Optional[list]:
         return json.loads(raw)
     except (json.JSONDecodeError, TypeError):
         return None
+
+
+def search_questions_by_tags(
+    db: Session,
+    user_id: int,
+    tags: List[str],
+    *,
+    limit: int = 30,
+    question_types: Optional[List[str]] = None,
+) -> List[Tuple[UserQuestionRef, GlobalQuestion]]:
+    """在用户题库中按 tag 名检索题目（tags 字段 JSON 包含任一 tag 即命中）。"""
+    if not tags:
+        return []
+
+    rows = list_user_questions(db, user_id)
+    tag_set = {t.strip().lower() for t in tags if t and t.strip()}
+    matched: List[Tuple[UserQuestionRef, GlobalQuestion]] = []
+
+    for ref, question in rows:
+        if question_types and question.question_type not in question_types:
+            continue
+        q_tags = parse_tags_json(question.tags) or []
+        q_tag_lower = {str(t).strip().lower() for t in q_tags}
+        if tag_set & q_tag_lower:
+            matched.append((ref, question))
+        if len(matched) >= limit:
+            break
+
+    return matched
