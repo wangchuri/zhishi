@@ -1,20 +1,31 @@
 import { useState } from "react"
-import { useNavigate } from "react-router-dom"
+import { Navigate, useNavigate } from "react-router-dom"
 import { useAuth } from "@/context/AuthContext"
 import { Button } from "@/components/ui/button"
 import { Sparkles, Mail, Lock, User, ArrowRight } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 export function LoginPage() {
-  const { login, register } = useAuth()
+  const { login, register, user, isLoading } = useAuth()
   const navigate = useNavigate()
-
   const [isRegister, setIsRegister] = useState(false)
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [nickname, setNickname] = useState("")
   const [error, setError] = useState("")
   const [loading, setLoading] = useState(false)
+
+  if (isLoading) {
+    return (
+      <div className="h-full flex items-center justify-center bg-bg">
+        <div className="text-body text-ink-tertiary">加载中...</div>
+      </div>
+    )
+  }
+
+  if (user) {
+    return <Navigate to="/" replace />
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -27,7 +38,7 @@ export function LoginPage() {
       } else {
         await login(email, password)
       }
-      navigate("/chat")
+      navigate("/")
     } catch (err: any) {
       setError(err.message || "操作失败，请重试")
     } finally {
