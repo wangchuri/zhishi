@@ -207,8 +207,18 @@ def get_document_content(
     db: Session = Depends(get_db),
     current_user: dict = Depends(get_current_active_user),
 ):
-    """获取文档解析后的文本内容"""
+    """获取文档解析后的文本内容或预览元数据"""
     return kb_service.get_document_content(db, current_user["user_id"], doc_id)
+
+
+@router.get("/documents/{doc_id}/file")
+def get_document_file(
+    doc_id: str,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_active_user),
+):
+    """下载/预览原始上传文件（PDF 等）"""
+    return kb_service.serve_document_file(db, current_user["user_id"], doc_id)
 
 
 @router.get("/documents/{doc_id}/segments")

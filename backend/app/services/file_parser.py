@@ -323,6 +323,37 @@ def _pdf_page_limit(total_pages: int) -> int:
     return total_pages
 
 
+def get_pdf_page_count(file_path: str) -> int:
+    """返回 PDF 总页数；无法读取时返回 0。"""
+    try:
+        import fitz
+    except ImportError:
+        return 0
+    try:
+        doc = fitz.open(file_path)
+        try:
+            return doc.page_count
+        finally:
+            doc.close()
+    except Exception as e:
+        logger.warning("file_parser.get_pdf_page_count 失败: %s", e)
+        return 0
+
+
+def _pdf_parse_result(
+    pages_text: list[str],
+    *,
+    original_filename: Optional[str] = None,
+    file_path: str = "",
+) -> ParseOutcome:
+    """将按页文本转为带页码标记的 markdown 与 page_texts。"""
+    from app.services.pdf_ocr_service import build_shadow_markdown
+
+    display_name = original_filename or Path(file_path).name or "document.pdf"
+    markdown = build_shadow_markdown(display_name, pages_text)
+    return ParseOutcome(text=markdown, page_texts=pages_text)
+
+
 def is_scanned_pdf(file_path: str) -> tuple[bool, int]:
     """
     判定 PDF 是否为扫描件（无嵌入文本层）。
@@ -364,7 +395,7 @@ def _parse_pdf(
 
 
 
-    outcome = _parse_pdf_pymupdf(file_path)
+    outcome = _parse_pdf_pymupdf(file_path, original_filename)
 
     if outcome.text:
 
@@ -376,7 +407,7 @@ def _parse_pdf(
 
 
 
-    outcome = _parse_pdf_pdfplumber(file_path)
+    outcome = _parse_pdf_pdfplumber(file_path, original_filename)
 
     if outcome.text:
 
@@ -388,7 +419,7 @@ def _parse_pdf(
 
 
 
-    outcome = _parse_pdf_pypdf2(file_path)
+    outcome = _parse_pdf_pypdf2(file_path, original_filename)
 
     if outcome.text:
 
@@ -447,7 +478,9 @@ def _parse_pdf(
 
 
 
-def _parse_pdf_pymupdf(file_path: str) -> ParseOutcome:
+def _parse_pdf_pymupdf(
+    file_path: str, original_filename: Optional[str] = None
+) -> ParseOutcome:
 
     try:
 
@@ -473,11 +506,9 @@ def _parse_pdf_pymupdf(file_path: str) -> ParseOutcome:
 
             for i in range(limit):
 
-                text = doc[i].get_text("text") or ""
+                text = (doc[i].get_text("text") or "").strip()
 
-                if text.strip():
-
-                    pages_text.append(text)
+                pages_text.append(text)
 
             if limit < total:
 
@@ -493,9 +524,13 @@ def _parse_pdf_pymupdf(file_path: str) -> ParseOutcome:
 
                 )
 
-            if pages_text:
+            if any(t for t in pages_text):
 
-                return ParseOutcome(text="\n\n".join(pages_text))
+                return _pdf_parse_result(
+                    pages_text,
+                    original_filename=original_filename,
+                    file_path=file_path,
+                )
 
             if total > 0:
 
@@ -523,7 +558,9 @@ def _parse_pdf_pymupdf(file_path: str) -> ParseOutcome:
 
 
 
-def _parse_pdf_pdfplumber(file_path: str) -> ParseOutcome:
+def _parse_pdf_pdfplumber(
+    file_path: str, original_filename: Optional[str] = None
+) -> ParseOutcome:
 
     try:
 
@@ -547,15 +584,17 @@ def _parse_pdf_pdfplumber(file_path: str) -> ParseOutcome:
 
             for page in pdf.pages[:limit]:
 
-                text = page.extract_text()
+                text = (page.extract_text() or "").strip()
 
-                if text and text.strip():
+                pages_text.append(text)
 
-                    pages_text.append(text)
+            if any(t for t in pages_text):
 
-            if pages_text:
-
-                return ParseOutcome(text="\n\n".join(pages_text))
+                return _pdf_parse_result(
+                    pages_text,
+                    original_filename=original_filename,
+                    file_path=file_path,
+                )
 
             if total > 0:
 
@@ -579,7 +618,9 @@ def _parse_pdf_pdfplumber(file_path: str) -> ParseOutcome:
 
 
 
-def _parse_pdf_pypdf2(file_path: str) -> ParseOutcome:
+def _parse_pdf_pypdf2(
+    file_path: str, original_filename: Optional[str] = None
+) -> ParseOutcome:
 
     try:
 
@@ -603,15 +644,17 @@ def _parse_pdf_pypdf2(file_path: str) -> ParseOutcome:
 
         for page in reader.pages[:limit]:
 
-            text = page.extract_text()
+            text = (page.extract_text() or "").strip()
 
-            if text and text.strip():
+            pages_text.append(text)
 
-                pages_text.append(text)
+        if any(t for t in pages_text):
 
-        if pages_text:
-
-            return ParseOutcome(text="\n\n".join(pages_text))
+            return _pdf_parse_result(
+                pages_text,
+                original_filename=original_filename,
+                file_path=file_path,
+            )
 
         if total > 0:
 

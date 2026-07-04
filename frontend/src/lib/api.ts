@@ -347,6 +347,22 @@ export const questionsApi = {
   extractFromPages(data: { document_id: string; page_numbers: number[] }) {
     return request<PageQuestionResult>("POST", "/api/v1/questions/extract-from-pages", data)
   },
+
+  deleteByDocument(documentId: string) {
+    const qs = new URLSearchParams({ document_id: documentId })
+    return request<{ deleted_count: number; document_id?: string }>(
+      "DELETE",
+      `/api/v1/questions?${qs.toString()}`
+    )
+  },
+
+  deleteBulk(data: {
+    document_id?: string
+    collection_id?: string
+    question_ids?: string[]
+  }) {
+    return request<{ deleted_count: number }>("DELETE", "/api/v1/questions/bulk", data)
+  },
 }
 
 // ─── Quiz ──────────────────────────────────────────────

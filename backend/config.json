@@ -1,5 +1,5 @@
 {
-  "ocr_max_parallel_pages": 3,
+  "ocr_max_parallel_pages": 1,
   "pdf_ocr_max_pages": 50,
   "pdf_max_pages": 0,
   "pdf_ocr_render_dpi": 150,

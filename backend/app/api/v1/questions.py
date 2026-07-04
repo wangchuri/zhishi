@@ -10,6 +10,8 @@ from app.api.deps import get_current_active_user, get_db
 from app.schemas.page import PageExtractRequest, PageGenerateRequest
 from app.schemas.question import (
     PageQuestionResponse,
+    QuestionBulkDeleteRequest,
+    QuestionDeleteResponse,
     QuestionDetailOut,
     QuestionGenerateRequest,
     QuestionGenerateResponse,
@@ -63,6 +65,40 @@ def list_questions(
         document_id=document_id,
         collection_id=collection_id,
     )
+
+
+@router.delete("", response_model=QuestionDeleteResponse)
+def delete_questions_by_document(
+    document_id: str,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_active_user),
+):
+    """删除当前用户对指定文档的题库引用（不删 global_questions / quiz_answers）。"""
+    result = question_gen_service.delete_user_questions(
+        db=db,
+        user_id=current_user["user_id"],
+        document_id=document_id,
+    )
+    db.commit()
+    return result
+
+
+@router.delete("/bulk", response_model=QuestionDeleteResponse)
+def delete_questions_bulk(
+    payload: QuestionBulkDeleteRequest,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_active_user),
+):
+    """批量删除用户题库引用，可按 document_id / collection_id / question_ids 过滤。"""
+    result = question_gen_service.delete_user_questions(
+        db=db,
+        user_id=current_user["user_id"],
+        document_id=payload.document_id,
+        collection_id=payload.collection_id,
+        question_ids=payload.question_ids,
+    )
+    db.commit()
+    return result
 
 
 @router.get("/{question_id}", response_model=QuestionDetailOut)

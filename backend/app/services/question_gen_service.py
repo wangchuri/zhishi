@@ -22,6 +22,7 @@ from app.crud import tag as tag_crud
 from app.models import Document, DocumentSegment, UserQuestionRef
 from app.schemas.question import (
     PageQuestionResponse,
+    QuestionDeleteResponse,
     QuestionDetailOut,
     QuestionGenerateResponse,
     QuestionListOut,
@@ -857,6 +858,40 @@ def list_questions(
         correct_count=correct_count,
         wrong_count=wrong_count,
         unknown_count=unknown_count,
+    )
+
+
+def delete_user_questions(
+    db: Session,
+    user_id: int,
+    *,
+    document_id: Optional[str] = None,
+    collection_id: Optional[str] = None,
+    question_ids: Optional[List[str]] = None,
+) -> QuestionDeleteResponse:
+    if not document_id and not collection_id and not question_ids:
+        raise HTTPException(
+            status_code=400,
+            detail="至少提供 document_id、collection_id 或 question_ids 之一",
+        )
+
+    if document_id:
+        doc = kb_crud.get_document_by_id_or_dify(db, user_id, document_id)
+        if not doc:
+            raise HTTPException(status_code=404, detail="文档不存在")
+        document_id = doc.id
+
+    deleted_count = question_crud.delete_user_question_refs(
+        db,
+        user_id,
+        document_id=document_id,
+        collection_id=collection_id,
+        question_ids=question_ids,
+    )
+    return QuestionDeleteResponse(
+        deleted_count=deleted_count,
+        document_id=document_id,
+        collection_id=collection_id,
     )
 
 

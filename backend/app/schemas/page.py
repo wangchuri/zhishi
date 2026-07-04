@@ -13,6 +13,8 @@ class DocumentPageOut(BaseModel):
     has_builtin_questions: bool = False
     is_key_page: bool = False
     segment_id: Optional[str] = None
+    preview_mode: str = "markdown"
+    file_type: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -22,6 +24,9 @@ class DocumentPageListOut(BaseModel):
     document_name: str
     total_pages: int
     has_page_markers: bool
+    preview_mode: str = "markdown"
+    file_type: Optional[str] = None
+    has_raw_file: bool = False
     pages: List[DocumentPageOut]
 
 

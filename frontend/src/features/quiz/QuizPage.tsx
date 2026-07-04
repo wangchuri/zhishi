@@ -10,6 +10,7 @@ import {
   HelpCircle,
   Loader2,
   Play,
+  Trash2,
 } from "lucide-react"
 import { AppShell } from "@/components/layout/AppShell"
 import { PageHeader } from "@/components/blocks/PageHeader"
@@ -20,6 +21,16 @@ import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/ui/empty-state"
 import { Badge } from "@/components/ui/badge"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 import { StatCard } from "@/components/ui/stat-card"
 import { questionsApi, quizApi } from "@/lib/api"
 import { useKbDocuments } from "@/hooks/useKbDocuments"
@@ -103,6 +114,8 @@ export function QuizPage() {
   const [questionListData, setQuestionListData] = useState<QuestionListResult | null>(null)
   const [loadingQuestions, setLoadingQuestions] = useState(false)
   const [questionStartTime, setQuestionStartTime] = useState(Date.now())
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const [deletingQuestions, setDeletingQuestions] = useState(false)
 
   const selectedDocument = documents.find((d) => d.id === selectedDocumentId)
   const isLifeZone = selectedCollection?.zone === "life"
@@ -324,6 +337,34 @@ export function QuizPage() {
       setError(err instanceof Error ? err.message : "出题失败")
     }
   }
+
+  const handleDeleteQuestions = async () => {
+    if (!selectedDocumentId) return
+    setDeletingQuestions(true)
+    setError(null)
+    try {
+      const res = await questionsApi.deleteByDocument(selectedDocumentId)
+      setQuestionListData(null)
+      updateDocument(selectedDocumentId, { questionCount: 0 })
+      setSetupAlert(
+        res.deleted_count > 0
+          ? `已删除 ${res.deleted_count} 道题目的题库引用，答题历史记录已保留。`
+          : "该文档暂无题库引用。"
+      )
+      setDeleteDialogOpen(false)
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "删除题库失败")
+    } finally {
+      setDeletingQuestions(false)
+    }
+  }
+
+  const canDeleteQuestions =
+    !deletingQuestions &&
+    !generating &&
+    !isLifeZone &&
+    !!selectedDocumentId &&
+    (questionListData?.total ?? selectedDocument?.questionCount ?? 0) > 0
 
   const finishSession = async (sessionId: string) => {
     try {
@@ -570,6 +611,17 @@ export function QuizPage() {
                                 "为该文档出题"
                               )}
                             </Button>
+                            <Button
+                              variant="secondary"
+                              size="md"
+                              onClick={() => setDeleteDialogOpen(true)}
+                              disabled={!canDeleteQuestions}
+                              title={!canDeleteQuestions ? "暂无题目可删除" : undefined}
+                              className="text-danger hover:text-danger"
+                            >
+                              <Trash2 className="w-4 h-4" strokeWidth={2} />
+                              删除题库
+                            </Button>
                           </div>
 
                           {!docReadyForQuiz && (
@@ -765,6 +817,37 @@ export function QuizPage() {
           )}
         </div>
       )}
+
+      <AlertDialog
+        open={deleteDialogOpen}
+        onOpenChange={(open) => {
+          if (!open && !deletingQuestions) setDeleteDialogOpen(false)
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>确认删除题库？</AlertDialogTitle>
+            <AlertDialogDescription>
+              将删除「{selectedDocument?.name}」下的全部题目引用（共{" "}
+              {questionListData?.total ?? selectedDocument?.questionCount ?? 0}{" "}
+              题）。答题历史记录会保留，全局题目不会被删除。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deletingQuestions}>取消</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault()
+                void handleDeleteQuestions()
+              }}
+              disabled={deletingQuestions}
+              className="bg-danger text-white hover:bg-danger/90"
+            >
+              {deletingQuestions ? "删除中..." : "删除题库"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </AppShell>
   )
 }

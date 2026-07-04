@@ -130,6 +130,24 @@ def create_user_ref(
     return row
 
 
+def delete_user_question_refs(
+    db: Session,
+    user_id: int,
+    *,
+    document_id: Optional[str] = None,
+    collection_id: Optional[str] = None,
+    question_ids: Optional[List[str]] = None,
+) -> int:
+    query = db.query(UserQuestionRef).filter(UserQuestionRef.user_id == user_id)
+    if document_id:
+        query = query.filter(UserQuestionRef.document_id == document_id)
+    if collection_id:
+        query = query.filter(UserQuestionRef.collection_id == collection_id)
+    if question_ids:
+        query = query.filter(UserQuestionRef.question_id.in_(question_ids))
+    return query.delete(synchronize_session=False)
+
+
 def list_user_questions(
     db: Session,
     user_id: int,

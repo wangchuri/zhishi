@@ -4,8 +4,9 @@ import { useNavigate, useParams, useSearchParams } from "react-router-dom"
 import { AppShell } from "@/components/layout/AppShell"
 import { PageHeader } from "@/components/blocks/PageHeader"
 import { Button } from "@/components/ui/button"
-import { renderHighlightedContent } from "@/components/blocks/DocumentPreviewModal"
+import { DocumentContentViewer } from "@/components/blocks/DocumentContentViewer"
 import { kbApi } from "@/lib/api"
+import type { DocumentContentMeta } from "@/types"
 
 export function DocumentViewPage() {
   const { docId = "" } = useParams<{ docId: string }>()
@@ -16,8 +17,7 @@ export function DocumentViewPage() {
   const charStart = parseOptionalInt(searchParams.get("start"))
   const charEnd = parseOptionalInt(searchParams.get("end"))
 
-  const [fileName, setFileName] = useState(titleParam || "文档")
-  const [content, setContent] = useState("")
+  const [meta, setMeta] = useState<DocumentContentMeta | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -27,16 +27,21 @@ export function DocumentViewPage() {
     setError(null)
     kbApi
       .getDocumentContent(docId)
-      .then((res) => {
-        setFileName(res.file_name || titleParam || "文档")
-        setContent(res.content || "")
-      })
+      .then((res) => setMeta(res))
       .catch((err: Error) => setError(err.message || "加载失败"))
       .finally(() => setLoading(false))
-  }, [docId, titleParam])
+  }, [docId])
+
+  const fileName = meta?.file_name || titleParam || "文档"
+  const previewMode =
+    meta?.preview_mode === "pdf" && meta?.has_raw_file
+      ? "pdf"
+      : meta?.file_type === "md"
+        ? "markdown"
+        : "text"
 
   return (
-    <AppShell maxWidth={960}>
+    <AppShell maxWidth={previewMode === "pdf" ? null : 960}>
       <PageHeader title={fileName} subtitle="文档全文预览">
         <Button variant="ghost" size="md" onClick={() => navigate("/knowledge")}>
           <ArrowLeft className="h-4 w-4 mr-2" />
@@ -44,7 +49,7 @@ export function DocumentViewPage() {
         </Button>
       </PageHeader>
 
-      {charStart != null && charEnd != null && (
+      {charStart != null && charEnd != null && previewMode !== "pdf" && (
         <div className="text-caption text-ink-tertiary mb-4">
           高亮位置 {charStart}–{charEnd}
         </div>
@@ -61,9 +66,15 @@ export function DocumentViewPage() {
         ) : error ? (
           <div className="p-8 text-body text-danger">{error}</div>
         ) : (
-          <pre className="p-8 text-body text-ink-primary whitespace-pre-wrap font-sans leading-relaxed">
-            {renderHighlightedContent(content, charStart, charEnd)}
-          </pre>
+          <div className={previewMode === "pdf" ? "p-2" : "p-8"}>
+            <DocumentContentViewer
+              docId={docId}
+              previewMode={previewMode}
+              content={meta?.content || ""}
+              charStart={charStart}
+              charEnd={charEnd}
+            />
+          </div>
         )}
       </div>
     </AppShell>

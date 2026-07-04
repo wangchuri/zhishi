@@ -15,7 +15,7 @@ import { EmptyState } from "@/components/ui/empty-state"
 import { Badge } from "@/components/ui/badge"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { DocumentPipelineBadge } from "@/components/blocks/DocumentPipelineBadge"
-import { MarkdownWithMath } from "@/components/blocks/MarkdownWithMath"
+import { DocumentContentViewer } from "@/components/blocks/DocumentContentViewer"
 import { kbApi, questionsApi } from "@/lib/api"
 import { useKbDocuments } from "@/hooks/useKbDocuments"
 import type { DocumentPage, DocumentPageDetail, PageQuestionResult } from "@/types"
@@ -33,6 +33,7 @@ export function QuestionGenDocPage() {
 
   const [pages, setPages] = useState<DocumentPage[]>([])
   const [hasPageMarkers, setHasPageMarkers] = useState(true)
+  const [docPreviewMode, setDocPreviewMode] = useState<"pdf" | "markdown" | "text">("markdown")
   const [documentName, setDocumentName] = useState("")
   const [activePageNumber, setActivePageNumber] = useState<number | null>(null)
   const [pageDetail, setPageDetail] = useState<DocumentPageDetail | null>(null)
@@ -63,6 +64,7 @@ export function QuestionGenDocPage() {
       const pageList = res.pages || []
       setPages(pageList)
       setHasPageMarkers(res.has_page_markers)
+      setDocPreviewMode(res.preview_mode || "markdown")
       setDocumentName(res.document_name || selectedDocument?.name || "")
       if (pageList.length > 0) {
         setActivePageNumber(pageList[0].page_number)
@@ -126,13 +128,18 @@ export function QuestionGenDocPage() {
     return () => window.clearInterval(timer)
   }, [documentId, working, refreshDocuments, updateDocument])
 
-  const togglePage = (pageNumber: number) => {
+  const togglePage = (pageNumber: number, event?: React.MouseEvent) => {
+    event?.stopPropagation()
     setSelectedPages((prev) => {
       const next = new Set(prev)
       if (next.has(pageNumber)) next.delete(pageNumber)
       else next.add(pageNumber)
       return next
     })
+  }
+
+  const handlePageClick = (pageNumber: number) => {
+    setActivePageNumber(pageNumber)
   }
 
   const selectAll = () => setSelectedPages(new Set(pages.map((p) => p.page_number)))
@@ -272,34 +279,53 @@ export function QuestionGenDocPage() {
                     <div
                       key={page.page_number}
                       className={cn(
-                        "rounded-md mb-0.5 transition-colors",
+                        "rounded-md mb-0.5 transition-colors flex items-start gap-1",
                         isActive && "bg-primary-soft/60"
                       )}
                     >
                       <button
                         type="button"
-                        onClick={() => setActivePageNumber(page.page_number)}
+                        onClick={(e) => togglePage(page.page_number, e)}
+                        className="shrink-0 px-2 py-2.5 text-ink-tertiary hover:text-primary"
+                        title={isSelected ? "取消选中" : "选中此页"}
+                        aria-label={isSelected ? "取消选中" : "选中此页"}
+                      >
+                        {isSelected ? (
+                          <CheckSquare className="h-4 w-4 text-primary" />
+                        ) : (
+                          <Square className="h-4 w-4" />
+                        )}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handlePageClick(page.page_number)}
                         className={cn(
-                          "w-full text-left px-2.5 py-2 text-small transition-colors",
+                          "flex-1 min-w-0 text-left px-1 py-2.5 text-small transition-colors",
                           isActive
                             ? "text-primary font-medium"
                             : "text-ink-secondary hover:bg-surface-soft"
                         )}
                       >
-                        {page.title}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => togglePage(page.page_number)}
-                        className="w-full flex items-center gap-1.5 px-2.5 pb-2 text-caption text-ink-tertiary hover:text-ink-primary"
-                        title={isSelected ? "取消选中" : "选中此页"}
-                      >
-                        {isSelected ? (
-                          <CheckSquare className="h-3.5 w-3.5 text-primary shrink-0" />
-                        ) : (
-                          <Square className="h-3.5 w-3.5 shrink-0" />
+                        <div className="truncate">{page.title}</div>
+                        {(page.has_builtin_questions || page.is_key_page) && (
+                          <div className="flex flex-wrap gap-1 mt-1">
+                            {page.has_builtin_questions && (
+                              <Badge variant="neutral" size="sm">
+                                含习题
+                              </Badge>
+                            )}
+                            {page.is_key_page && (
+                              <Badge variant="info" size="sm">
+                                重点
+                              </Badge>
+                            )}
+                          </div>
                         )}
-                        <span className="truncate">{isSelected ? "已选中" : "选中"}</span>
+                        {page.preview && (
+                          <div className="text-caption text-ink-tertiary truncate mt-0.5">
+                            {page.preview}
+                          </div>
+                        )}
                       </button>
                     </div>
                   )
@@ -343,9 +369,16 @@ export function QuestionGenDocPage() {
                   size="md"
                 />
               ) : (
-                <MarkdownWithMath className="text-body leading-relaxed">
-                  {pageDetail.content || "（空白页）"}
-                </MarkdownWithMath>
+                <DocumentContentViewer
+                  docId={documentId}
+                  previewMode={
+                    pageDetail.preview_mode === "pdf" || docPreviewMode === "pdf"
+                      ? "pdf"
+                      : "markdown"
+                  }
+                  content={pageDetail.content || ""}
+                  pageNumber={pageDetail.page_number}
+                />
               )}
             </div>
           </div>

@@ -20,7 +20,7 @@ _REPO_ROOT = _BACKEND_DIR.parent
 
 @dataclass(frozen=True)
 class AppConfig:
-    ocr_max_parallel_pages: int = 3
+    ocr_max_parallel_pages: int = 1
     pdf_ocr_max_pages: int = 0
     pdf_max_pages: int = 0
     pdf_ocr_render_dpi: int = 150

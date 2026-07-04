@@ -4,10 +4,12 @@
 import hashlib
 import json
 import logging
+import mimetypes
 from pathlib import Path
 from typing import Optional
 
 from fastapi import HTTPException, status
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from app.crud import kb as kb_crud
@@ -967,11 +969,27 @@ def get_document_content(
             content = storage_service.read_text_at_path(doc.parsed_cache_key)
         if not content and doc.global_document and doc.global_document.parsed_text_path:
             content = storage_service.read_text_at_path(doc.global_document.parsed_text_path)
+        file_type = _infer_document_file_type(doc)
+        preview_mode = "pdf" if file_type == "pdf" else "text"
+        has_raw_file = _resolve_document_storage_path(doc) is not None
         if content:
             return {
                 "doc_id": doc.dify_document_id or doc.id,
                 "file_name": doc.display_name,
                 "content": content,
+                "file_type": file_type,
+                "preview_mode": preview_mode,
+                "has_raw_file": has_raw_file,
+                "mock": False,
+            }
+        if has_raw_file and file_type == "pdf":
+            return {
+                "doc_id": doc.dify_document_id or doc.id,
+                "file_name": doc.display_name,
+                "content": "",
+                "file_type": file_type,
+                "preview_mode": "pdf",
+                "has_raw_file": True,
                 "mock": False,
             }
 
@@ -988,6 +1006,9 @@ def get_document_content(
                     "doc_id": doc_id,
                     "file_name": file_name,
                     "content": content,
+                    "file_type": _file_type_from_name(file_name),
+                    "preview_mode": "text",
+                    "has_raw_file": False,
                     "mock": False,
                 }
 
@@ -1000,8 +1021,69 @@ def get_document_content(
             f"您可以在对话中通过知识库检索查看文档内容。\n\n"
             f"> 提示：在对话中直接引用该文档，Tina 会自动从知识库中检索相关内容。"
         ),
+        "file_type": "unknown",
+        "preview_mode": "text",
+        "has_raw_file": False,
         "mock": True,
     }
+
+
+def _file_type_from_name(name: str) -> str:
+    lower = name.lower()
+    if lower.endswith(".pdf"):
+        return "pdf"
+    if lower.endswith(".md"):
+        return "md"
+    if lower.endswith(".txt"):
+        return "txt"
+    if lower.endswith(".docx") or lower.endswith(".doc"):
+        return "docx"
+    return "text"
+
+
+def _resolve_document_storage_path(doc: Document) -> Optional[str]:
+    global_doc = doc.global_document
+    if global_doc and global_doc.storage_path:
+        path = Path(global_doc.storage_path)
+        if path.is_file():
+            return str(path)
+    return None
+
+
+def _infer_document_file_type(doc: Document) -> str:
+    global_doc = doc.global_document
+    if global_doc:
+        if global_doc.mime_type == "application/pdf":
+            return "pdf"
+        if global_doc.original_filename:
+            ft = _file_type_from_name(global_doc.original_filename)
+            if ft != "text":
+                return ft
+        if global_doc.storage_path.lower().endswith(".pdf"):
+            return "pdf"
+    return _file_type_from_name(doc.display_name)
+
+
+def serve_document_file(db: Session, user_id: int, doc_id: str) -> FileResponse:
+    doc = kb_crud.get_document_by_id_or_dify(db, user_id, doc_id)
+    if not doc:
+        raise HTTPException(status_code=404, detail="文档不存在")
+
+    storage_path = _resolve_document_storage_path(doc)
+    if not storage_path:
+        raise HTTPException(status_code=404, detail="原始文件不可用")
+
+    media_type = None
+    if doc.global_document and doc.global_document.mime_type:
+        media_type = doc.global_document.mime_type
+    if not media_type:
+        media_type = mimetypes.guess_type(storage_path)[0] or "application/octet-stream"
+
+    return FileResponse(
+        storage_path,
+        media_type=media_type,
+        filename=doc.display_name,
+    )
 
 
 def delete_document(

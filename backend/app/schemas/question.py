@@ -51,6 +51,18 @@ class QuestionListOut(BaseModel):
     unknown_count: int = 0
 
 
+class QuestionBulkDeleteRequest(BaseModel):
+    document_id: Optional[str] = None
+    collection_id: Optional[str] = None
+    question_ids: Optional[List[str]] = Field(None, min_length=1)
+
+
+class QuestionDeleteResponse(BaseModel):
+    deleted_count: int
+    document_id: Optional[str] = None
+    collection_id: Optional[str] = None
+
+
 class QuestionGenerateRequest(BaseModel):
     document_id: Optional[str] = None
     segment_ids: Optional[List[str]] = Field(None, min_length=1)

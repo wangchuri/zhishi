@@ -2,6 +2,7 @@
 文档页解析 — 从 parsed.txt 按 `## 第 N 页` 切分，供出题页展示
 """
 import re
+from pathlib import Path
 from typing import List, Optional
 
 from fastapi import HTTPException
@@ -15,6 +16,7 @@ from app.schemas.page import (
     DocumentPageListOut,
     DocumentPageOut,
 )
+from app.services.file_parser import get_pdf_page_count
 from app.services.segment_service import _load_document_text, _resolve_parsed_path
 from app.services.storage_service import storage_service
 
@@ -32,6 +34,92 @@ def _analyze_page_content(content: str) -> tuple[bool, bool]:
     has_builtin = any(p.search(text) for p in BUILTIN_Q_PATTERNS)
     is_key = len(text) > 300 or bool(KEY_PAGE_PATTERN.search(text))
     return has_builtin, is_key
+
+
+def _resolve_storage_path(document: Document) -> Optional[str]:
+    global_doc = document.global_document
+    if global_doc and global_doc.storage_path:
+        path = Path(global_doc.storage_path)
+        if path.is_file():
+            return str(path)
+    return None
+
+
+def _is_pdf_document(document: Document) -> bool:
+    global_doc = document.global_document
+    if global_doc:
+        if global_doc.mime_type == "application/pdf":
+            return True
+        if global_doc.original_filename.lower().endswith(".pdf"):
+            return True
+        if global_doc.storage_path.lower().endswith(".pdf"):
+            return True
+    return document.display_name.lower().endswith(".pdf")
+
+
+def _preview_mode_for_document(document: Document) -> str:
+    return "pdf" if _is_pdf_document(document) else "markdown"
+
+
+def _empty_pdf_pages(total: int) -> List[dict]:
+    pages: List[dict] = []
+    for page_num in range(1, total + 1):
+        pages.append(
+            {
+                "page_number": page_num,
+                "title": f"第 {page_num} 页",
+                "content": "",
+                "char_start": 0,
+                "char_end": 0,
+                "has_builtin_questions": False,
+                "is_key_page": False,
+                "preview_mode": "pdf",
+            }
+        )
+    return pages
+
+
+def _expand_single_page_pdf(document: Document, pages_raw: List[dict]) -> List[dict]:
+    """单页「全文」且原文件为 PDF 时，按 PDF 实际页数展开列表。"""
+    if len(pages_raw) != 1 or pages_raw[0].get("title") != "全文":
+        return pages_raw
+    if not _is_pdf_document(document):
+        return pages_raw
+    storage_path = _resolve_storage_path(document)
+    if not storage_path:
+        return pages_raw
+    total = get_pdf_page_count(storage_path)
+    if total <= 1:
+        return pages_raw
+
+    full_content = pages_raw[0]["content"]
+    chunks = [c.strip() for c in re.split(r"\n{2,}", full_content) if c.strip()]
+    expanded = _empty_pdf_pages(total)
+    for i, page in enumerate(expanded):
+        if i < len(chunks):
+            body = chunks[i]
+            has_builtin, is_key = _analyze_page_content(body)
+            page["content"] = body
+            page["has_builtin_questions"] = has_builtin
+            page["is_key_page"] = is_key
+    return expanded
+
+
+def _page_out(document: Document, page: dict) -> DocumentPageOut:
+    preview_mode = page.get("preview_mode") or _preview_mode_for_document(document)
+    return DocumentPageOut(
+        page_number=page["page_number"],
+        title=page["title"],
+        preview=_make_preview(page["content"]),
+        char_start=page["char_start"],
+        char_end=page["char_end"],
+        content_length=len(page["content"]),
+        has_builtin_questions=page["has_builtin_questions"],
+        is_key_page=page["is_key_page"],
+        segment_id=page.get("segment_id"),
+        preview_mode=preview_mode,
+        file_type="pdf" if preview_mode == "pdf" else None,
+    )
 
 
 def _make_preview(content: str, max_len: int = 120) -> str:
@@ -153,16 +241,33 @@ def _load_pages_for_document(
 ) -> tuple[List[dict], bool]:
     parsed_path = _resolve_parsed_path(document)
     if parsed_path and storage_service.is_parsed_pages_dir(parsed_path):
-        return _pages_from_folder(db, document, parsed_path)
+        pages, has_markers = _pages_from_folder(db, document, parsed_path)
+        if _is_pdf_document(document):
+            for page in pages:
+                page.setdefault("preview_mode", "pdf")
+        return pages, has_markers
 
     text, error = _load_document_text(document)
     if text is None:
+        storage_path = _resolve_storage_path(document)
+        if storage_path and _is_pdf_document(document):
+            total = get_pdf_page_count(storage_path)
+            if total > 0:
+                pages = _empty_pdf_pages(total)
+                for page in pages:
+                    page["segment_id"] = _find_segment_id_for_page(
+                        db, document.id, page
+                    )
+                return pages, True
         raise HTTPException(status_code=400, detail=error or "无法读取文档内容")
 
     has_markers = PAGE_HEADING_PATTERN.search(text) is not None
     pages = split_pages(text)
+    pages = _expand_single_page_pdf(document, pages)
     for page in pages:
         page["segment_id"] = _find_segment_id_for_page(db, document.id, page)
+        if _is_pdf_document(document):
+            page.setdefault("preview_mode", "pdf")
     return pages, has_markers
 
 
@@ -174,25 +279,16 @@ def list_document_pages(
         raise HTTPException(status_code=404, detail="文档不存在")
 
     pages_raw, has_markers = _load_pages_for_document(db, doc)
-    pages = [
-        DocumentPageOut(
-            page_number=p["page_number"],
-            title=p["title"],
-            preview=_make_preview(p["content"]),
-            char_start=p["char_start"],
-            char_end=p["char_end"],
-            content_length=len(p["content"]),
-            has_builtin_questions=p["has_builtin_questions"],
-            is_key_page=p["is_key_page"],
-            segment_id=p.get("segment_id"),
-        )
-        for p in pages_raw
-    ]
+    pages = [_page_out(doc, p) for p in pages_raw]
+    preview_mode = _preview_mode_for_document(doc)
     return DocumentPageListOut(
         document_id=doc.id,
         document_name=doc.display_name,
         total_pages=len(pages),
         has_page_markers=has_markers,
+        preview_mode=preview_mode,
+        file_type="pdf" if preview_mode == "pdf" else None,
+        has_raw_file=_resolve_storage_path(doc) is not None,
         pages=pages,
     )
 
@@ -220,6 +316,8 @@ def get_document_page_detail(
             "has_builtin_questions": has_builtin,
             "is_key_page": is_key,
         }
+        if _is_pdf_document(doc):
+            page["preview_mode"] = "pdf"
         page["segment_id"] = _find_segment_id_for_page(db, doc.id, page)
         target = page
     else:
@@ -228,16 +326,9 @@ def get_document_page_detail(
         if not target:
             raise HTTPException(status_code=404, detail=f"页码不存在: {page_number}")
 
+    base = _page_out(doc, target)
     return DocumentPageDetailOut(
-        page_number=target["page_number"],
-        title=target["title"],
-        preview=_make_preview(target["content"]),
-        char_start=target["char_start"],
-        char_end=target["char_end"],
-        content_length=len(target["content"]),
-        has_builtin_questions=target["has_builtin_questions"],
-        is_key_page=target["is_key_page"],
-        segment_id=target.get("segment_id"),
+        **base.model_dump(),
         content=target["content"],
     )
 
