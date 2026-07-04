@@ -95,6 +95,7 @@ export function LoginPage() {
                   value={email}
                   onChange={e => setEmail(e.target.value)}
                   placeholder="your@email.com"
+                  autoComplete="username"
                   required
                   className={cn(
                     "w-full h-10 pl-10 pr-3 rounded-md border border-line bg-surface-soft",
@@ -114,6 +115,7 @@ export function LoginPage() {
                   value={password}
                   onChange={e => setPassword(e.target.value)}
                   placeholder="至少 6 位"
+                  autoComplete={isRegister ? "new-password" : "current-password"}
                   required
                   minLength={6}
                   className={cn(

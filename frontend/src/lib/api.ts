@@ -579,8 +579,31 @@ export const ktApi = {
     })
   },
 
-  getSkillGraph() {
-    return request<any>("GET", "/api/v1/kt/skill-graph")
+  /** LEKT 未加载时返回 null，不抛错 */
+  async getSkillGraph() {
+    const url = `${API_BASE}/api/v1/kt/skill-graph`
+    const headers: Record<string, string> = {}
+    const token = getToken()
+    if (token) headers["Authorization"] = `Bearer ${token}`
+
+    const res = await fetch(url, { method: "GET", headers })
+    if (res.status === 503) return null
+    if (res.status === 401) {
+      setToken(null)
+      throw new Error("登录已过期，请重新登录")
+    }
+    if (!res.ok) {
+      const errText = await res.text()
+      let detail = errText
+      try {
+        const errJson = JSON.parse(errText)
+        detail = errJson.detail || errText
+      } catch {
+        /* not JSON */
+      }
+      throw new Error(typeof detail === "string" ? detail : JSON.stringify(detail))
+    }
+    return res.json()
   },
 }
 

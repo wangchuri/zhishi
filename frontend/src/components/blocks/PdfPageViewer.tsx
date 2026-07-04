@@ -1,36 +1,24 @@
 import { useEffect, useRef, useState } from "react"
 import { Loader2 } from "lucide-react"
-import type { PDFDocumentProxy, RenderTask } from "pdfjs-dist"
+import type { PDFDocumentProxy, PDFPageProxy, RenderTask } from "pdfjs-dist"
 import { usePdfDocument } from "@/hooks/usePdfDocument"
 import { cn } from "@/lib/utils"
 
 const MAX_CSS_SCALE = 2
 
-async function renderPageToCanvas(
-  pdf: PDFDocumentProxy,
-  pageNumber: number,
+function setupCanvasForViewport(
   canvas: HTMLCanvasElement,
-  containerWidth: number,
-): Promise<RenderTask> {
-  const page = await pdf.getPage(pageNumber)
-  const baseViewport = page.getViewport({ scale: 1 })
-  const cssScale = Math.min(containerWidth / baseViewport.width, MAX_CSS_SCALE)
-  const outputScale = window.devicePixelRatio || 1
-  const viewport = page.getViewport({ scale: cssScale * outputScale })
-
+  viewport: ReturnType<PDFPageProxy["getViewport"]>,
+  outputScale: number,
+) {
   canvas.width = viewport.width
   canvas.height = viewport.height
   canvas.style.width = `${Math.floor(viewport.width / outputScale)}px`
   canvas.style.height = `${Math.floor(viewport.height / outputScale)}px`
+}
 
-  const ctx = canvas.getContext("2d")
-  if (!ctx) {
-    throw new Error("Canvas 不可用")
-  }
-
-  const renderTask = page.render({ canvasContext: ctx, viewport, canvas })
-  await renderTask.promise
-  return renderTask
+function isRenderCancelled(err: unknown): boolean {
+  return err instanceof Error && err.name === "RenderingCancelledException"
 }
 
 interface PdfPageCanvasProps {
@@ -43,6 +31,7 @@ interface PdfPageCanvasProps {
 function PdfPageCanvas({ pdf, pageNumber, className, lazy = false }: PdfPageCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
+  const renderTaskRef = useRef<RenderTask | null>(null)
   const [visible, setVisible] = useState(!lazy)
   const [rendering, setRendering] = useState(false)
   const [renderError, setRenderError] = useState<string | null>(null)
@@ -70,28 +59,55 @@ function PdfPageCanvas({ pdf, pageNumber, className, lazy = false }: PdfPageCanv
     if (!canvas || !container) return
 
     let cancelled = false
-    let renderTask: RenderTask | null = null
+
+    renderTaskRef.current?.cancel()
+    renderTaskRef.current = null
 
     setRendering(true)
     setRenderError(null)
 
     const width = container.clientWidth || 800
-    renderPageToCanvas(pdf, pageNumber, canvas, width)
-      .then((task) => {
-        renderTask = task
-      })
-      .catch((err: Error) => {
-        if (!cancelled && err.name !== "RenderingCancelledException") {
-          setRenderError(err.message || "页面渲染失败")
+
+    ;(async () => {
+      try {
+        const page = await pdf.getPage(pageNumber)
+        if (cancelled) return
+
+        const baseViewport = page.getViewport({ scale: 1 })
+        const cssScale = Math.min(width / baseViewport.width, MAX_CSS_SCALE)
+        const outputScale = window.devicePixelRatio || 1
+        const viewport = page.getViewport({ scale: cssScale * outputScale })
+
+        setupCanvasForViewport(canvas, viewport, outputScale)
+
+        const ctx = canvas.getContext("2d")
+        if (!ctx) {
+          throw new Error("Canvas 不可用")
         }
-      })
-      .finally(() => {
-        if (!cancelled) setRendering(false)
-      })
+        if (cancelled) return
+
+        const renderTask = page.render({ canvasContext: ctx, viewport, canvas })
+        renderTaskRef.current = renderTask
+
+        await renderTask.promise
+        if (cancelled) return
+      } catch (err: unknown) {
+        if (!cancelled && !isRenderCancelled(err)) {
+          const message = err instanceof Error ? err.message : "页面渲染失败"
+          setRenderError(message)
+        }
+      } finally {
+        if (!cancelled) {
+          renderTaskRef.current = null
+          setRendering(false)
+        }
+      }
+    })()
 
     return () => {
       cancelled = true
-      renderTask?.cancel()
+      renderTaskRef.current?.cancel()
+      renderTaskRef.current = null
     }
   }, [visible, pdf, pageNumber])
 

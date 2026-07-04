@@ -29,12 +29,20 @@ export function KnowledgeGraphPage() {
   const [edges, setEdges] = useState<{ from: string; to: string }[]>([])
   const [selected, setSelected] = useState<GraphNode | null>(null)
   const [loading, setLoading] = useState(true)
+  const [lektUnavailable, setLektUnavailable] = useState(false)
   const [graphStats, setGraphStats] = useState({ tags: 0, docs: 0, hotTag: "暂无", relations: 0 })
   const [tagList, setTagList] = useState<string[]>([])
 
   useEffect(() => {
+    let cancelled = false
+
     ktApi.getSkillGraph()
       .then((res) => {
+        if (cancelled) return
+        if (!res) {
+          setLektUnavailable(true)
+          return
+        }
         // Map nodes
         const rawNodes = res.nodes || res.skills || []
         const gNodes = rawNodes.map((n: any, i: number) => ({
@@ -74,8 +82,16 @@ export function KnowledgeGraphPage() {
           relations: res.relations_count || gEdges.length || 0,
         })
       })
-      .catch(() => { /* silently use empty graph */ })
-      .finally(() => setLoading(false))
+      .catch(() => {
+        if (!cancelled) setLektUnavailable(true)
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
+
+    return () => {
+      cancelled = true
+    }
   }, [])
 
   return (
@@ -111,6 +127,15 @@ export function KnowledgeGraphPage() {
               <div className="w-5 h-5 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
               <span className="text-body">加载中...</span>
             </div>
+          </div>
+        ) : lektUnavailable ? (
+          <div className="bg-surface border border-line-soft rounded-lg shadow-xs">
+            <EmptyState
+              icon={Network}
+              title="知识追踪模型未就绪"
+              description="LEKT 模型尚未加载，技能图谱暂不可用。其他功能不受影响。"
+              size="lg"
+            />
           </div>
         ) : nodes.length === 0 ? (
           <div className="bg-surface border border-line-soft rounded-lg shadow-xs">
