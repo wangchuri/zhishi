@@ -7,7 +7,6 @@ from typing import Generator, List, Optional, TYPE_CHECKING
 from app.core.config import is_local_rag
 from app.utils.tina_loader import tina_env_path
 from tina import Agent
-from tina.agent.core.context_manager import ContextManager
 from tina.agent.core.tools import Tools
 from tina.llm import BaseAPI
 
@@ -28,6 +27,7 @@ SYSTEM_PROMPT = """你是知拾（Zhishi）的知识管理助手 Tina。你帮�
 
 ## 核心能力
 - 基于用户知识库中的文档内容回答问题
+- 需要检索知识库时请调用 `zhishi_search_knowledge_base` 工具
 - 如果知识库中有相关内容，优先基于知识库回答，并引用来源
 - 如果知识库中没有相关内容，基于你自身的知识诚实回答
 - 帮助用户整理笔记、生成学习路径、解释复杂概念
@@ -61,9 +61,6 @@ class ZhishiAgent:
             self.kb = DifyKB(dataset_id)
 
         try:
-            context_manager = ContextManager(max_length=100000, max_tool_result_length=6000)
-            context_manager.set_system_message(SYSTEM_PROMPT)
-
             self.llm = BaseAPI(env_path=tina_env_path())
 
             self.tools = Tools(name="zhishi")

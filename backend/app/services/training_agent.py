@@ -13,11 +13,13 @@ from typing import Generator, List, Optional, TYPE_CHECKING
 
 from app.utils.tina_loader import tina_env_path
 from tina import Agent
-from tina.agent.core.context_manager import ContextManager
 from tina.agent.core.tools import Tools
 from tina.llm import BaseAPI
 
-from app.services.llm_runner import agent_predict_no_stream, iter_agent_predict_stream
+from app.services.llm_runner import (
+    agent_predict_no_stream,
+    iter_agent_continue_stream,
+)
 from app.services.training_tools import (
     get_user_wrong_stats_by_tag,
     search_questions_by_tags,
@@ -67,14 +69,12 @@ class TrainingCoachAgent:
         self.agent_session_id = agent_session_id
         self._db = db
         self._submitted_plan: Optional[dict] = None
+        self._phase_done: bool = False
         self.agent = None
         self.llm = None
         self.tools = None
 
         try:
-            context_manager = ContextManager(max_length=80000, max_tool_result_length=6000)
-            context_manager.set_system_message(SYSTEM_PROMPT)
-
             self.llm = BaseAPI(env_path=tina_env_path())
             self.tools = Tools(name="training_coach")
             self._register_tools(db)
@@ -87,12 +87,27 @@ class TrainingCoachAgent:
                 max_tool_result_length=6000,
                 name=f"training_coach_{user_id}_{agent_session_id[:8]}",
             )
+            self._register_event_hooks()
         except Exception as e:
             logger.error("TrainingCoachAgent 初始化失败: user_id=%s error=%s", user_id, e)
 
     @property
     def is_ready(self) -> bool:
         return self.agent is not None
+
+    def _register_event_hooks(self) -> None:
+        coach = self
+
+        @self.agent.after_tool_call()
+        def capture_training_plan_submit(tool_name, tool_arguments, tool_result):
+            if "submit_training_plan" in tool_name:
+                coach._submitted_plan = {
+                    "question_ids": list(tool_arguments.get("question_ids") or []),
+                    "weak_tags": list(tool_arguments.get("weak_tags") or []),
+                    "rationale": (tool_arguments.get("rationale") or "").strip(),
+                }
+                coach._phase_done = True
+            return tool_name, tool_arguments, tool_result
 
     def _register_tools(self, db: "Session") -> None:
         user_id = self.user_id
@@ -146,11 +161,6 @@ class TrainingCoachAgent:
                 weak_tags (List[str]): 本次重点薄弱 tag
                 rationale (str): 选题理由与薄弱点说明（中文）
             """
-            agent._submitted_plan = {
-                "question_ids": list(question_ids),
-                "weak_tags": list(weak_tags),
-                "rationale": rationale.strip(),
-            }
             return json.dumps(
                 {"status": "ok", "question_count": len(question_ids)},
                 ensure_ascii=False,
@@ -182,6 +192,8 @@ class TrainingCoachAgent:
             parts.append("\n（暂无学习报告，请主要依据错题 tag 统计。）")
 
         instruction = "\n".join(parts)
+        self._submitted_plan = None
+        self._phase_done = False
 
         try:
             agent_predict_no_stream(self.agent, instruction=instruction)
@@ -220,11 +232,7 @@ class TrainingCoachAgent:
             return
 
         try:
-            for chunk in iter_agent_predict_stream(
-                self.agent,
-                message,
-                system_prompt=SYSTEM_PROMPT,
-            ):
+            for chunk in iter_agent_continue_stream(self.agent, message):
                 yield {
                     "role": chunk.get("role", "assistant"),
                     "content": chunk.get("content", ""),

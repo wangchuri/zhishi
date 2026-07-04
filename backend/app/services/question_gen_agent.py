@@ -9,7 +9,6 @@ from typing import List, Optional
 
 from app.utils.tina_loader import tina_env_path
 from tina import Agent
-from tina.agent.core.context_manager import ContextManager
 from tina.agent.core.tools import Tools
 from tina.llm import BaseAPI
 
@@ -41,6 +40,7 @@ class QuestionGenAgent:
     def __init__(self, mode: str = "generate"):
         self.mode = mode
         self._submitted_questions: List[dict] = []
+        self._phase_done: bool = False
         self.agent = None
         self.llm = None
         self.tools = None
@@ -49,9 +49,6 @@ class QuestionGenAgent:
         )
 
         try:
-            context_manager = ContextManager(max_length=60000, max_tool_result_length=4000)
-            context_manager.set_system_message(self._system_prompt)
-
             self.llm = BaseAPI(env_path=tina_env_path())
             self.tools = Tools(name="question_gen")
             self._register_tools()
@@ -64,6 +61,7 @@ class QuestionGenAgent:
                 max_tool_result_length=4000,
                 name=f"question_gen_{mode}",
             )
+            self._register_event_hooks()
         except Exception as e:
             logger.error("QuestionGenAgent 初始化失败: %s", e)
 
@@ -71,9 +69,49 @@ class QuestionGenAgent:
     def is_ready(self) -> bool:
         return self.agent is not None
 
-    def _register_tools(self) -> None:
-        agent = self
+    def _register_event_hooks(self) -> None:
+        gen_agent = self
 
+        @self.agent.after_tool_call()
+        def capture_submit_question(tool_name, tool_arguments, tool_result):
+            if "submit_question" not in tool_name:
+                return tool_name, tool_arguments, tool_result
+            try:
+                result_data = json.loads(tool_result) if isinstance(tool_result, str) else {}
+            except json.JSONDecodeError:
+                result_data = {}
+            if result_data.get("status") != "ok":
+                return tool_name, tool_arguments, tool_result
+            from app.services.question_gen_service import _normalize_question
+
+            options = []
+            for key, arg_key in [
+                ("A", "option_a"),
+                ("B", "option_b"),
+                ("C", "option_c"),
+                ("D", "option_d"),
+            ]:
+                text = (tool_arguments.get(arg_key) or "").strip()
+                if text:
+                    options.append({"key": key, "text": text})
+            tags_raw = tool_arguments.get("tags") or ""
+            tag_list = [t.strip() for t in tags_raw.split(",") if t.strip()]
+            raw = {
+                "stem": (tool_arguments.get("stem") or "").strip(),
+                "question_type": (tool_arguments.get("question_type") or "").strip().lower(),
+                "options": options,
+                "answer": (tool_arguments.get("answer") or "").strip(),
+                "explanation": (tool_arguments.get("explanation") or "").strip() or None,
+                "tags": tag_list,
+                "reference_text": (tool_arguments.get("reference_text") or "").strip() or None,
+            }
+            normalized = _normalize_question(raw)
+            if normalized:
+                gen_agent._submitted_questions.append(normalized)
+                gen_agent._phase_done = True
+            return tool_name, tool_arguments, tool_result
+
+    def _register_tools(self) -> None:
         def submit_question(
             stem: str,
             question_type: str,
@@ -112,6 +150,8 @@ class QuestionGenAgent:
                     options.append({"key": key, "text": text.strip()})
 
             tag_list = [t.strip() for t in tags.split(",") if t.strip()]
+            from app.services.question_gen_service import _normalize_question
+
             raw = {
                 "stem": stem.strip(),
                 "question_type": question_type.strip().lower(),
@@ -121,15 +161,8 @@ class QuestionGenAgent:
                 "tags": tag_list,
                 "reference_text": reference_text.strip() or None,
             }
-            from app.services.question_gen_service import _normalize_question
-
-            normalized = _normalize_question(raw)
-            if normalized:
-                agent._submitted_questions.append(normalized)
-                return json.dumps(
-                    {"status": "ok", "index": len(agent._submitted_questions)},
-                    ensure_ascii=False,
-                )
+            if _normalize_question(raw):
+                return json.dumps({"status": "ok"}, ensure_ascii=False)
             return json.dumps({"status": "invalid", "reason": "题目字段校验失败"}, ensure_ascii=False)
 
         self.tools.register_tool(submit_question)
@@ -144,6 +177,7 @@ class QuestionGenAgent:
     ) -> List[dict]:
         """根据文档内容生成题目，返回结构化题目列表。"""
         self._submitted_questions = []
+        self._phase_done = False
         if not self.agent:
             return []
 

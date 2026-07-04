@@ -51,28 +51,12 @@ def agent_predict_no_stream(agent, instruction: str, **kwargs) -> Any:
     return agent.predict(instruction=instruction, stream=False, **kwargs)
 
 
-def iter_agent_predict_stream(
+def _iter_agent_predict_stream_impl(
     agent,
     instruction: str,
-    *,
-    history: Optional[List[dict]] = None,
-    system_prompt: Optional[str] = None,
     **kwargs,
 ) -> Generator[dict, None, None]:
-    """同步生成器包装 Agent 流式输出（SSE 路由可直接 yield）。"""
-    try:
-        agent.clear_messages()
-        if system_prompt and getattr(agent, "context_manager", None):
-            agent.context_manager.set_system_message(system_prompt)
-        if history:
-            for msg in history:
-                role = msg.get("role", "user")
-                part = msg.get("content", "")
-                if role in ("user", "assistant"):
-                    agent.add_message(role=role, content=part)
-    except Exception as e:
-        logger.warning("恢复 Agent 上下文失败: %s", e)
-
+    """Agent 流式 predict 的同步生成器（不修改消息上下文）。"""
     if not LLM_ASYNC:
         for chunk in agent.predict(instruction=instruction, stream=True, **kwargs):
             yield _chunk_to_dict(chunk)
@@ -82,13 +66,6 @@ def iter_agent_predict_stream(
         async for chunk in agent.apredict(instruction=instruction, **kwargs):
             yield _chunk_to_dict(chunk)
 
-    async def _collect() -> list[dict]:
-        items: list[dict] = []
-        async for item in _stream():
-            items.append(item)
-        return items
-
-    # 流式 apredict 在独立 loop 中逐块产出
     loop = asyncio.new_event_loop()
     try:
         agen = _stream()
@@ -100,3 +77,42 @@ def iter_agent_predict_stream(
                 break
     finally:
         loop.close()
+
+
+def iter_agent_predict_stream(
+    agent,
+    instruction: str,
+    *,
+    history: Optional[List[dict]] = None,
+    system_prompt: Optional[str] = None,
+    preserve_context: bool = False,
+    **kwargs,
+) -> Generator[dict, None, None]:
+    """同步生成器包装 Agent 流式输出（SSE 路由可直接 yield）。
+
+    preserve_context=True 时跳过 clear_messages，用于同 Agent 实例的多轮辅导。
+    """
+    if not preserve_context:
+        try:
+            agent.clear_messages()
+            if system_prompt and getattr(agent, "context_manager", None):
+                agent.context_manager.set_system_message(system_prompt)
+            if history:
+                for msg in history:
+                    role = msg.get("role", "user")
+                    part = msg.get("content", "")
+                    if role in ("user", "assistant"):
+                        agent.add_message(role=role, content=part)
+        except Exception as e:
+            logger.warning("恢复 Agent 上下文失败: %s", e)
+
+    yield from _iter_agent_predict_stream_impl(agent, instruction, **kwargs)
+
+
+def iter_agent_continue_stream(
+    agent,
+    instruction: str,
+    **kwargs,
+) -> Generator[dict, None, None]:
+    """Agent 流式输出，保留已有会话上下文（Tina predict 原子续聊）。"""
+    yield from _iter_agent_predict_stream_impl(agent, instruction, **kwargs)
