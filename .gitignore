@@ -80,7 +80,7 @@ data/*.db
 data/*.db-journal
 data/*.db-wal
 data/*.db-shm
-
+releases/
 # ─── LEKT 本地编译产物（按需提交则注释掉）──
 # backend/*.pyd
 # backend/logic_matrix.npy
