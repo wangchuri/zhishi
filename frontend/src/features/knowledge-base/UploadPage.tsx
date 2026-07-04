@@ -19,6 +19,7 @@ import { TimelineStep } from "@/components/blocks/TimelineStep"
 import { cn } from "@/lib/utils"
 import { SegmentedTabs } from "@/components/ui/segmented-tabs"
 import { kbApi } from "@/lib/api"
+import { toast } from "sonner"
 import type { KbCollection } from "@/types"
 
 const SUPPORTED_EXTENSIONS = [".txt", ".md", ".csv", ".json", ".html", ".htm", ".pdf", ".docx"]
@@ -252,6 +253,10 @@ export function UploadPage() {
 
         try {
           const res = await kbApi.upload(file, selectedCollectionId || undefined)
+
+          if (res.warning) {
+            toast.warning(res.warning, { duration: 8000 })
+          }
 
           if (res.status === "duplicate") {
             setTasks((prev) =>

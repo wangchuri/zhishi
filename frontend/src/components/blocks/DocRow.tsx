@@ -54,6 +54,11 @@ export function DocRow({ doc, className, onDelete, onView }: DocRowProps) {
         <div className="text-body text-ink-primary font-medium truncate-1">
           {doc.name}
         </div>
+        {doc.warning && (
+          <div className="text-small text-warning mt-0.5 truncate-1" title={doc.warning}>
+            {doc.warning}
+          </div>
+        )}
         {doc.tags.length > 0 && (
           <div className="flex items-center gap-1 mt-1 flex-wrap">
             {doc.tags.map((t) => (

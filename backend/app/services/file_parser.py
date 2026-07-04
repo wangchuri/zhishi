@@ -18,7 +18,7 @@ from typing import Optional
 
 
 
-from app.core.config import DOCUMENT_PIPELINE_ASYNC, PDF_MAX_PAGES
+from app.core.config import DOCUMENT_PIPELINE_ASYNC, PDF_MAX_PAGES, PDF_OCR_MAX_PAGES
 
 
 
@@ -338,6 +338,19 @@ def get_pdf_page_count(file_path: str) -> int:
     except Exception as e:
         logger.warning("file_parser.get_pdf_page_count 失败: %s", e)
         return 0
+
+
+def long_document_warning(total_pages: int) -> Optional[str]:
+    """总页数超过 OCR 上限时返回提示（不阻止上传/处理）。"""
+    if total_pages <= 0:
+        return None
+    threshold = PDF_OCR_MAX_PAGES if PDF_OCR_MAX_PAGES > 0 else 0
+    if threshold <= 0 or total_pages <= threshold:
+        return None
+    return (
+        f"该 PDF 共 {total_pages} 页，超过 {threshold} 页，"
+        "处理时间可能较长，请耐心等待。"
+    )
 
 
 def _pdf_parse_result(

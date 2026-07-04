@@ -31,6 +31,8 @@ export function mapKbDocument(d: Record<string, unknown>, zone?: string): Knowle
     ocr_status: d.ocr_status ? String(d.ocr_status) : undefined,
     ocr_current_page: d.ocr_current_page != null ? Number(d.ocr_current_page) : undefined,
     ocr_total_pages: d.ocr_total_pages != null ? Number(d.ocr_total_pages) : undefined,
+    pdf_page_count: d.pdf_page_count != null ? Number(d.pdf_page_count) : undefined,
+    warning: d.warning ? String(d.warning) : undefined,
     zone: zone || (d.zone ? String(d.zone) : undefined),
     wordCount: Number(d.word_count || d.wordCount || 0),
     updatedAt: String(d.updated_at || d.updatedAt || "—"),

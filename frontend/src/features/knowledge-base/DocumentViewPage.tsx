@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react"
-import { ArrowLeft, Loader2 } from "lucide-react"
+import { ArrowLeft, Loader2, AlertTriangle } from "lucide-react"
 import { useNavigate, useParams, useSearchParams } from "react-router-dom"
 import { AppShell } from "@/components/layout/AppShell"
 import { PageHeader } from "@/components/blocks/PageHeader"
 import { Button } from "@/components/ui/button"
+import { Alert, AlertDescription } from "@/components/ui/alert"
 import { DocumentContentViewer } from "@/components/blocks/DocumentContentViewer"
 import { kbApi } from "@/lib/api"
 import type { DocumentContentMeta } from "@/types"
@@ -48,6 +49,13 @@ export function DocumentViewPage() {
           返回知识库
         </Button>
       </PageHeader>
+
+      {meta?.warning && (
+        <Alert className="mb-4 border-warning/30 bg-warning-soft text-ink-primary">
+          <AlertTriangle className="text-warning" />
+          <AlertDescription>{meta.warning}</AlertDescription>
+        </Alert>
+      )}
 
       {charStart != null && charEnd != null && previewMode !== "pdf" && (
         <div className="text-caption text-ink-tertiary mb-4">

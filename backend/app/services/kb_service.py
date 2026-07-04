@@ -35,7 +35,9 @@ from app.services.dify_kb import DifyKB
 from app.services.file_parser import (
     IMAGE_EXTENSIONS,
     SUPPORTED_EXTENSIONS,
+    get_pdf_page_count,
     is_scanned_pdf,
+    long_document_warning,
     parse_file_detailed,
 )
 from app.services.ocr_progress import get_ocr_progress, set_ocr_progress
@@ -507,6 +509,18 @@ def _check_dify_upload_size(file_path: str) -> None:
         )
 
 
+def _pdf_page_fields(storage_path: Optional[str], *, is_pdf: bool) -> dict:
+    if not is_pdf or not storage_path:
+        return {}
+    page_count = get_pdf_page_count(storage_path)
+    if page_count <= 0:
+        return {}
+    return {
+        "pdf_page_count": page_count,
+        "warning": long_document_warning(page_count),
+    }
+
+
 def _duplicate_response(
     existing: Document, dataset_id: str, file_name: str
 ) -> UploadResponse:
@@ -514,6 +528,10 @@ def _duplicate_response(
     status = "duplicate"
     if ocr_fields.get("ocr_status") == "processing":
         status = "indexing"
+    pdf_fields = _pdf_page_fields(
+        existing.global_document.storage_path if existing.global_document else None,
+        is_pdf=file_name.lower().endswith(".pdf"),
+    )
     return UploadResponse(
         message="该文件已上传过，无需重复上传",
         batch_id=existing.dify_batch_id or existing.id,
@@ -524,6 +542,7 @@ def _duplicate_response(
         collection_id=existing.collection_id,
         status=status,
         segment_status=existing.segment_status,
+        warning=pdf_fields.get("warning"),
         **ocr_fields,
     )
 
@@ -626,6 +645,7 @@ def upload_document(
     defer_pdf_ocr = False
     defer_image_ocr = False
     ocr_total_pages = 0
+    upload_warning: Optional[str] = None
     global_doc = kb_crud.get_global_document_by_hash(db, file_hash)
     upload_path: str
     display_name = safe_filename
@@ -720,6 +740,9 @@ def upload_document(
             mime_type=_guess_mime(suffix),
             parsed_text_path=parsed_text_path,
         )
+
+    if suffix == ".pdf" and raw_storage_path:
+        upload_warning = long_document_warning(get_pdf_page_count(raw_storage_path))
 
     if parsed_text_path:
         parsed_cache_key = parsed_text_path
@@ -834,6 +857,7 @@ def upload_document(
         status=resp_status,
         segment_status=document.segment_status,
         parse_warning=parse_warning,
+        warning=upload_warning,
         ocr_processed=ocr_processed or bool(defer_pdf_ocr) or bool(defer_image_ocr),
         **ocr_fields,
     )
@@ -946,6 +970,10 @@ def list_documents(
                 created_at=doc.created_at,
                 updated_at=doc.updated_at,
                 **_ocr_fields_for_doc(doc),
+                **_pdf_page_fields(
+                    doc.global_document.storage_path if doc.global_document else None,
+                    is_pdf=doc.display_name.lower().endswith(".pdf"),
+                ),
             )
         )
 
@@ -972,6 +1000,10 @@ def get_document_content(
         file_type = _infer_document_file_type(doc)
         preview_mode = "pdf" if file_type == "pdf" else "text"
         has_raw_file = _resolve_document_storage_path(doc) is not None
+        pdf_fields = _pdf_page_fields(
+            _resolve_document_storage_path(doc),
+            is_pdf=file_type == "pdf",
+        )
         if content:
             return {
                 "doc_id": doc.dify_document_id or doc.id,
@@ -981,6 +1013,7 @@ def get_document_content(
                 "preview_mode": preview_mode,
                 "has_raw_file": has_raw_file,
                 "mock": False,
+                **pdf_fields,
             }
         if has_raw_file and file_type == "pdf":
             return {
@@ -991,6 +1024,7 @@ def get_document_content(
                 "preview_mode": "pdf",
                 "has_raw_file": True,
                 "mock": False,
+                **pdf_fields,
             }
 
     # 旧 upload_hashes.json fallback

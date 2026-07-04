@@ -89,10 +89,10 @@ elif _app_cfg.upload_max_size_mb > 0:
 else:
     DEBUG_MAX_UPLOAD_SIZE = 0
 
-# PDF 解析最多读取页数；0 表示不限制（大文件可设如 200 以控制内存/耗时）
+# 文本 PDF 解析最多读取页数；0 表示不限制（与 OCR 上限独立，可按需设如 500）
 PDF_MAX_PAGES = int(os.getenv("PDF_MAX_PAGES", str(_app_cfg.pdf_max_pages)))
 
-# 扫描型 PDF OCR 最多处理页数；0 表示全页（大 PDF 可设如 50 控制耗时/API 配额）
+# 扫描型 PDF OCR 最多处理页数；0 表示全页（默认 500，超出总页数仍上传但仅处理前 N 页）
 PDF_OCR_MAX_PAGES = int(
     os.getenv("PDF_OCR_MAX_PAGES", str(_app_cfg.pdf_ocr_max_pages))
 )

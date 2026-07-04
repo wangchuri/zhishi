@@ -42,6 +42,8 @@ export interface KnowledgeDoc {
   ocr_status?: string
   ocr_current_page?: number
   ocr_total_pages?: number
+  pdf_page_count?: number
+  warning?: string
   questionCount?: number
   zone?: string
   wordCount: number
@@ -401,6 +403,8 @@ export interface DocumentContentMeta {
   preview_mode?: "pdf" | "text" | "markdown"
   has_raw_file?: boolean
   mock?: boolean
+  pdf_page_count?: number
+  warning?: string
 }
 
 export interface PageQuestionResult {

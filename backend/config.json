@@ -1,6 +1,7 @@
 {
+  "_doc": "pdf_max_pages=0 表示文本 PDF 不截断；pdf_ocr_max_pages=500 为扫描 PDF OCR 上限（超过总页数仅提示耗时，不拒绝上传）",
   "ocr_max_parallel_pages": 1,
-  "pdf_ocr_max_pages": 50,
+  "pdf_ocr_max_pages": 500,
   "pdf_max_pages": 0,
   "pdf_ocr_render_dpi": 150,
   "max_questions_per_document": 20,

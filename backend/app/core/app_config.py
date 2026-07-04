@@ -21,7 +21,9 @@ _REPO_ROOT = _BACKEND_DIR.parent
 @dataclass(frozen=True)
 class AppConfig:
     ocr_max_parallel_pages: int = 1
-    pdf_ocr_max_pages: int = 0
+    # 扫描 PDF OCR 最多处理页数；0=全页。专业书籍建议 500，超出总页数仅提示耗时
+    pdf_ocr_max_pages: int = 500
+    # 文本 PDF 解析最多读取页数；0=不限制（与 OCR 上限独立）
     pdf_max_pages: int = 0
     pdf_ocr_render_dpi: int = 150
     max_questions_per_document: int = 20
