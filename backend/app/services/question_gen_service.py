@@ -174,6 +174,12 @@ def _template_questions_for_page(page: dict) -> List[dict]:
 
 
 def _llm_generate_for_page(page: dict, *, count: int = 1, tag_hint: str = "") -> List[dict]:
+    from app.services.question_gen_agent import agent_generate_for_page
+
+    result = agent_generate_for_page(page, count=count, tag_hint=tag_hint)
+    if result:
+        return result[:count]
+
     llm = _get_llm()
     if not llm:
         return _template_questions_for_page(page)
@@ -208,6 +214,12 @@ def _llm_generate_for_page(page: dict, *, count: int = 1, tag_hint: str = "") ->
 
 
 def _llm_extract_for_page(page: dict, *, tag_hint: str = "") -> List[dict]:
+    from app.services.question_gen_agent import agent_extract_for_page
+
+    result = agent_extract_for_page(page, tag_hint=tag_hint)
+    if result:
+        return result
+
     llm = _get_llm()
     if not llm:
         return []
@@ -276,6 +288,12 @@ def _template_questions(segment: DocumentSegment) -> List[dict]:
 
 
 def _llm_generate(segment: DocumentSegment, *, tag_hint: str = "") -> List[dict]:
+    from app.services.question_gen_agent import agent_generate_for_segment
+
+    result = agent_generate_for_segment(segment, tag_hint=tag_hint)
+    if result:
+        return result[:QUESTIONS_PER_SEGMENT]
+
     llm = _get_llm()
     if not llm:
         return _template_questions(segment)

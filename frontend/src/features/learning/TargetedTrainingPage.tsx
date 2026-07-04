@@ -15,6 +15,7 @@ import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { analyticsApi, quizApi, trainingApi } from "@/lib/api"
 import { TutorPanel } from "@/features/tutor/TutorPanel"
+import { TrainingTutorPanel } from "@/features/learning/TrainingTutorPanel"
 import type {
   QuizAnswerResult,
   QuizSession,
@@ -362,9 +363,15 @@ export function TargetedTrainingPage() {
             )}
           </main>
 
-          {/* 右栏：AI 辅导 */}
+          {/* 右栏：AI 学习教练（复用制定计划 Agent 上下文） */}
           <aside className="border-l border-line-soft bg-surface min-h-[320px] lg:min-h-0 flex flex-col overflow-hidden">
-            {currentQuestion ? (
+            {trainingMeta?.agent_session_id ? (
+              <TrainingTutorPanel
+                agentSessionId={trainingMeta.agent_session_id}
+                rationale={trainingMeta.rationale}
+                className="flex-1 min-h-0"
+              />
+            ) : currentQuestion ? (
               <TutorPanel
                 key={currentQuestion.question_id}
                 questionId={currentQuestion.question_id}
@@ -372,7 +379,7 @@ export function TargetedTrainingPage() {
                 className="flex-1 min-h-0"
               />
             ) : (
-              <div className="p-4 text-small text-ink-tertiary">选择题目后可使用 AI 辅导</div>
+              <div className="p-4 text-small text-ink-tertiary">AI 教练加载中…</div>
             )}
           </aside>
         </div>

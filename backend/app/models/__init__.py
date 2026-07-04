@@ -5,6 +5,7 @@ from .quiz_session import QuizSession, QuizSessionQuestion, QuizAnswer
 from .tutor import TutorSession
 from .tag import QuestionTag
 from .note import UserNote
+from .training_plan import TrainingPlan
 
 __all__ = [
     "User",
@@ -22,4 +23,5 @@ __all__ = [
     "TutorSession",
     "QuestionTag",
     "UserNote",
+    "TrainingPlan",
 ]

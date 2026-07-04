@@ -324,6 +324,8 @@ export interface TargetedTrainingResult {
   weak_tags: WeakTag[]
   question_ids: string[]
   report_id?: string | null
+  rationale?: string | null
+  agent_session_id?: string | null
 }
 
 /** 辅导消息 */

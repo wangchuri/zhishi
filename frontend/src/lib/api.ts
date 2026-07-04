@@ -482,6 +482,39 @@ export const trainingApi = {
       "/api/v1/training/targeted/start"
     )
   },
+
+  sendTutorMessage(agentSessionId: string, content: string, stream = false) {
+    if (stream) {
+      const token = getToken()
+      return fetch(`${API_BASE}/api/v1/training/targeted/tutor/${agentSessionId}`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ content, stream: true }),
+      })
+    }
+    return request<{ role: string; content: string; agent_session_id: string }>(
+      "POST",
+      `/api/v1/training/targeted/tutor/${agentSessionId}`,
+      { content, stream: false }
+    )
+  },
+
+  async tutorStream(
+    agentSessionId: string,
+    content: string,
+    onChunk?: (data: Record<string, unknown>) => void
+  ): Promise<string> {
+    const res = await trainingApi.sendTutorMessage(agentSessionId, content, true)
+    if (!(res instanceof Response)) throw new Error("流式请求失败")
+    if (!res.ok) {
+      const err = await res.text()
+      throw new Error(err)
+    }
+    return readSseStream(res, onChunk)
+  },
 }
 
 // ─── KT (知识追踪 / LEKT) ──────────────────────────────

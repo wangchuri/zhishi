@@ -68,8 +68,6 @@ class ZhishiAgent:
 
             self.tools = Tools(name="zhishi")
             self.tools.register_tool(self.search_knowledge_base)
-            self._db_for_tools: Optional["Session"] = None
-            self._register_training_tools_on_init()
 
             self.agent = Agent(
                 llm=self.llm,
@@ -89,23 +87,6 @@ class ZhishiAgent:
             self.agent = None
             self.llm = None
             self.tools = None
-
-    def _register_training_tools_on_init(self) -> None:
-        """注册训练工具骨架（需 db 会话时在 predict 前 bind_db）。"""
-        if not self.tools:
-            return
-        from app.services.training_tools import register_training_tools
-
-        if self._db_for_tools:
-            register_training_tools(self.tools, self._db_for_tools, self.user_id)
-
-    def bind_db(self, db: "Session") -> None:
-        """绑定数据库会话以启用 search_questions_by_tags 等训练工具。"""
-        self._db_for_tools = db
-        if self.tools:
-            from app.services.training_tools import register_training_tools
-
-            register_training_tools(self.tools, db, self.user_id)
 
     def _retrieve(self, query: str, top_k: int = 5) -> List[dict]:
         if is_local_rag():

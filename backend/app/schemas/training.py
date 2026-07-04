@@ -17,3 +17,16 @@ class TargetedTrainingStartOut(BaseModel):
     weak_tags: List[WeakTagOut] = []
     question_ids: List[str] = []
     report_id: Optional[str] = None
+    rationale: Optional[str] = None
+    agent_session_id: Optional[str] = None
+
+
+class TrainingTutorMessageCreate(BaseModel):
+    content: str
+    stream: bool = True
+
+
+class TrainingTutorReplyOut(BaseModel):
+    role: str = "assistant"
+    content: str
+    agent_session_id: str
