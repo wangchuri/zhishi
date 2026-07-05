@@ -50,6 +50,9 @@ class QuizAnswer(Base):
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     user_answer = Column(Text, nullable=True)
     status = Column(String(20), nullable=False)
+    grade_method = Column(String(20), nullable=True)
+    string_match_status = Column(String(20), nullable=True)
+    ai_reason = Column(Text, nullable=True)
     answered_at = Column(DateTime, default=datetime.utcnow)
     time_spent_seconds = Column(Integer, nullable=True)
 

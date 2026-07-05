@@ -100,11 +100,17 @@ def upsert_answer(
     user_answer: Optional[str],
     status: str,
     time_spent_seconds: Optional[int] = None,
+    grade_method: Optional[str] = None,
+    string_match_status: Optional[str] = None,
+    ai_reason: Optional[str] = None,
 ) -> QuizAnswer:
     existing = get_answer(db, session_id, question_id)
     if existing:
         existing.user_answer = user_answer
         existing.status = status
+        existing.grade_method = grade_method
+        existing.string_match_status = string_match_status
+        existing.ai_reason = ai_reason
         existing.answered_at = datetime.utcnow()
         existing.time_spent_seconds = time_spent_seconds
         db.flush()
@@ -116,6 +122,9 @@ def upsert_answer(
         user_id=user_id,
         user_answer=user_answer,
         status=status,
+        grade_method=grade_method,
+        string_match_status=string_match_status,
+        ai_reason=ai_reason,
         time_spent_seconds=time_spent_seconds,
     )
     db.add(row)

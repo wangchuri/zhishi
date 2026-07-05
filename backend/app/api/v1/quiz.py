@@ -63,6 +63,7 @@ def submit_answer(
         user_answer=payload.user_answer,
         status_hint=payload.status,
         time_spent_seconds=payload.time_spent_seconds,
+        request_ai_grade=payload.request_ai_grade,
     )
     db.commit()
     return result

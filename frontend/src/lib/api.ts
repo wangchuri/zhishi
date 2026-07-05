@@ -388,6 +388,7 @@ export const quizApi = {
       user_answer?: string
       status?: "unknown"
       time_spent_seconds?: number
+      request_ai_grade?: boolean
     }
   ) {
     return request<any>("POST", `/api/v1/quiz/sessions/${sessionId}/answers`, data)

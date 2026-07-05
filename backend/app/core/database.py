@@ -44,3 +44,25 @@ def init_db():
     import app.models  # noqa: F401 — 注册全部 model 到 Base.metadata
 
     Base.metadata.create_all(bind=engine)
+    _migrate_quiz_answer_columns(engine)
+
+
+def _migrate_quiz_answer_columns(engine) -> None:
+    """为已有 SQLite 库补齐 quiz_answers 判题扩展列。"""
+    if not str(engine.url).startswith("sqlite"):
+        return
+    from sqlalchemy import inspect, text
+
+    insp = inspect(engine)
+    if "quiz_answers" not in insp.get_table_names():
+        return
+    existing = {c["name"] for c in insp.get_columns("quiz_answers")}
+    additions = [
+        ("grade_method", "VARCHAR(20)"),
+        ("string_match_status", "VARCHAR(20)"),
+        ("ai_reason", "TEXT"),
+    ]
+    with engine.begin() as conn:
+        for col, col_type in additions:
+            if col not in existing:
+                conn.execute(text(f"ALTER TABLE quiz_answers ADD COLUMN {col} {col_type}"))

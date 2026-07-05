@@ -42,8 +42,8 @@ EXCERPT_MAX_LEN = 500
 SYSTEM_PROMPT = """你是知拾学习助手，根据给定文档段落生成练习题。
 严格输出 JSON 数组，每项格式：
 {"stem":"题干","question_type":"single_choice","options":[{"key":"A","text":"..."},{"key":"B","text":"..."},{"key":"C","text":"..."},{"key":"D","text":"..."}],"answer":"A","explanation":"解析","tags":["标签"],"reference_text":"原文参考片段"}
-question_type 可选：single_choice（单选）、short_answer（简答）、application（应用题）。
-单选题 answer 必须是 A/B/C/D；简答/应用题 options 可为 []，answer 为标准答案要点。
+question_type 可选：single_choice（单选）、fill_blank（填空）、short_answer（简答）、application（应用题）。
+单选题 answer 必须是 A/B/C/D；填空题 stem 用 ___ 或 {{blank}} 表示空，answer 为 JSON 数组如 ["答案1","答案2"] 或分号分隔；简答/应用题 options 可为 []，answer 为标准答案要点。
 reference_text 为题目所依据的原文关键片段（100-300字）。
 tags 必须从用户已有 tag 列表中选择或复用相同含义的名称，避免同义不同名。
 不要输出 markdown 代码块。"""
@@ -120,6 +120,24 @@ def _normalize_question(raw: dict) -> Optional[dict]:
         answer = answer.upper()
         if len(norm_options) < 2 or answer not in {o["key"] for o in norm_options}:
             return None
+    elif qtype == "fill_blank":
+        parts = []
+        if answer.startswith("["):
+            try:
+                data = json.loads(answer)
+                if isinstance(data, list):
+                    parts = [str(v).strip() for v in data if str(v).strip()]
+            except json.JSONDecodeError:
+                pass
+        if not parts:
+            parts = [p.strip() for p in answer.replace("；", ";").split(";") if p.strip()]
+        if not parts:
+            return None
+        blank_slots = len(re.findall(r"_{3,}|\{\{blank\}\}", stem, re.IGNORECASE))
+        if blank_slots > 0 and blank_slots != len(parts):
+            return None
+        answer = json.dumps(parts, ensure_ascii=False)
+        norm_options = []
     elif qtype in ("short_answer", "application"):
         if not norm_options:
             norm_options = []

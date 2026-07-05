@@ -54,6 +54,7 @@ class AnswerSubmit(BaseModel):
     user_answer: Optional[str] = None
     status: Optional[str] = None
     time_spent_seconds: Optional[int] = None
+    request_ai_grade: bool = False
 
 
 class AnswerResult(BaseModel):
@@ -62,6 +63,9 @@ class AnswerResult(BaseModel):
     correct_answer: Optional[str] = None
     explanation: Optional[str] = None
     citation: Optional[CitationOut] = None
+    grade_method: Optional[str] = None
+    string_match_status: Optional[str] = None
+    ai_reason: Optional[str] = None
     answered_count: int
     total_questions: int
     session_status: str

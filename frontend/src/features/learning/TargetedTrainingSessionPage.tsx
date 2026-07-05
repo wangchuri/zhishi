@@ -3,21 +3,25 @@ import { useNavigate, useParams } from "react-router-dom"
 import {
   Brain,
   CheckCircle2,
-  ChevronRight,
   HelpCircle,
   LogOut,
   Sparkles,
   Target,
-  XCircle,
 } from "lucide-react"
-import { MarkdownWithMath } from "@/components/blocks/MarkdownWithMath"
-import { CitationCard } from "@/components/blocks/CitationCard"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { analyticsApi, quizApi, trainingApi } from "@/lib/api"
 import { TutorPanel } from "@/features/tutor/TutorPanel"
 import { TrainingTutorPanel } from "@/features/learning/TrainingTutorPanel"
+import { QuizQuestionInput } from "@/features/quiz/QuizQuestionInput"
+import { QuizAnswerFeedback, getSubmitButtonLabel } from "@/features/quiz/QuizAnswerFeedback"
+import {
+  QUESTION_TYPE_LABEL,
+  buildUserAnswerPayload,
+  canSubmitAnswer,
+  getBlankCount,
+} from "@/features/quiz/quizQuestionUtils"
 import type {
   QuizAnswerResult,
   QuizSession,
@@ -26,15 +30,8 @@ import type {
   TargetedTrainingResult,
   WeakTag,
 } from "@/types"
-import { cn } from "@/lib/utils"
 
 type Phase = "loading" | "quiz" | "done"
-
-const QUESTION_TYPE_LABEL: Record<string, string> = {
-  single_choice: "选择题",
-  short_answer: "简答题",
-  application: "应用题",
-}
 
 export function TargetedTrainingSessionPage() {
   const { sessionId } = useParams<{ sessionId: string }>()
@@ -47,6 +44,7 @@ export function TargetedTrainingSessionPage() {
   const [currentIndex, setCurrentIndex] = useState(0)
   const [selectedOption, setSelectedOption] = useState<string | null>(null)
   const [textAnswer, setTextAnswer] = useState("")
+  const [blankAnswers, setBlankAnswers] = useState<string[]>([])
   const [submitting, setSubmitting] = useState(false)
   const [lastResult, setLastResult] = useState<QuizAnswerResult | null>(null)
   const [questionStartTime, setQuestionStartTime] = useState(Date.now())
@@ -54,6 +52,17 @@ export function TargetedTrainingSessionPage() {
 
   const currentQuestion: QuizSessionQuestion | undefined = session?.questions[currentIndex]
   const reportId = trainingMeta?.report_id
+
+  useEffect(() => {
+    if (!currentQuestion) return
+    if (currentQuestion.question_type === "fill_blank") {
+      setBlankAnswers(Array.from({ length: getBlankCount(currentQuestion) }, () => ""))
+    } else {
+      setBlankAnswers([])
+    }
+    setTextAnswer("")
+    setSelectedOption(null)
+  }, [currentQuestion?.question_id])
 
   const exitToReport = useCallback(() => {
     if (reportId) {
@@ -109,6 +118,7 @@ export function TargetedTrainingSessionPage() {
     setLastResult(null)
     setSelectedOption(null)
     setTextAnswer("")
+    setBlankAnswers([])
     if (currentIndex + 1 >= (session?.total_questions ?? 0)) {
       setPhase("done")
       return
@@ -120,20 +130,22 @@ export function TargetedTrainingSessionPage() {
     }
   }
 
-  const handleSubmit = async () => {
+  const submitAnswerCore = async (opts?: { requestAiGrade?: boolean }) => {
     if (!session || !currentQuestion) return
     const qtype = currentQuestion.question_type || "single_choice"
-    const isChoice = qtype === "single_choice"
-    if (isChoice && !selectedOption) return
-    if (!isChoice && !textAnswer.trim()) return
+    const payload = buildUserAnswerPayload(qtype, selectedOption, textAnswer, blankAnswers)
+    if (!opts?.requestAiGrade && !canSubmitAnswer(qtype, selectedOption, textAnswer, blankAnswers)) {
+      return
+    }
 
     setSubmitting(true)
     try {
       const timeSpent = Math.round((Date.now() - questionStartTime) / 1000)
       const res = await quizApi.submitAnswer(session.id, {
         question_id: currentQuestion.question_id,
-        user_answer: isChoice ? selectedOption! : textAnswer.trim(),
+        user_answer: payload,
         time_spent_seconds: timeSpent,
+        request_ai_grade: opts?.requestAiGrade,
       })
       const result = res as unknown as QuizAnswerResult
       setLastResult(result)
@@ -151,6 +163,14 @@ export function TargetedTrainingSessionPage() {
     } finally {
       setSubmitting(false)
     }
+  }
+
+  const handleSubmit = async () => {
+    await submitAnswerCore()
+  }
+
+  const handleAiReview = async () => {
+    await submitAnswerCore({ requestAiGrade: true })
   }
 
   const handleUnknown = async () => {
@@ -182,8 +202,6 @@ export function TargetedTrainingSessionPage() {
   }
 
   const weakTags: WeakTag[] = trainingMeta?.weak_tags ?? []
-  const isChoice =
-    !currentQuestion?.question_type || currentQuestion.question_type === "single_choice"
 
   if (phase === "loading" && !error) {
     return (
@@ -324,45 +342,17 @@ export function TargetedTrainingSessionPage() {
                   </Badge>
                 </div>
 
-                <MarkdownWithMath className="text-card-title font-semibold mb-6 leading-relaxed">
-                  {currentQuestion.stem}
-                </MarkdownWithMath>
-
-                {isChoice ? (
-                  <div className="space-y-2.5 mb-6">
-                    {(currentQuestion.options || []).map((opt) => (
-                      <button
-                        key={opt.key}
-                        type="button"
-                        disabled={!!lastResult || submitting}
-                        onClick={() => setSelectedOption(opt.key)}
-                        className={cn(
-                          "w-full text-left rounded-lg border px-4 py-3 text-body transition-colors",
-                          selectedOption === opt.key
-                            ? "border-primary bg-primary-soft"
-                            : "border-line-soft hover:border-primary/30",
-                          lastResult?.correct_answer === opt.key && "border-success bg-success-soft"
-                        )}
-                      >
-                        <span className="font-medium mr-2">{opt.key}.</span>
-                        <MarkdownWithMath
-                          proseClass="prose prose-sm max-w-none inline prose-p:inline prose-p:my-0"
-                          className="inline"
-                        >
-                          {opt.text}
-                        </MarkdownWithMath>
-                      </button>
-                    ))}
-                  </div>
-                ) : (
-                  <textarea
-                    className="w-full min-h-[140px] rounded-lg border border-line-soft bg-surface px-4 py-3 text-body mb-6 focus:outline-none focus:ring-2 focus:ring-primary/30"
-                    placeholder="请输入你的答案…"
-                    value={textAnswer}
-                    onChange={(e) => setTextAnswer(e.target.value)}
-                    disabled={!!lastResult || submitting}
-                  />
-                )}
+                <QuizQuestionInput
+                  question={currentQuestion}
+                  selectedOption={selectedOption}
+                  textAnswer={textAnswer}
+                  blankAnswers={blankAnswers}
+                  lastResult={lastResult}
+                  submitting={submitting}
+                  onSelectOption={setSelectedOption}
+                  onTextAnswerChange={setTextAnswer}
+                  onBlankAnswersChange={setBlankAnswers}
+                />
 
                 {!lastResult ? (
                   <div className="flex flex-wrap gap-3">
@@ -370,10 +360,16 @@ export function TargetedTrainingSessionPage() {
                       variant="primary"
                       onClick={handleSubmit}
                       disabled={
-                        submitting || (isChoice ? !selectedOption : !textAnswer.trim())
+                        submitting ||
+                        !canSubmitAnswer(
+                          currentQuestion.question_type,
+                          selectedOption,
+                          textAnswer,
+                          blankAnswers
+                        )
                       }
                     >
-                      {submitting ? "提交中…" : "提交答案"}
+                      {getSubmitButtonLabel(submitting, currentQuestion.question_type)}
                     </Button>
                     <Button variant="secondary" onClick={handleUnknown} disabled={submitting}>
                       <HelpCircle className="w-4 h-4" />
@@ -381,36 +377,13 @@ export function TargetedTrainingSessionPage() {
                     </Button>
                   </div>
                 ) : (
-                  <div className="space-y-3">
-                    <div
-                      className={cn(
-                        "flex items-center gap-2 font-medium",
-                        lastResult.status === "correct" ? "text-success" : "text-warning"
-                      )}
-                    >
-                      {lastResult.status === "correct" ? (
-                        <>
-                          <CheckCircle2 className="w-5 h-5" /> 回答正确
-                        </>
-                      ) : lastResult.status === "unknown" ? (
-                        "已标记「我不会」"
-                      ) : (
-                        <>
-                          <XCircle className="w-5 h-5" /> 回答错误，参考：{lastResult.correct_answer}
-                        </>
-                      )}
-                    </div>
-                    {lastResult.explanation && (
-                      <div className="text-body bg-surface-soft rounded-md p-3 border border-line-soft">
-                        <MarkdownWithMath>{lastResult.explanation}</MarkdownWithMath>
-                      </div>
-                    )}
-                    {lastResult.citation && <CitationCard citation={lastResult.citation} />}
-                    <Button variant="primary" onClick={() => advanceOrFinish(lastResult)}>
-                      下一题
-                      <ChevronRight className="w-4 h-4" />
-                    </Button>
-                  </div>
+                  <QuizAnswerFeedback
+                    question={currentQuestion}
+                    lastResult={lastResult}
+                    submitting={submitting}
+                    onNext={() => advanceOrFinish(lastResult)}
+                    onAiReview={handleAiReview}
+                  />
                 )}
               </div>
             ) : (

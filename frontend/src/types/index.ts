@@ -193,10 +193,13 @@ export interface QuizSession {
 /** 单题作答结果 */
 export interface QuizAnswerResult {
   question_id: string
-  status: "correct" | "wrong" | "unknown" | string
+  status: "correct" | "wrong" | "unknown" | "partial" | string
   correct_answer?: string | null
   explanation?: string | null
   citation?: Citation | null
+  grade_method?: "string" | "ai" | string | null
+  string_match_status?: string | null
+  ai_reason?: string | null
   answered_count: number
   total_questions: number
   session_status: string

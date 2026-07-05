@@ -5,7 +5,6 @@ import {
   Brain,
   CheckCircle2,
   ChevronLeft,
-  ChevronRight,
   FileText,
   HelpCircle,
   Loader2,
@@ -14,7 +13,6 @@ import {
 } from "lucide-react"
 import { AppShell } from "@/components/layout/AppShell"
 import { PageHeader } from "@/components/blocks/PageHeader"
-import { CitationCard } from "@/components/blocks/CitationCard"
 import { KbDocBrowser } from "@/components/blocks/KbDocBrowser"
 import { DocumentPipelineBadge } from "@/components/blocks/DocumentPipelineBadge"
 import { Button } from "@/components/ui/button"
@@ -43,9 +41,16 @@ import type {
   QuizSession,
 } from "@/types"
 import { QuizReviewPanel } from "./QuizReviewPanel"
+import { QuizQuestionInput } from "./QuizQuestionInput"
+import { QuizAnswerFeedback, getSubmitButtonLabel } from "./QuizAnswerFeedback"
+import {
+  QUESTION_TYPE_LABEL,
+  buildUserAnswerPayload,
+  canSubmitAnswer,
+  getBlankCount,
+} from "./quizQuestionUtils"
 import { TutorPanel, type TutorPanelHandle } from "@/features/tutor/TutorPanel"
 import { MarkdownWithMath } from "@/components/blocks/MarkdownWithMath"
-import { cn } from "@/lib/utils"
 
 type Phase = "setup" | "quiz" | "done"
 
@@ -103,6 +108,8 @@ export function QuizPage() {
   const [session, setSession] = useState<QuizSession | null>(null)
   const [currentIndex, setCurrentIndex] = useState(0)
   const [selectedOption, setSelectedOption] = useState<string | null>(null)
+  const [textAnswer, setTextAnswer] = useState("")
+  const [blankAnswers, setBlankAnswers] = useState<string[]>([])
   const [submitting, setSubmitting] = useState(false)
   const [lastResult, setLastResult] = useState<QuizAnswerResult | null>(null)
   const [reviewItems, setReviewItems] = useState<QuizReviewItem[]>([])
@@ -246,7 +253,7 @@ export function QuizPage() {
 
   const addReviewItem = useCallback(
     (result: QuizAnswerResult, stem: string, userAnswer?: string) => {
-      if (result.status !== "wrong" && result.status !== "unknown") return
+      if (result.status !== "wrong" && result.status !== "unknown" && result.status !== "partial") return
       const item: QuizReviewItem = {
         question_id: result.question_id,
         stem,
@@ -265,6 +272,17 @@ export function QuizPage() {
     },
     [selectedOption]
   )
+
+  useEffect(() => {
+    if (!currentQuestion) return
+    if (currentQuestion.question_type === "fill_blank") {
+      setBlankAnswers(Array.from({ length: getBlankCount(currentQuestion) }, () => ""))
+    } else {
+      setBlankAnswers([])
+    }
+    setTextAnswer("")
+    setSelectedOption(null)
+  }, [currentQuestion?.question_id])
 
   const docReadyForQuiz =
     selectedDocument &&
@@ -300,6 +318,8 @@ export function QuizPage() {
       setSession(s)
       setCurrentIndex(0)
       setSelectedOption(null)
+      setTextAnswer("")
+      setBlankAnswers([])
       setLastResult(null)
       setReviewItems([])
       setResultsSummary(null)
@@ -392,20 +412,29 @@ export function QuizPage() {
     }
     setCurrentIndex(nextIndex)
     setSelectedOption(null)
+    setTextAnswer("")
+    setBlankAnswers([])
     setLastResult(null)
     setQuestionStartTime(Date.now())
   }
 
-  const handleSubmitAnswer = async () => {
-    if (!session || !currentQuestion || !selectedOption || submitting) return
+  const submitAnswerCore = async (opts?: { requestAiGrade?: boolean }) => {
+    if (!session || !currentQuestion || submitting) return
+    const qtype = currentQuestion.question_type || "single_choice"
+    const payload = buildUserAnswerPayload(qtype, selectedOption, textAnswer, blankAnswers)
+    if (!opts?.requestAiGrade && !canSubmitAnswer(qtype, selectedOption, textAnswer, blankAnswers)) {
+      return
+    }
+
     setSubmitting(true)
     setError(null)
     const timeSpent = Math.round((Date.now() - questionStartTime) / 1000)
     try {
       const res = await quizApi.submitAnswer(session.id, {
         question_id: currentQuestion.question_id,
-        user_answer: selectedOption,
+        user_answer: payload,
         time_spent_seconds: timeSpent,
+        request_ai_grade: opts?.requestAiGrade,
       })
       const result = res as unknown as QuizAnswerResult
       setLastResult(result)
@@ -418,7 +447,7 @@ export function QuizPage() {
             }
           : prev
       )
-      addReviewItem(result, currentQuestion.stem, selectedOption)
+      addReviewItem(result, currentQuestion.stem, payload)
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "提交失败"
       if (isSessionExpiredError(msg)) handleSessionExpired()
@@ -426,6 +455,14 @@ export function QuizPage() {
     } finally {
       setSubmitting(false)
     }
+  }
+
+  const handleSubmitAnswer = async () => {
+    await submitAnswerCore()
+  }
+
+  const handleAiReview = async () => {
+    await submitAnswerCore({ requestAiGrade: true })
   }
 
   const handleUnknown = async () => {
@@ -441,6 +478,7 @@ export function QuizPage() {
         time_spent_seconds: timeSpent,
       })
       const result = res as unknown as QuizAnswerResult
+      setLastResult(result)
       setSession((prev) =>
         prev
           ? {
@@ -677,47 +715,31 @@ export function QuizPage() {
         <div className="grid grid-cols-1 lg:grid-cols-[1fr_340px] gap-6 lg:h-[calc(100vh-12rem)] min-h-0">
           <div className="bg-surface border border-line-soft rounded-lg shadow-xs p-6 overflow-y-auto scroll-thin min-h-0">
             <div className="flex items-center justify-between mb-6">
-              <Badge variant="neutral">
-                第 {currentIndex + 1} / {session.total_questions} 题
-              </Badge>
+              <div className="flex items-center gap-2">
+                <Badge variant="neutral">
+                  第 {currentIndex + 1} / {session.total_questions} 题
+                </Badge>
+                <Badge variant="primary" size="sm">
+                  {QUESTION_TYPE_LABEL[currentQuestion.question_type] ||
+                    currentQuestion.question_type}
+                </Badge>
+              </div>
               <span className="text-small text-ink-tertiary truncate max-w-[50%]">
                 {selectedDocument?.name || session.title}
               </span>
             </div>
 
-            <MarkdownWithMath className="text-card-title font-semibold mb-6 leading-relaxed">
-              {currentQuestion.stem}
-            </MarkdownWithMath>
-
-            <div className="space-y-2.5 mb-6">
-              {(currentQuestion.options || []).map((opt) => (
-                <button
-                  key={opt.key}
-                  type="button"
-                  disabled={!!lastResult || submitting}
-                  onClick={() => setSelectedOption(opt.key)}
-                  className={cn(
-                    "w-full text-left rounded-lg border px-4 py-3 text-body transition-colors",
-                    selectedOption === opt.key
-                      ? "border-primary bg-primary-soft text-ink-primary"
-                      : "border-line-soft hover:border-primary/30 hover:bg-surface-soft",
-                    lastResult?.correct_answer === opt.key && "border-success bg-success-soft",
-                    lastResult &&
-                      lastResult.status !== "correct" &&
-                      selectedOption === opt.key &&
-                      "border-danger bg-danger-soft"
-                  )}
-                >
-                  <span className="font-medium mr-2">{opt.key}.</span>
-                  <MarkdownWithMath
-                    proseClass="prose prose-sm max-w-none inline prose-p:inline prose-p:my-0 prose-p:text-inherit"
-                    className="inline"
-                  >
-                    {opt.text}
-                  </MarkdownWithMath>
-                </button>
-              ))}
-            </div>
+            <QuizQuestionInput
+              question={currentQuestion}
+              selectedOption={selectedOption}
+              textAnswer={textAnswer}
+              blankAnswers={blankAnswers}
+              lastResult={lastResult}
+              submitting={submitting}
+              onSelectOption={setSelectedOption}
+              onTextAnswerChange={setTextAnswer}
+              onBlankAnswersChange={setBlankAnswers}
+            />
 
             {!lastResult ? (
               <div className="flex flex-wrap items-center gap-3">
@@ -725,9 +747,17 @@ export function QuizPage() {
                   variant="primary"
                   size="md"
                   onClick={handleSubmitAnswer}
-                  disabled={!selectedOption || submitting}
+                  disabled={
+                    submitting ||
+                    !canSubmitAnswer(
+                      currentQuestion.question_type,
+                      selectedOption,
+                      textAnswer,
+                      blankAnswers
+                    )
+                  }
                 >
-                  {submitting ? "提交中..." : "提交答案"}
+                  {getSubmitButtonLabel(submitting, currentQuestion.question_type)}
                 </Button>
                 <Button variant="secondary" size="md" onClick={handleUnknown} disabled={submitting}>
                   <HelpCircle className="w-4 h-4" strokeWidth={2} />
@@ -735,39 +765,13 @@ export function QuizPage() {
                 </Button>
               </div>
             ) : (
-              <div className="space-y-3">
-                <div
-                  className={cn(
-                    "flex items-center gap-2 text-body font-medium",
-                    lastResult.status === "correct" ? "text-success" : "text-warning"
-                  )}
-                >
-                  {lastResult.status === "correct" ? (
-                    <>
-                      <CheckCircle2 className="w-5 h-5" />
-                      回答正确
-                    </>
-                  ) : lastResult.status === "unknown" ? (
-                    <>已标记「我不会」</>
-                  ) : (
-                    <>回答错误，正确答案：{lastResult.correct_answer}</>
-                  )}
-                </div>
-                {lastResult.explanation && (
-                  <div className="text-body text-ink-primary bg-surface-soft rounded-md p-3 border border-line-soft">
-                    <MarkdownWithMath>{lastResult.explanation}</MarkdownWithMath>
-                  </div>
-                )}
-                {lastResult.status !== "correct" && lastResult.citation && (
-                  <CitationCard citation={lastResult.citation} />
-                )}
-                <div className="flex flex-wrap gap-3 pt-1">
-                  <Button variant="primary" size="md" onClick={handleNextAfterReview}>
-                    下一题
-                    <ChevronRight className="w-4 h-4" strokeWidth={2} />
-                  </Button>
-                </div>
-              </div>
+              <QuizAnswerFeedback
+                question={currentQuestion}
+                lastResult={lastResult}
+                submitting={submitting}
+                onNext={handleNextAfterReview}
+                onAiReview={handleAiReview}
+              />
             )}
           </div>
 

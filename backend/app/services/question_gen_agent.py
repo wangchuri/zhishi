@@ -21,7 +21,7 @@ GENERATE_SYSTEM_PROMPT = """你是知拾学习助手，根据给定文档内容�
 ## 要求
 - 覆盖核心知识点，难度适中
 - tags 必须从用户已有 tag 列表中选择或复用相同含义的名称
-- 单选题 answer 必须是 A/B/C/D；简答/应用题 options 可为空
+- 单选题 answer 必须是 A/B/C/D；填空题 stem 用 ___ 或 {{blank}} 表示空，answer 为分号分隔或 JSON 数组；简答/应用题 options 可为空
 - reference_text 为题目所依据的原文关键片段（100-300字）
 - 生成完成后，对每道题调用 submit_question 提交结构化数据
 - 全部提交完毕后回复「出题完成」"""
@@ -129,8 +129,8 @@ class QuestionGenAgent:
 
             Args:
                 stem (str): 题干
-                question_type (str): 题型 single_choice / short_answer / application
-                answer (str): 正确答案
+                question_type (str): 题型 single_choice / fill_blank / short_answer / application
+                answer (str): 正确答案（填空题为分号分隔或 JSON 数组）
                 option_a (str): 选项 A 文本（单选题）
                 option_b (str): 选项 B 文本
                 option_c (str): 选项 C 文本
