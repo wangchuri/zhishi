@@ -1,5 +1,6 @@
 import { NavLink } from "react-router-dom"
-import { Sparkles, ChevronLeft } from "lucide-react"
+import { ChevronLeft } from "lucide-react"
+import { AppLogo } from "@/components/layout/AppLogo"
 import { navGroups } from "@/data/nav"
 import { useUI } from "@/context/UIContext"
 import { useAuth } from "@/context/AuthContext"
@@ -19,9 +20,7 @@ export function Sidebar() {
       {/* Logo */}
       <div className="h-16 flex items-center px-5 shrink-0">
         <div className="flex items-center gap-2.5 min-w-0">
-          <div className="w-9 h-9 rounded-xl bg-gradient-primary flex items-center justify-center shadow-primary shrink-0">
-            <Sparkles className="w-5 h-5 text-white" strokeWidth={2} />
-          </div>
+          <AppLogo size="md" className="rounded-xl" />
           {!sidebarCollapsed && (
             <div className="min-w-0">
               <div className="text-card-title text-ink-primary leading-tight">知拾</div>

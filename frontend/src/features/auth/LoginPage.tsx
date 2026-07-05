@@ -2,7 +2,8 @@ import { useState } from "react"
 import { Navigate, useNavigate } from "react-router-dom"
 import { useAuth } from "@/context/AuthContext"
 import { Button } from "@/components/ui/button"
-import { Sparkles, Mail, Lock, User, ArrowRight } from "lucide-react"
+import { Mail, Lock, User, ArrowRight } from "lucide-react"
+import { AppLogo } from "@/components/layout/AppLogo"
 import { cn } from "@/lib/utils"
 
 export function LoginPage() {
@@ -51,9 +52,7 @@ export function LoginPage() {
       <div className="w-full max-w-[440px] mx-auto animate-page-in">
         {/* Logo */}
         <div className="text-center mb-8">
-          <div className="w-14 h-14 rounded-full bg-gradient-primary flex items-center justify-center mx-auto mb-4 shadow-primary">
-            <Sparkles className="w-7 h-7 text-white" strokeWidth={2} />
-          </div>
+          <AppLogo size="lg" className="mx-auto mb-4 rounded-xl" />
           <h1 className="text-page-title text-ink-primary">知拾</h1>
           <p className="text-body text-ink-tertiary mt-1.5">知识管理，从 Tina 开始</p>
         </div>
