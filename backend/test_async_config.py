@@ -51,6 +51,62 @@ def test_llm_runner_sync_path():
     print("OK llm_runner sync fallback")
 
 
+def test_llm_runner_resets_async_client_after_no_stream():
+    from unittest.mock import MagicMock, patch
+
+    from app.services import llm_runner
+
+    llm = MagicMock()
+    llm._async_client = object()
+
+    async def fake_apredict_no_stream(**kwargs):
+        return {"content": "planned"}
+
+    agent = MagicMock()
+    agent.llm = llm
+    agent.apredict_no_stream = fake_apredict_no_stream
+
+    with patch("app.services.llm_runner.LLM_ASYNC", True):
+        result = llm_runner.agent_predict_no_stream(agent, instruction="plan")
+
+    assert result["content"] == "planned"
+    assert llm._async_client is None
+    print("OK llm_runner resets async client after no-stream")
+
+
+def test_llm_runner_stream_resets_stale_async_client():
+    import asyncio
+    from unittest.mock import MagicMock, patch
+
+    import httpx
+
+    from app.services import llm_runner
+
+    llm = MagicMock()
+    loop = asyncio.new_event_loop()
+    try:
+        llm._async_client = httpx.AsyncClient()
+    finally:
+        loop.close()
+
+    agent = MagicMock()
+    agent.llm = llm
+
+    async def fake_stream():
+        yield {"role": "assistant", "content": "hi"}
+
+    agent.apredict = lambda **kwargs: fake_stream()
+
+    with patch("app.services.llm_runner.LLM_ASYNC", True):
+        chunks = list(
+            llm_runner.iter_agent_continue_stream(agent, instruction="tutor")
+        )
+
+    assert chunks == [{"role": "assistant", "content": "hi"}]
+    assert llm._async_client is None
+    print("OK llm_runner stream works after stale async client")
+
+
 def test_file_parser_defers_ocr_when_async():
     from unittest.mock import patch
 
@@ -114,6 +170,8 @@ if __name__ == "__main__":
     test_app_config_loads()
     test_config_py_reexports()
     test_llm_runner_sync_path()
+    test_llm_runner_resets_async_client_after_no_stream()
+    test_llm_runner_stream_resets_stale_async_client()
     test_file_parser_defers_ocr_when_async()
     test_parallel_ocr_progress_thread_safe()
     print("\nAll async/config checks passed.")

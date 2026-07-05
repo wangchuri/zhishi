@@ -13,6 +13,23 @@ from app.core.job_runner import run_async_coro
 logger = logging.getLogger(__name__)
 
 
+def _reset_llm_async_client(llm) -> None:
+    """丢弃绑定在已关闭事件循环上的 httpx AsyncClient。
+
+    asyncio.run / 临时 event loop 结束后，BaseAPI._async_client 仍可能指向
+    旧 loop 上的 client，后续在新 loop 中调用 apredict_stream 会报
+    Event loop is closed。
+    """
+    if llm is None:
+        return
+    if getattr(llm, "_async_client", None) is not None:
+        llm._async_client = None
+
+
+def _reset_agent_async_client(agent) -> None:
+    _reset_llm_async_client(getattr(agent, "llm", None))
+
+
 def _chunk_to_dict(chunk: Any) -> dict:
     if isinstance(chunk, dict):
         return chunk
@@ -38,16 +55,24 @@ def _chunk_to_dict(chunk: Any) -> dict:
 def llm_predict_no_stream(llm, **kwargs) -> dict:
     """非流式 LLM 调用；LLM_ASYNC 时走 apredict_no_stream。"""
     if LLM_ASYNC:
-        return run_async_coro(llm.apredict_no_stream(**kwargs))
+        _reset_llm_async_client(llm)
+        try:
+            return run_async_coro(llm.apredict_no_stream(**kwargs))
+        finally:
+            _reset_llm_async_client(llm)
     kwargs.setdefault("stream", False)
     return llm.predict(**kwargs)
 
 
 def agent_predict_no_stream(agent, instruction: str, **kwargs) -> Any:
     if LLM_ASYNC:
-        return run_async_coro(
-            agent.apredict_no_stream(instruction=instruction, **kwargs)
-        )
+        _reset_agent_async_client(agent)
+        try:
+            return run_async_coro(
+                agent.apredict_no_stream(instruction=instruction, **kwargs)
+            )
+        finally:
+            _reset_agent_async_client(agent)
     return agent.predict(instruction=instruction, stream=False, **kwargs)
 
 
@@ -66,6 +91,7 @@ def _iter_agent_predict_stream_impl(
         async for chunk in agent.apredict(instruction=instruction, **kwargs):
             yield _chunk_to_dict(chunk)
 
+    _reset_agent_async_client(agent)
     loop = asyncio.new_event_loop()
     try:
         agen = _stream()
@@ -77,6 +103,7 @@ def _iter_agent_predict_stream_impl(
                 break
     finally:
         loop.close()
+        _reset_agent_async_client(agent)
 
 
 def iter_agent_predict_stream(
