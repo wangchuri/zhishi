@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react"
-import { Search, PanelRight, LogOut } from "lucide-react"
+import { Search, PanelRight, LogOut, Menu } from "lucide-react"
 import { useLocation, useNavigate } from "react-router-dom"
 import { useUI } from "@/context/UIContext"
 import { useAuth } from "@/context/AuthContext"
@@ -23,7 +23,7 @@ const titleMap: Record<string, string> = {
 export function Topbar() {
   const location = useLocation()
   const navigate = useNavigate()
-  const { rightPanelOpen, toggleRightPanel } = useUI()
+  const { rightPanelOpen, toggleRightPanel, toggleMobileMenu } = useUI()
   const { user, logout } = useAuth()
   const [menuOpen, setMenuOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
@@ -47,9 +47,18 @@ export function Topbar() {
   }
 
   return (
-    <header className="h-16 shrink-0 border-b border-line-soft bg-surface/80 backdrop-blur-xl flex items-center gap-4 px-6">
-      {/* 左侧：页面标题 */}
-      <div className="text-card-title font-semibold text-ink-primary shrink-0 w-[140px]">
+    <header className="h-16 shrink-0 border-b border-line-soft bg-surface/80 backdrop-blur-xl flex items-center gap-3 px-4 md:px-6">
+      {/* 平板端：汉堡菜单 */}
+      <button
+        onClick={toggleMobileMenu}
+        className="lg:hidden inline-flex items-center justify-center w-10 h-10 rounded-md text-ink-secondary hover:bg-surface-soft hover:text-ink-primary transition-colors -ml-1"
+        aria-label="打开导航菜单"
+      >
+        <Menu className="w-5 h-5" strokeWidth={2} />
+      </button>
+
+      {/* 左侧：页面标题（平板端自适应） */}
+      <div className="text-card-title font-semibold text-ink-primary shrink-0 min-w-0 truncate">
         {title}
       </div>
 

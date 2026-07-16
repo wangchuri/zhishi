@@ -14,5 +14,6 @@
   "llm_async": true,
   "image_ocr_async": true,
   "upload_max_size_mb": 0,
+  "max_pages_per_gen": 10,
   "ocr_pages_dir_name": "pages"
 }

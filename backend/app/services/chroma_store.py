@@ -208,4 +208,48 @@ class ChromaStore:
     return hits[:top_k]
 
 
+  def search_by_document(
+    self,
+    query: str,
+    document_id: str,
+    top_k: int = 5,
+  ) -> List[dict]:
+    """语义检索指定文档内的内容片段（通过 document_id metadata 过滤）。"""
+    coll = self._ensure_collection()
+    query_emb = embed_texts([query])[0]
+
+    where: Optional[dict] = {"document_id": str(document_id)}
+
+    try:
+      result = coll.query(
+        query_embeddings=[query_emb],
+        n_results=top_k,
+        where=where,
+        include=["documents", "metadatas", "distances"],
+      )
+    except Exception as e:
+      logger.warning("Chroma search_by_document failed: %s", e)
+      return []
+
+    hits: List[dict] = []
+    docs = (result.get("documents") or [[]])[0]
+    metas = (result.get("metadatas") or [[]])[0]
+    dists = (result.get("distances") or [[]])[0]
+
+    for content, meta, dist in zip(docs, metas, dists):
+      meta = meta or {}
+      score = max(0.0, 1.0 - float(dist)) if dist is not None else 0.0
+      hits.append({
+        "score": score,
+        "content": content or "",
+        "title": meta.get("title") or None,
+        "segment_id": meta.get("segment_id"),
+        "char_start": meta.get("char_start"),
+        "char_end": meta.get("char_end"),
+      })
+
+    hits.sort(key=lambda h: h["score"], reverse=True)
+    return hits[:top_k]
+
+
 chroma_store = ChromaStore()

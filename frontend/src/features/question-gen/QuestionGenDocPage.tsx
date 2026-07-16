@@ -49,7 +49,6 @@ export function QuestionGenDocPage() {
     [pages, selectedPages]
   )
 
-  const hasBuiltinSelected = selectedPageList.some((p) => p.has_builtin_questions)
   const hasKeySelected = selectedPageList.some((p) => p.is_key_page)
 
   const loadPages = useCallback(async (docId: string) => {
@@ -168,28 +167,6 @@ export function QuestionGenDocPage() {
     }
   }
 
-  const runExtract = async () => {
-    if (!documentId || selectedPages.size === 0) return
-    setWorking(true)
-    setError(null)
-    setResult(null)
-    try {
-      const res = await questionsApi.extractFromPages({
-        document_id: documentId,
-        page_numbers: Array.from(selectedPages).sort((a, b) => a - b),
-      })
-      setResult(res)
-      if (res.question_gen_status === "processing") {
-        updateDocument(documentId, { question_gen_status: "processing" })
-      } else {
-        setWorking(false)
-      }
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "提取题目失败")
-      setWorking(false)
-    }
-  }
-
   const displayName = selectedDocument?.name || documentName || "文档"
 
   return (
@@ -230,13 +207,21 @@ export function QuestionGenDocPage() {
           </Alert>
         )}
 
-        {!hasPageMarkers && pages.length > 0 && (
+          {!hasPageMarkers && pages.length > 0 && (
           <Alert className="mx-8 mt-4 border-line-soft bg-surface-soft shrink-0">
             <AlertDescription className="text-ink-secondary">
               该文档无「## 第 N 页」标记，已作为单页全文展示。扫描 PDF 经 OCR 后会自动带页码。
             </AlertDescription>
           </Alert>
         )}
+
+          {working && (
+            <Alert className="mx-8 mt-4 border-primary/20 bg-primary-soft shrink-0">
+              <AlertDescription className="text-ink-primary text-caption">
+                出题正在进行中，Agent 会检索文档内容后批量生成题目，请耐心等待…
+              </AlertDescription>
+            </Alert>
+          )}
 
         <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[200px_minmax(0,1fr)_280px] gap-0 overflow-hidden">
           {/* 左：页码列表 */}
@@ -396,28 +381,12 @@ export function QuestionGenDocPage() {
 
               {selectedPages.size > 0 && (
                 <div className="text-caption text-ink-tertiary space-y-1">
-                  {hasBuiltinSelected && <p>· 选中页含教材自带题目，可「提取题目」</p>}
-                  {hasKeySelected && <p>· 选中页含重点内容，可「AI 批量出题」</p>}
+              {hasKeySelected && <p>· 选中页含重点内容</p>}
+              <p className="text-ink-tertiary">· 单次最多选择 10 页（可在配置中调整）</p>
                 </div>
               )}
 
               <div className="flex flex-col gap-2 mt-auto">
-                <Button
-                  className="w-full justify-start"
-                  variant="secondary"
-                  size="md"
-                  disabled={working || selectedPages.size === 0 || !hasBuiltinSelected}
-                  onClick={runExtract}
-                  title={!hasBuiltinSelected ? "选中页未检测到习题特征" : undefined}
-                >
-                  {working ? (
-                    <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                  ) : (
-                    <FileQuestion className="h-4 w-4 mr-2" />
-                  )}
-                  提取教材题目（模式 A）
-                </Button>
-
                 <Button
                   className="w-full justify-start"
                   size="md"
@@ -429,7 +398,7 @@ export function QuestionGenDocPage() {
                   ) : (
                     <Sparkles className="h-4 w-4 mr-2" />
                   )}
-                  AI 批量出题（模式 B）
+                  AI 批量出题
                 </Button>
               </div>
 
@@ -443,10 +412,10 @@ export function QuestionGenDocPage() {
                 >
                   <AlertDescription className="text-caption text-ink-primary">
                     {result.question_gen_status === "processing" ? (
-                      <>正在后台{result.mode === "extract" ? "提取" : "生成"}题目，请稍候…</>
+                      <>正在后台生成题目，Agent 检索中...</>
                     ) : (
                       <>
-                        {result.mode === "extract" ? "提取" : "生成"}完成：新建{" "}
+                        生成完成：新建{" "}
                         {result.questions_created} 题，复用 {result.questions_reused} 题，共{" "}
                         {result.total_questions} 题。
                         <Link

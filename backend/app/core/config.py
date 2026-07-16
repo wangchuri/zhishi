@@ -9,6 +9,9 @@ from app.core.app_config import get_app_config
 
 load_dotenv()
 
+# Hugging Face 国内镜像（否则 huggingface.co 被墙会导致模型下载失败）
+os.environ.setdefault("HF_ENDPOINT", "https://hf-mirror.com")
+
 _app_cfg = get_app_config()
 
 SECRET_KEY = os.getenv("SECRET_KEY", "your-very-secret-key")
@@ -151,6 +154,11 @@ MAX_QUESTIONS_PER_DOCUMENT = int(
         "MAX_QUESTIONS_PER_DOCUMENT",
         str(_app_cfg.max_questions_per_document),
     )
+)
+
+# 单次出题最多选择页数（config.json max_pages_per_gen）；0 表示不限制
+MAX_PAGES_PER_GEN = int(
+    os.getenv("MAX_PAGES_PER_GEN", str(_app_cfg.max_pages_per_gen))
 )
 
 # Dify 知识库单文件大小上限（字节）；0 表示不限制，仅在上传前做本地预检

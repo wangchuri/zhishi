@@ -7,8 +7,9 @@ import { useAuth } from "@/context/AuthContext"
 import { cn } from "@/lib/utils"
 
 export function Sidebar() {
-  const { sidebarCollapsed, toggleSidebar } = useUI()
+  const { sidebarCollapsed, toggleSidebar, setMobileMenuOpen } = useUI()
   const { user } = useAuth()
+  const handleNavClick = () => setMobileMenuOpen(false)
 
   return (
     <aside
@@ -47,6 +48,7 @@ export function Sidebar() {
                 key={item.to}
                 to={item.to}
                 end={item.to === "/"}
+                onClick={handleNavClick}
                 className={({ isActive }) =>
                   cn(
                     "group relative flex items-center gap-3 rounded-md px-3 h-10 text-body transition-all duration-160",
@@ -94,10 +96,10 @@ export function Sidebar() {
         </div>
       </div>
 
-      {/* 折叠按钮 */}
+      {/* 折叠按钮 — 桌面端可见 */}
       <button
         onClick={toggleSidebar}
-        className="absolute top-7 -right-3 w-6 h-6 rounded-full bg-surface border border-line-soft shadow-sm flex items-center justify-center text-ink-tertiary hover:text-primary hover:border-primary/40 transition-colors"
+        className="hidden lg:flex absolute top-7 -right-3 w-6 h-6 rounded-full bg-surface border border-line-soft shadow-sm items-center justify-center text-ink-tertiary hover:text-primary hover:border-primary/40 transition-colors"
         style={{ zIndex: 30 }}
         aria-label="折叠侧边栏"
       >

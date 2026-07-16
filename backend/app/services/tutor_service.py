@@ -239,7 +239,6 @@ class SocraticTutorAgent:
             self._llm = BaseAPI(env_path=tina_env_path())
             self._agent = Agent(
                 llm=self._llm,
-                tools=None,
                 system_prompt=self.system_prompt,
                 max_context_length=80000,
                 max_tool_result_length=4000,

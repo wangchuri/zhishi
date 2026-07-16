@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Link, useNavigate, useSearchParams } from "react-router-dom"
 import {
   AlertCircle,
@@ -98,9 +98,9 @@ export function QuizPage() {
 
   const [selectedDocumentId, setSelectedDocumentId] = useState("")
   const [starting, setStarting] = useState(false)
-  const [generating, setGenerating] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [setupAlert, setSetupAlert] = useState<string | null>(null)
+  const [genAlertDocName, setGenAlertDocName] = useState<string | null>(null)
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const tutorPanelRef = useRef<TutorPanelHandle>(null)
 
@@ -196,37 +196,42 @@ export function QuizPage() {
     loadQuestionList(selectedDocumentId)
   }, [selectedDocumentId, isLifeZone, loadQuestionList])
 
+  // ── 轮询文档出题状态，显示顶部横幅 ──
+  const generatingDoc = useMemo(() => {
+    if (!documents) return null
+    return documents.find(
+      (d) => d.question_gen_status === "processing" && d.zone !== "life"
+    ) ?? null
+  }, [documents])
+
+  useEffect(() => {
+    if (generatingDoc) {
+      setGenAlertDocName(generatingDoc.name)
+    } else {
+      setGenAlertDocName(null)
+    }
+  }, [generatingDoc])
+
+  useEffect(() => {
+    const timer = window.setInterval(async () => {
+      try {
+        const docs = await refreshDocuments(true)
+        const gen = docs.find(
+          (d: any) => d.question_gen_status === "processing" && d.zone !== "life"
+        )
+        setGenAlertDocName(gen?.name ?? null)
+      } catch {
+        /* ignore */
+      }
+    }, 5000)
+    return () => window.clearInterval(timer)
+  }, [])
+
   useEffect(() => {
     return () => {
       if (pollRef.current) clearInterval(pollRef.current)
     }
   }, [])
-
-  const stopPolling = () => {
-    if (pollRef.current) {
-      clearInterval(pollRef.current)
-      pollRef.current = null
-    }
-  }
-
-  const startPollingDocument = (documentId: string) => {
-    stopPolling()
-    pollRef.current = setInterval(async () => {
-      try {
-        const docs = await refreshDocuments(true)
-        const doc = docs.find((d) => d.id === documentId)
-        if (!doc) return
-        const count = await fetchQuestionCount(documentId)
-        updateDocument(documentId, { questionCount: count })
-        if (doc.question_gen_status === "completed" || doc.question_gen_status === "failed") {
-          setGenerating(false)
-          stopPolling()
-        }
-      } catch {
-        /* ignore poll errors */
-      }
-    }, 2500)
-  }
 
   const handleDocumentSelect = (doc: KnowledgeDoc) => {
     setSelectedDocumentId(doc.id)
@@ -291,7 +296,6 @@ export function QuizPage() {
 
   const canStartQuiz =
     !starting &&
-    !generating &&
     !isLifeZone &&
     !!selectedDocumentId &&
     !!docReadyForQuiz
@@ -337,27 +341,6 @@ export function QuizPage() {
     }
   }
 
-  const handleGenerateQuestions = async () => {
-    if (!selectedDocumentId) {
-      setError("请先选择一份文档再出题")
-      return
-    }
-    if (isLifeZone || selectedDocument?.zone === "life") {
-      setSetupAlert("生活区文档不支持练习，请在学习区上传资料。")
-      return
-    }
-    setGenerating(true)
-    setError(null)
-    setSetupAlert(null)
-    try {
-      await questionsApi.generate({ document_id: selectedDocumentId })
-      startPollingDocument(selectedDocumentId)
-    } catch (err: unknown) {
-      setGenerating(false)
-      setError(err instanceof Error ? err.message : "出题失败")
-    }
-  }
-
   const handleDeleteQuestions = async () => {
     if (!selectedDocumentId) return
     setDeletingQuestions(true)
@@ -381,7 +364,6 @@ export function QuizPage() {
 
   const canDeleteQuestions =
     !deletingQuestions &&
-    !generating &&
     !isLifeZone &&
     !!selectedDocumentId &&
     (questionListData?.total ?? selectedDocument?.questionCount ?? 0) > 0
@@ -529,6 +511,15 @@ export function QuizPage() {
         </div>
       )}
 
+      {genAlertDocName && (
+        <div className="mb-4 rounded-lg border border-primary/30 bg-primary-soft px-4 py-3 flex items-center gap-3">
+          <Loader2 className="w-5 h-5 animate-spin text-primary shrink-0" />
+          <span className="text-body text-ink-primary">
+            正在为「{genAlertDocName}」出题，请稍候…
+          </span>
+        </div>
+      )}
+
       {phase === "setup" && (
         <>
           {loadingCollections ? (
@@ -633,25 +624,6 @@ export function QuizPage() {
                             <Button
                               variant="secondary"
                               size="md"
-                              onClick={handleGenerateQuestions}
-                              disabled={
-                                generating ||
-                                selectedDocument.question_gen_status === "processing" ||
-                                selectedDocument.segment_status !== "completed"
-                              }
-                            >
-                              {generating || selectedDocument.question_gen_status === "processing" ? (
-                                <>
-                                  <Loader2 className="w-4 h-4 animate-spin" />
-                                  出题中...
-                                </>
-                              ) : (
-                                "为该文档出题"
-                              )}
-                            </Button>
-                            <Button
-                              variant="secondary"
-                              size="md"
                               onClick={() => setDeleteDialogOpen(true)}
                               disabled={!canDeleteQuestions}
                               title={!canDeleteQuestions ? "暂无题目可删除" : undefined}
@@ -664,11 +636,9 @@ export function QuizPage() {
 
                           {!docReadyForQuiz && (
                             <p className="px-4 py-2 text-caption text-ink-tertiary shrink-0">
-                              {generating || selectedDocument.question_gen_status === "processing"
-                                ? "出题进行中，请稍候..."
-                                : selectedDocument.segment_status === "processing"
-                                  ? "文档分段中，完成后可出题。"
-                                  : "该文档尚无题目，请先点击「为该文档出题」或前往出题页按页生成。"}
+                              {selectedDocument.segment_status === "processing"
+                                ? "文档分段中，完成后可前往出题页生成题目。"
+                                : "该文档尚无题目，请前往出题页按页生成。"}
                             </p>
                           )}
 
