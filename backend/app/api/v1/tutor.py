@@ -53,7 +53,7 @@ def get_session(
     "/sessions/{session_id}/messages",
     response_model=None,
 )
-def send_message(
+async def send_message(
     session_id: str,
     payload: TutorMessageCreate,
     db: Session = Depends(get_db),
@@ -64,14 +64,15 @@ def send_message(
 
     if payload.stream:
 
-        def stream_with_commit():
+        async def stream_with_commit():
             try:
-                yield from tutor_service.stream_tutor_message(
+                async for event in tutor_service.stream_tutor_message(
                     db=db,
                     user_id=user_id,
                     session_id=session_id,
                     content=payload.content,
-                )
+                ):
+                    yield event
             finally:
                 db.commit()
 
@@ -85,7 +86,7 @@ def send_message(
             },
         )
 
-    result = tutor_service.send_tutor_message(
+    result = await tutor_service.send_tutor_message(
         db=db,
         user_id=user_id,
         session_id=session_id,

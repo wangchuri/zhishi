@@ -2,24 +2,18 @@
 知拾 Agent — 封装 Tina Agent + 本地/Dify 检索，提供流式对话
 """
 import logging
-from typing import Generator, List, Optional, TYPE_CHECKING
+from typing import AsyncGenerator, List, Optional, TYPE_CHECKING
 
 from app.core.config import is_local_rag
 from app.utils.tina_loader import tina_env_path
 from tina import Agent
-from tina.agent.core.tools import Tools
 from tina.llm import BaseAPI
 
 from app.services.citation_service import build_citations_from_hits
-from app.services.local_retrieval_service import search as local_search
-from app.services.llm_runner import iter_agent_predict_stream
+from app.tools.rag_tools import RAGTools
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
-
-if not is_local_rag():
-    from app.services.citation_service import filter_hits_by_collection
-    from app.services.dify_kb import DifyKB
 
 logger = logging.getLogger(__name__)
 
@@ -45,7 +39,7 @@ class ZhishiAgent:
     知拾智能体 — 每个用户一个实例
 
     职责：
-        1. 持有检索后端（本地 Chroma 或 DifyKB）
+        1. 持有 RAGTools（本地 Chroma 或 DifyKB）
         2. 持有 Tina Agent 实例（共享 LLM）
         3. 对话时自动检索知识库，注入上下文后流式输出
     """
@@ -53,22 +47,15 @@ class ZhishiAgent:
     def __init__(self, user_id: int, dataset_id: str = ""):
         self.user_id = user_id
         self.dataset_id = dataset_id or ""
-        self._active_collection_id: Optional[str] = None
-        self._active_db: Optional["Session"] = None
 
-        self.kb = None
-        if not is_local_rag() and dataset_id:
-            self.kb = DifyKB(dataset_id)
+        self.rag = RAGTools(user_id=user_id, dataset_id=dataset_id)
 
         try:
             self.llm = BaseAPI(env_path=tina_env_path())
 
-            self.tools = Tools(name="zhishi")
-            self.tools.register_tool(self.search_knowledge_base)
-
             self.agent = Agent(
                 llm=self.llm,
-                tools=self.tools,
+                tools=[self.rag.get_tools()],
                 system_prompt=SYSTEM_PROMPT,
                 max_context_length=100000,
                 max_tool_result_length=6000,
@@ -83,58 +70,20 @@ class ZhishiAgent:
             logger.error(f"ZhishiAgent 初始化失败: user_id={user_id}, error={e}")
             self.agent = None
             self.llm = None
-            self.tools = None
-
-    def _retrieve(self, query: str, top_k: int = 5) -> List[dict]:
-        if is_local_rag():
-            return local_search(
-                query,
-                user_id=self.user_id,
-                collection_id=self._active_collection_id,
-                top_k=top_k,
-            )
-        if not self.kb:
-            return []
-        results = self.kb.query(query, top_k=top_k)
-        if self._active_db and self._active_collection_id is not None:
-            results = filter_hits_by_collection(
-                self._active_db,
-                self.user_id,
-                self._active_collection_id,
-                results,
-            )
-        return results
-
-    def search_knowledge_base(self, query: str) -> str:
-        """
-        搜索用户知识库中的相关内容
-        返回匹配的文档片段和相似度分数
-
-        Args:
-            query (str): 检索查询文本
-        """
-        results = self._retrieve(query, top_k=5)
-        if not results:
-            return "未找到相关内容"
-        lines = []
-        for i, r in enumerate(results, 1):
-            lines.append(f"[{i}] (相关度: {r['score']:.2f})\n{r['content']}")
-        return "\n\n".join(lines)
 
     @property
     def is_ready(self) -> bool:
         """Agent 是否可用"""
         return self.agent is not None
 
-    def predict_stream(
+    async def predict_stream(
         self,
         message: str,
-        history: Optional[List[dict]] = None,
         collection_id: Optional[str] = None,
         db: Optional["Session"] = None,
-    ) -> Generator[dict, None, None]:
+    ) -> AsyncGenerator[dict, None]:
         """
-        流式对话
+        流式对话（异步生成器）
 
         流程：
             1. 恢复历史上下文
@@ -142,18 +91,8 @@ class ZhishiAgent:
             3. 构建增强后的 instruction
             4. Tina Agent 流式预测
             5. 末包附带 citations
-
-        Args:
-            message: 用户消息
-            history: 历史消息列表 [{role, content}, ...]
-            collection_id: 知识库分区 ID，限定检索与 citation 范围
-            db: 数据库会话，用于 citation 映射
-
-        Yields:
-            dict: {"role": "assistant", "content": "...", ...}
         """
-        self._active_collection_id = collection_id
-        self._active_db = db
+        self.rag.set_filter(collection_id, db)
 
         if not self.agent:
             yield {"role": "assistant", "content": "抱歉，AI 服务暂时不可用，请稍后重试。"}
@@ -164,7 +103,7 @@ class ZhishiAgent:
 
         knowledge_context = ""
         try:
-            retrieval_hits = self._retrieve(message, top_k=3)
+            retrieval_hits = self.rag._retrieve(message, top_k=3)
             if retrieval_hits:
                 fragments = []
                 for i, r in enumerate(retrieval_hits, 1):
@@ -183,12 +122,7 @@ class ZhishiAgent:
             )
 
         try:
-            for chunk in iter_agent_predict_stream(
-                self.agent,
-                enhanced_message,
-                history=history,
-                system_prompt=SYSTEM_PROMPT,
-            ):
+            async for chunk in self.agent.apredict(instruction=enhanced_message):
                 result = {
                     "role": chunk.get("role", "assistant"),
                     "content": chunk.get("content", ""),
@@ -218,5 +152,4 @@ class ZhishiAgent:
             except Exception as e:
                 logger.warning(f"ZhishiAgent 构建 citations 失败: {e}")
 
-        self._active_collection_id = None
-        self._active_db = None
+        self.rag.reset_filter()

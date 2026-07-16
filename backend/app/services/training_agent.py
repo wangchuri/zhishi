@@ -9,21 +9,13 @@ import threading
 import time
 import uuid
 from dataclasses import dataclass, field
-from typing import Generator, List, Optional, TYPE_CHECKING
+from typing import AsyncGenerator, List, Optional, TYPE_CHECKING
 
 from app.utils.tina_loader import tina_env_path
 from tina import Agent
-from tina.agent.core.tools import Tools
 from tina.llm import BaseAPI
 
-from app.services.llm_runner import (
-    agent_predict_no_stream,
-    iter_agent_continue_stream,
-)
-from app.services.training_tools import (
-    get_user_wrong_stats_by_tag,
-    search_questions_by_tags,
-)
+from app.services.training_tools import TrainingTools
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
@@ -72,16 +64,15 @@ class TrainingCoachAgent:
         self._phase_done: bool = False
         self.agent = None
         self.llm = None
-        self.tools = None
+
+        self.training = TrainingTools(db=db, user_id=user_id)
 
         try:
             self.llm = BaseAPI(env_path=tina_env_path())
-            self.tools = Tools(name="training_coach")
-            self._register_tools(db)
 
             self.agent = Agent(
                 llm=self.llm,
-                tools=self.tools,
+                tools=[self.training.get_tools()],
                 system_prompt=SYSTEM_PROMPT,
                 max_context_length=80000,
                 max_tool_result_length=6000,
@@ -109,68 +100,7 @@ class TrainingCoachAgent:
                 coach._phase_done = True
             return tool_name, tool_arguments, tool_result
 
-    def _register_tools(self, db: "Session") -> None:
-        user_id = self.user_id
-        agent = self
-
-        def get_user_wrong_stats_by_tag_tool(min_wrong: int = 1, limit: int = 10) -> str:
-            """
-            获取用户按 tag 的错题统计。
-
-            Args:
-                min_wrong (int): 最少错题次数
-                limit (int): 返回条数上限
-            """
-            stats = get_user_wrong_stats_by_tag(
-                db, user_id, min_wrong=min_wrong, limit=limit
-            )
-            return json.dumps({"stats": stats}, ensure_ascii=False)
-
-        def search_questions_by_tags_tool(
-            tags: str, limit: int = 20, question_types: str = ""
-        ) -> str:
-            """
-            按知识点 tag 从题库检索题目 ID。
-
-            Args:
-                tags (str): 逗号分隔的 tag 名称
-                limit (int): 最多返回题目数
-                question_types (str): 可选，逗号分隔题型
-            """
-            tag_list = [t.strip() for t in tags.split(",") if t.strip()]
-            type_list = (
-                [t.strip() for t in question_types.split(",") if t.strip()]
-                if question_types
-                else None
-            )
-            ids = search_questions_by_tags(
-                db, user_id, tag_list, limit=limit, question_types=type_list
-            )
-            return json.dumps({"question_ids": ids, "count": len(ids)}, ensure_ascii=False)
-
-        def submit_training_plan(
-            question_ids: List[str],
-            weak_tags: List[str],
-            rationale: str,
-        ) -> str:
-            """
-            提交针对训练计划（结构化输出，制定计划时必须调用）。
-
-            Args:
-                question_ids (List[str]): 选中的题目 ID 列表
-                weak_tags (List[str]): 本次重点薄弱 tag
-                rationale (str): 选题理由与薄弱点说明（中文）
-            """
-            return json.dumps(
-                {"status": "ok", "question_count": len(question_ids)},
-                ensure_ascii=False,
-            )
-
-        self.tools.register_tool(get_user_wrong_stats_by_tag_tool)
-        self.tools.register_tool(search_questions_by_tags_tool)
-        self.tools.register_tool(submit_training_plan)
-
-    def plan_training(
+    async def plan_training(
         self,
         *,
         report_content: Optional[str] = None,
@@ -196,7 +126,7 @@ class TrainingCoachAgent:
         self._phase_done = False
 
         try:
-            agent_predict_no_stream(self.agent, instruction=instruction)
+            await self.agent.apredict_no_stream(instruction=instruction)
         except Exception as e:
             logger.warning("TrainingCoachAgent.plan_training 失败: %s", e, exc_info=True)
 
@@ -225,14 +155,14 @@ class TrainingCoachAgent:
         except Exception as e:
             logger.warning("注入训练计划上下文失败: %s", e)
 
-    def tutor_stream(self, message: str) -> Generator[dict, None, None]:
+    async def tutor_stream(self, message: str) -> AsyncGenerator[dict, None]:
         """辅导对话流式输出（复用同一 Agent 会话上下文）。"""
         if not self.agent:
             yield {"role": "assistant", "content": "抱歉，AI 教练暂时不可用，请稍后重试。"}
             return
 
         try:
-            for chunk in iter_agent_continue_stream(self.agent, message):
+            async for chunk in self.agent.apredict(instruction=message):
                 yield {
                     "role": chunk.get("role", "assistant"),
                     "content": chunk.get("content", ""),

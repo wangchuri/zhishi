@@ -18,29 +18,29 @@ interface RecentListProps {
 /** 最近内容列表 · 对应设计 12.1 最近内容（轻列表，不厚重） */
 export function RecentList({ items, className }: RecentListProps) {
   return (
-    <div className={cn("bg-surface border border-line-soft rounded-lg shadow-xs divide-y divide-line-soft", className)}>
+    <div className={cn("card-paper divide-y divide-line-light", className)}>
       {items.map((item) => {
         const Icon = item.icon
         return (
           <div
             key={item.id}
-            className="flex items-center gap-3.5 px-5 py-3.5 hover:bg-surface-soft cursor-pointer transition-colors group"
+            className="flex items-center gap-3.5 px-4 py-3 hover:bg-paper-deep cursor-pointer transition-colors group"
           >
             {Icon && (
               <div
                 className={cn(
-                  "w-9 h-9 rounded-md flex items-center justify-center shrink-0",
-                  item.iconTone === "primary" ? "bg-primary-soft text-primary" : "bg-surface-soft text-ink-secondary"
+                  "w-9 h-9 rounded-[4px] flex items-center justify-center shrink-0",
+                  item.iconTone === "primary" ? "bg-sea-subtle text-sea" : "bg-paper-2 text-ink-soft"
                 )}
               >
                 <Icon className="w-4 h-4" strokeWidth={2} />
               </div>
             )}
             <div className="min-w-0 flex-1">
-              <div className="text-body text-ink-primary font-medium truncate-1 group-hover:text-primary transition-colors">
+              <div className="text-body text-ink font-medium truncate-1 group-hover:text-sea transition-colors">
                 {item.title}
               </div>
-              <div className="text-small text-ink-tertiary truncate-1">{item.meta}</div>
+              <div className="text-small text-ink-disabled truncate-1">{item.meta}</div>
             </div>
             {item.secondaryAction && (
               <button
@@ -49,7 +49,7 @@ export function RecentList({ items, className }: RecentListProps) {
                   e.stopPropagation()
                   item.secondaryAction?.onClick()
                 }}
-                className="shrink-0 text-small text-primary hover:underline opacity-0 group-hover:opacity-100 transition-opacity"
+                className="shrink-0 text-small text-sea hover:underline opacity-0 group-hover:opacity-100 transition-opacity"
               >
                 {item.secondaryAction.label}
               </button>

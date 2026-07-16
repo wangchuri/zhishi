@@ -4,7 +4,7 @@
 import json
 import logging
 from datetime import datetime
-from typing import Generator, List, Optional, Tuple
+from typing import AsyncGenerator, List, Optional, Tuple
 from uuid import uuid4
 
 from fastapi import HTTPException
@@ -23,7 +23,6 @@ from app.schemas.tutor import (
     TutorSessionOut,
 )
 from app.utils.tina_loader import tina_env_path
-from app.services.llm_runner import agent_predict_no_stream, iter_agent_predict_stream
 
 logger = logging.getLogger(__name__)
 
@@ -252,7 +251,7 @@ class SocraticTutorAgent:
     def is_ready(self) -> bool:
         return self._agent is not None
 
-    def predict_sync(self, message: str, history: Optional[List[dict]] = None) -> str:
+    async def predict_sync(self, message: str, history: Optional[List[dict]] = None) -> str:
         if not self._agent:
             return "抱歉，AI 辅导服务暂时不可用，请稍后重试。"
         try:
@@ -264,7 +263,7 @@ class SocraticTutorAgent:
                     part = msg.get("content", "")
                     if role in ("user", "assistant"):
                         self._agent.add_message(role=role, content=part)
-            result = agent_predict_no_stream(self._agent, instruction=message)
+            result = await self._agent.apredict_no_stream(instruction=message)
             if isinstance(result, dict):
                 return result.get("content", "") or str(result)
             if hasattr(result, "get"):
@@ -277,26 +276,24 @@ class SocraticTutorAgent:
             logger.error(f"SocraticTutorAgent.predict_sync 错误: {e}")
             return f"抱歉，生成辅导回复时出错了：{str(e)}"
 
-    def predict_stream(
+    async def predict_stream(
         self, message: str, history: Optional[List[dict]] = None
-    ) -> Generator[dict, None, None]:
+    ) -> AsyncGenerator[dict, None]:
         if not self._agent:
             yield {"role": "assistant", "content": "抱歉，AI 辅导服务暂时不可用，请稍后重试。"}
             return
         try:
-            for chunk in iter_agent_predict_stream(
-                self._agent,
-                message,
-                history=history,
-                system_prompt=self.system_prompt,
-            ):
-                yield chunk
+            async for chunk in self._agent.apredict(instruction=message, history=history, system_prompt=self.system_prompt):
+                yield {
+                    "role": chunk.get("role", "assistant"),
+                    "content": chunk.get("content", ""),
+                }
         except Exception as e:
             logger.error(f"SocraticTutorAgent.predict_stream 错误: {e}")
             yield {"role": "assistant", "content": f"抱歉，生成辅导回复时出错了：{str(e)}"}
 
 
-def _call_tutor_agent(
+async def _call_tutor_agent(
     system_prompt: str,
     message: str,
     history: Optional[List[dict]] = None,
@@ -306,7 +303,7 @@ def _call_tutor_agent(
     agent = SocraticTutorAgent(system_prompt=system_prompt)
     if stream:
         return agent.predict_stream(message, history)
-    return agent.predict_sync(message, history)
+    return await agent.predict_sync(message, history)
 
 
 def _build_session_out(
@@ -426,7 +423,7 @@ def _get_system_prompt_from_history(history: List[dict]) -> str:
     return ""
 
 
-def send_tutor_message(
+async def send_tutor_message(
     db: Session,
     user_id: int,
     session_id: str,
@@ -447,7 +444,7 @@ def send_tutor_message(
         m for m in history if m.get("role") in ("user", "assistant")
     ][:-1]
 
-    reply = _call_tutor_agent(
+    reply = await _call_tutor_agent(
         system_prompt, content, conv_history, stream=False
     )
     if not isinstance(reply, str):
@@ -460,12 +457,12 @@ def send_tutor_message(
     return TutorReplyOut(role="assistant", content=reply, created_at=_now_iso())
 
 
-def stream_tutor_message(
+async def stream_tutor_message(
     db: Session,
     user_id: int,
     session_id: str,
     content: str,
-) -> Generator[str, None, None]:
+) -> AsyncGenerator[str, None]:
     session = tutor_crud.get_session(db, session_id, user_id)
     if not session:
         data = json.dumps(
@@ -484,12 +481,12 @@ def stream_tutor_message(
         m for m in history if m.get("role") in ("user", "assistant")
     ][:-1]
 
-    stream = _call_tutor_agent(
+    stream = await _call_tutor_agent(
         system_prompt, content, conv_history, stream=True
     )
     full_content = ""
-    if hasattr(stream, "__iter__"):
-        for chunk in stream:
+    if hasattr(stream, "__aiter__"):
+        async for chunk in stream:
             role = chunk.get("role", "assistant")
             part = chunk.get("content", "")
             if part:

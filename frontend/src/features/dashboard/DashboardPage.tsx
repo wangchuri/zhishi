@@ -118,31 +118,35 @@ export function DashboardPage() {
     <AppShell maxWidth={1180}>
       <div className="flex items-end justify-between gap-6 mb-6">
         <div className="min-w-0">
-          <h1 className="text-page-title text-ink-primary mb-1.5">{getTimeGreeting()}，{greetingName || "朋友"}</h1>
-          <p className="text-body text-ink-secondary">持续学习，成就更好的自己。</p>
+          <h1 className="font-display text-display-l text-ink mb-1.5">{getTimeGreeting()}，{greetingName || "朋友"}</h1>
+          <p className="text-body text-ink-soft">持续学习，成就更好的自己。</p>
         </div>
       </div>
 
-      {/* AI 搜索框 */}
+      {/* 搜索框 - 纸本风格 */}
       <form
         onSubmit={(e) => { e.preventDefault(); handleSearch() }}
         className="relative group mb-10"
       >
-        <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-ink-tertiary group-focus-within:text-primary transition-colors" strokeWidth={2} />
+        <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-ink-disabled group-focus-within:text-sea transition-colors" strokeWidth={2} />
         <input
           type="text"
           value={searchInput}
           onChange={(e) => setSearchInput(e.target.value)}
           placeholder="问 Tina 或搜索学习资料..."
-          className="w-full h-12 pl-12 pr-32 rounded-lg bg-surface border border-line-soft text-body text-ink-primary placeholder:text-ink-tertiary focus:outline-none focus:border-primary/50 focus:ring-2 focus:ring-primary/10 transition-all"
+          className="w-full h-12 pl-12 pr-36 rounded-[4px] bg-paper-2 border border-line text-body text-ink placeholder:text-ink-disabled focus:outline-none focus:border-sea focus:ring-1 focus:ring-sea-subtle transition-all"
         />
-        <Button type="submit" variant="gradient" size="md" className="absolute right-2 top-1/2 -translate-y-1/2">
+        <button
+          type="submit"
+          className="btn-primary absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-2"
+        >
           <Sparkles className="w-4 h-4" strokeWidth={2} />
           AI 搜索
-        </Button>
+        </button>
       </form>
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-10">
+      {/* 快捷操作卡片 */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-10">
         {quickActions.map((action, i) => (
           <QuickActionCard
             key={action.id}
@@ -154,6 +158,7 @@ export function DashboardPage() {
         ))}
       </div>
 
+      {/* 推荐卡片 */}
       <div className="mb-10">
         <RecommendCard
           title="开始学习"
@@ -164,6 +169,7 @@ export function DashboardPage() {
         />
       </div>
 
+      {/* 最近内容 */}
       <div className="mb-4">
         <SectionHeader title="最近内容">
           <Button variant="ghost" size="sm" onClick={() => navigate("/knowledge")}>
@@ -172,7 +178,7 @@ export function DashboardPage() {
           </Button>
         </SectionHeader>
         {recentItems.length === 0 ? (
-          <div className="text-body text-ink-tertiary py-8 text-center">
+          <div className="text-body text-ink-disabled py-8 text-center">
             暂无最近内容，开始你的学习之旅吧
           </div>
         ) : (
@@ -200,7 +206,7 @@ function RightPanelSlot({ suggestions }: { suggestions: string[] }) {
     <RightPanel title="今日状态">
       <div className="space-y-6">
         <section>
-          <h3 className="text-card-title font-semibold text-ink-primary mb-3">今日学习</h3>
+          <h3 className="font-display text-title-s text-ink mb-3">今日学习</h3>
           <div className="space-y-2.5">
             <StatusRow icon={Clock} label="学习时长" value="—" />
             <StatusRow icon={FileStack} label="待复习" value="—" />
@@ -209,31 +215,31 @@ function RightPanelSlot({ suggestions }: { suggestions: string[] }) {
         </section>
 
         <section>
-          <h3 className="text-card-title font-semibold text-ink-primary mb-3 flex items-center gap-1.5">
-            <Sparkles className="w-4 h-4 text-primary" strokeWidth={2} />
+          <h3 className="font-display text-title-s text-ink mb-3 flex items-center gap-1.5">
+            <Sparkles className="w-4 h-4 text-sea" strokeWidth={2} />
             Tina 建议
           </h3>
             <div className="space-y-2">
               {suggestions.map((s, i) => (
-                <div key={i} className="flex items-start gap-2 p-3 rounded-md bg-primary-subtle border border-primary/10">
-                  <span className="w-1.5 h-1.5 rounded-full bg-primary mt-1.5 shrink-0" />
-                  <span className="text-caption text-ink-primary leading-relaxed">{s}</span>
+                <div key={i} className="flex items-start gap-2 p-3 rounded-[4px] bg-sea-subtle border border-sea/10">
+                  <span className="w-1.5 h-1.5 rounded-full bg-sea mt-1.5 shrink-0" />
+                  <span className="text-caption text-ink leading-relaxed">{s}</span>
                 </div>
               ))}
             </div>
         </section>
 
         <section>
-          <h3 className="text-card-title font-semibold text-ink-primary mb-3">快捷入口</h3>
+          <h3 className="font-display text-title-s text-ink mb-3">快捷入口</h3>
           <div className="grid grid-cols-1 gap-2">
             {rightPanelShortcuts.map((sc) => (
               <button
                 key={sc.label}
                 onClick={() => navigate(sc.to)}
-                className="flex items-center justify-between px-3 h-10 rounded-md bg-surface border border-line-soft text-body text-ink-secondary hover:border-primary/30 hover:text-primary transition-all group"
+                className="flex items-center justify-between px-3 h-10 rounded-[4px] bg-paper-2 border border-line-light text-body text-ink-soft hover:border-sea/30 hover:text-sea transition-all group"
               >
                 {sc.label}
-                <ArrowRight className="w-4 h-4 text-ink-tertiary group-hover:text-primary group-hover:translate-x-0.5 transition-all" strokeWidth={2} />
+                <ArrowRight className="w-4 h-4 text-ink-disabled group-hover:text-sea group-hover:translate-x-0.5 transition-all" strokeWidth={2} />
               </button>
             ))}
           </div>
@@ -246,12 +252,12 @@ function RightPanelSlot({ suggestions }: { suggestions: string[] }) {
 function StatusRow({ icon: Icon, label, value }: { icon: typeof Clock; label: string; value: string }) {
   return (
     <div className="flex items-center gap-3">
-      <div className="w-8 h-8 rounded-md bg-surface-soft text-ink-secondary flex items-center justify-center shrink-0">
+      <div className="w-8 h-8 rounded-[4px] bg-paper-2 text-ink-soft flex items-center justify-center shrink-0">
         <Icon className="w-4 h-4" strokeWidth={2} />
       </div>
       <div className="flex-1 flex items-center justify-between">
-        <span className="text-caption text-ink-secondary">{label}</span>
-        <span className="text-body text-ink-primary font-medium">{value}</span>
+        <span className="text-caption text-ink-soft">{label}</span>
+        <span className="text-body text-ink font-medium">{value}</span>
       </div>
     </div>
   )

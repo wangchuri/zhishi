@@ -3,6 +3,7 @@ import json
 from typing import Any, Dict, List, Optional
 
 from sqlalchemy.orm import Session
+from tina.agent.core.tools import Tools
 
 from app.crud import question as question_crud
 from app.services import analytics_service
@@ -66,8 +67,80 @@ def get_user_wrong_stats_by_tag(
     return result[:limit]
 
 
+class TrainingTools:
+    """学习教练工具包 — 错题统计、题库检索、计划提交。"""
+
+    tools: Tools
+
+    def __init__(self, db: Session, user_id: int):
+        self._db = db
+        self.user_id = user_id
+        self.tools = Tools(name="training_coach")
+        self.tools.register_tool(tool=self.get_user_wrong_stats_by_tag)
+        self.tools.register_tool(tool=self.search_questions_by_tags)
+        self.tools.register_tool(tool=self.submit_training_plan)
+
+    def get_tools(self) -> Tools:
+        """公开 Tools 实例供 Agent 使用。"""
+        return self.tools
+
+    def get_user_wrong_stats_by_tag(self, min_wrong: int = 1, limit: int = 10) -> str:
+        """
+        获取用户按 tag 的错题统计。
+
+        Args:
+            min_wrong (int): 最少错题次数
+            limit (int): 返回条数上限
+        """
+        stats = get_user_wrong_stats_by_tag(
+            self._db, self.user_id, min_wrong=min_wrong, limit=limit
+        )
+        return json.dumps({"stats": stats}, ensure_ascii=False)
+
+    def search_questions_by_tags(
+        self, tags: str, limit: int = 20, question_types: str = ""
+    ) -> str:
+        """
+        按知识点 tag 从题库检索题目 ID。
+
+        Args:
+            tags (str): 逗号分隔的 tag 名称
+            limit (int): 最多返回题目数
+            question_types (str): 可选，逗号分隔题型
+        """
+        tag_list = [t.strip() for t in tags.split(",") if t.strip()]
+        type_list = (
+            [t.strip() for t in question_types.split(",") if t.strip()]
+            if question_types
+            else None
+        )
+        ids = search_questions_by_tags(
+            self._db, self.user_id, tag_list, limit=limit, question_types=type_list
+        )
+        return json.dumps({"question_ids": ids, "count": len(ids)}, ensure_ascii=False)
+
+    def submit_training_plan(
+        self,
+        question_ids: List[str],
+        weak_tags: List[str],
+        rationale: str,
+    ) -> str:
+        """
+        提交针对训练计划（结构化输出，制定计划时必须调用）。
+
+        Args:
+            question_ids (List[str]): 选中的题目 ID 列表
+            weak_tags (List[str]): 本次重点薄弱 tag
+            rationale (str): 选题理由与薄弱点说明（中文）
+        """
+        return json.dumps(
+            {"status": "ok", "question_count": len(question_ids)},
+            ensure_ascii=False,
+        )
+
+
 def register_training_tools(tools, db: Session, user_id: int) -> None:
-    """将训练工具注册到 Tina Tools 实例（闭包绑定 db / user_id）。"""
+    """将训练工具注册到 Tina Tools 实例（闭包绑定 db / user_id）。兼容旧入口，新代码请直接使用 TrainingTools 类。"""
 
     def _search_questions_by_tags(
         tags: str, limit: int = 20, question_types: str = ""

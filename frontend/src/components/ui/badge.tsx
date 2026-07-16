@@ -11,8 +11,8 @@ const badgeVariants = cva(
   {
     variants: {
       variant: {
-        neutral: "bg-surface-soft text-ink-secondary border border-line-soft",
-        primary: "bg-primary-soft text-primary-active border border-primary/20",
+        neutral: "bg-paper-2 text-ink-soft border border-line-light",
+        primary: "bg-sea-subtle text-sea border border-sea/20",
         success: "bg-success-soft text-success border border-success/20",
         warning: "bg-warning-soft text-warning border border-warning/20",
         danger: "bg-danger-soft text-danger border border-danger/20",

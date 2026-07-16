@@ -1,4 +1,3 @@
-import { Sparkles } from "lucide-react"
 import type { ChatMessage as ChatMessageType, Citation } from "@/types"
 import { CitationCard } from "@/components/blocks/CitationCard"
 import { MarkdownWithMath } from "@/components/blocks/MarkdownWithMath"
@@ -15,8 +14,8 @@ export function ChatMessage({ message, className, onCitationClick }: ChatMessage
 
   if (isUser) {
     return (
-      <div className={cn("flex justify-end animate-msg-in", className)}>
-        <div className="max-w-[72%] bg-primary text-white rounded-lg rounded-tr-sm px-4 py-2.5 text-body leading-relaxed shadow-xs">
+      <div className={cn("animate-msg-in", className)}>
+        <div className="bg-sea text-paper rounded-[4px] px-4 py-2.5 text-body leading-relaxed">
           {message.content}
         </div>
       </div>
@@ -24,15 +23,8 @@ export function ChatMessage({ message, className, onCitationClick }: ChatMessage
   }
 
   return (
-    <div className={cn("flex gap-3 animate-msg-in", className)}>
-      <div className="w-8 h-8 rounded-full bg-gradient-primary flex items-center justify-center shrink-0 shadow-primary mt-0.5">
-        <Sparkles className="w-4 h-4 text-white" strokeWidth={2} />
-      </div>
-      <div className="flex-1 min-w-0 text-body text-ink-primary leading-relaxed">
-        <div className="text-card-title font-semibold text-ink-primary mb-2 flex items-center gap-1.5">
-          Tina
-          <span className="text-small text-ink-tertiary font-normal">· 知识库助手</span>
-        </div>
+    <div className={cn("animate-msg-in", className)}>
+      <div className="text-body text-ink leading-relaxed">
         <MarkdownWithMath>{message.content}</MarkdownWithMath>
         {message.citations && message.citations.length > 0 && (
           <div className="mt-4 pt-3 border-t border-line-soft space-y-2">

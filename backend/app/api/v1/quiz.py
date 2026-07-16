@@ -48,14 +48,14 @@ def get_session(
 
 
 @router.post("/sessions/{session_id}/answers", response_model=AnswerResult)
-def submit_answer(
+async def submit_answer(
     session_id: str,
     payload: AnswerSubmit,
     db: Session = Depends(get_db),
     current_user: dict = Depends(get_current_active_user),
 ):
     """提交单题答案；status=unknown 表示「我不会」。"""
-    result = quiz_service.submit_answer(
+    result = await quiz_service.submit_answer(
         db=db,
         user_id=current_user["user_id"],
         session_id=session_id,

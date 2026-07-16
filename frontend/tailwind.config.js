@@ -5,129 +5,137 @@ module.exports = {
   theme: {
     extend: {
       colors: {
-        // 主色 - 紫色强调
-        primary: {
-          DEFAULT: "hsl(var(--color-primary))",
-          hover: "hsl(var(--color-primary-hover))",
-          active: "hsl(var(--color-primary-active))",
-          soft: "hsl(var(--color-primary-soft))",
-          subtle: "hsl(var(--color-primary-subtle))",
-          foreground: "0 0% 100%",
-        },
-        // 中性色 - 背景
-        bg: {
-          DEFAULT: "hsl(var(--color-bg))",
-          subtle: "hsl(var(--color-bg-subtle))",
-        },
-        surface: {
-          DEFAULT: "hsl(var(--color-surface))",
-          soft: "hsl(var(--color-surface-soft))",
-        },
-        // 中性色 - 文字
+        // 纸本设定集色彩系统
+        // 墨色系 - 文字与主操作
         ink: {
-          primary: "hsl(var(--color-text-primary))",
-          secondary: "hsl(var(--color-text-secondary))",
-          tertiary: "hsl(var(--color-text-tertiary))",
-          disabled: "hsl(var(--color-text-disabled))",
+          DEFAULT: "var(--ink)",
+          soft: "var(--ink-soft)",
+          disabled: "var(--ink-disabled)",
         },
-        // 边框
+        // 纸色系 - 背景
+        paper: {
+          DEFAULT: "var(--paper)",
+          2: "var(--paper-2)",
+          deep: "var(--paper-deep)",
+        },
+        // 青绿 - 品牌强调色（替换原紫色）
+        sea: {
+          DEFAULT: "var(--sea)",
+          bright: "var(--sea-bright)",
+          subtle: "var(--sea-subtle)",
+        },
+        // 赭石 - 点缀色
+        ember: {
+          DEFAULT: "var(--ember)",
+          subtle: "var(--ember-subtle)",
+        },
+        // 柔和分隔
+        mist: "var(--mist)",
+        // 描边
         line: {
-          DEFAULT: "hsl(var(--color-border))",
-          soft: "hsl(var(--color-border-soft))",
+          DEFAULT: "var(--line)",
+          light: "var(--line-light)",
         },
-        // 功能色
+        // 语义色
         success: {
-          DEFAULT: "hsl(var(--color-success))",
-          soft: "hsl(var(--color-success-soft))",
-          foreground: "0 0% 100%",
+          DEFAULT: "var(--success)",
+          soft: "var(--success-soft)",
+          foreground: "var(--ink)",
         },
         warning: {
-          DEFAULT: "hsl(var(--color-warning))",
-          soft: "hsl(var(--color-warning-soft))",
-          foreground: "0 0% 100%",
+          DEFAULT: "var(--warning)",
+          soft: "var(--warning-soft)",
+          foreground: "var(--ink)",
         },
         danger: {
-          DEFAULT: "hsl(var(--color-danger))",
-          soft: "hsl(var(--color-danger-soft))",
-          foreground: "0 0% 100%",
+          DEFAULT: "var(--danger)",
+          soft: "var(--danger-soft)",
+          foreground: "var(--paper)",
         },
         info: {
-          DEFAULT: "hsl(var(--color-info))",
-          soft: "hsl(var(--color-info-soft))",
-          foreground: "0 0% 100%",
+          DEFAULT: "var(--info)",
+          soft: "var(--info-soft)",
+          foreground: "var(--ink)",
         },
         // 兼容 shadcn 既有令牌
-        border: "hsl(var(--color-border))",
-        input: "hsl(var(--color-border))",
-        ring: "hsl(var(--color-primary))",
-        background: "hsl(var(--color-bg))",
-        foreground: "hsl(var(--color-text-primary))",
-        card: {
-          DEFAULT: "hsl(var(--color-surface))",
-          foreground: "hsl(var(--color-text-primary))",
-        },
-        popover: {
-          DEFAULT: "hsl(var(--color-surface))",
-          foreground: "hsl(var(--color-text-primary))",
+        border: "var(--line)",
+        input: "var(--line)",
+        ring: "var(--sea)",
+        background: "var(--paper)",
+        foreground: "var(--ink)",
+        primary: {
+          DEFAULT: "var(--sea)",
+          foreground: "var(--paper)",
         },
         secondary: {
-          DEFAULT: "hsl(var(--color-surface-soft))",
-          foreground: "hsl(var(--color-text-primary))",
+          DEFAULT: "var(--paper-2)",
+          foreground: "var(--ink)",
         },
         muted: {
-          DEFAULT: "hsl(var(--color-surface-soft))",
-          foreground: "hsl(var(--color-text-secondary))",
+          DEFAULT: "var(--paper-2)",
+          foreground: "var(--ink-soft)",
         },
         accent: {
-          DEFAULT: "hsl(var(--color-primary-soft))",
-          foreground: "hsl(var(--color-primary-active))",
+          DEFAULT: "var(--sea-subtle)",
+          foreground: "var(--sea)",
         },
         destructive: {
-          DEFAULT: "hsl(var(--color-danger))",
-          foreground: "0 0% 100%",
+          DEFAULT: "var(--danger)",
+          foreground: "var(--paper)",
+        },
+        card: {
+          DEFAULT: "var(--paper-2)",
+          foreground: "var(--ink)",
+        },
+        popover: {
+          DEFAULT: "var(--paper)",
+          foreground: "var(--ink)",
         },
         sidebar: {
-          DEFAULT: "0 0% 100%",
-          foreground: "hsl(var(--color-text-secondary))",
-          primary: "hsl(var(--color-primary))",
-          "primary-foreground": "0 0% 100%",
-          accent: "hsl(var(--color-primary-soft))",
-          "accent-foreground": "hsl(var(--color-primary-active))",
-          border: "hsl(var(--color-border-soft))",
-          ring: "hsl(var(--color-primary))",
+          DEFAULT: "var(--paper)",
+          foreground: "var(--ink-soft)",
+          primary: "var(--sea)",
+          "primary-foreground": "var(--paper)",
+          accent: "var(--sea-subtle)",
+          "accent-foreground": "var(--sea)",
+          border: "var(--line-light)",
+          ring: "var(--sea)",
         },
       },
       borderRadius: {
-        xs: "var(--radius-xs)",
-        sm: "var(--radius-sm)",
-        md: "var(--radius-md)",
-        lg: "var(--radius-lg)",
-        xl: "var(--radius-xl)",
-        "2xl": "var(--radius-xl)",
-        full: "var(--radius-full)",
+        xs: "4px",
+        sm: "4px",
+        md: "8px",
+        lg: "12px",
+        xl: "16px",
+        "2xl": "16px",
+        full: "9999px",
       },
       boxShadow: {
-        xs: "var(--shadow-sm)",
-        sm: "var(--shadow-sm)",
-        md: "var(--shadow-md)",
-        lg: "var(--shadow-lg)",
-        primary: "var(--shadow-primary)",
+        xs: "0 2px 8px rgba(20, 33, 43, 0.06)",
+        sm: "0 4px 16px rgba(20, 33, 43, 0.08)",
+        md: "0 8px 24px rgba(20, 33, 43, 0.10)",
+        lg: "0 18px 50px rgba(20, 33, 43, 0.12)",
+        sea: "0 4px 16px rgba(31, 92, 90, 0.12)",
       },
       fontSize: {
-        "page-title": ["28px", { lineHeight: "36px", fontWeight: "700" }],
-        "section-title": ["20px", { lineHeight: "28px", fontWeight: "650" }],
-        "card-title": ["16px", { lineHeight: "24px", fontWeight: "600" }],
-        "body": ["14px", { lineHeight: "22px", fontWeight: "400" }],
-        "caption": ["13px", { lineHeight: "20px", fontWeight: "400" }],
-        "small": ["12px", { lineHeight: "18px", fontWeight: "400" }],
+        "display-xl": ["48px", { lineHeight: "1.1", fontWeight: "700" }],
+        "display-l": ["32px", { lineHeight: "1.15", fontWeight: "700" }],
+        "display-m": ["24px", { lineHeight: "1.2", fontWeight: "700" }],
+        "title-s": ["17px", { lineHeight: "1.3", fontWeight: "500" }],
+        body: ["15px", { lineHeight: "1.6", fontWeight: "400" }],
+        caption: ["13px", { lineHeight: "1.4", fontWeight: "400" }],
+        small: ["12px", { lineHeight: "1.3", fontWeight: "400" }],
       },
       fontFamily: {
-        sans: ['Inter', 'SF Pro Display', 'PingFang SC', 'Microsoft YaHei', 'sans-serif'],
+        display: ['"Fraunces"', '"Songti SC"', '"Noto Serif SC"', '"宋体"', 'serif'],
+        sans: ['"Outfit"', '"PingFang SC"', '"Microsoft YaHei"', '"Noto Sans SC"', 'sans-serif'],
       },
       transitionDuration: {
-        "160": "160ms",
-        "180": "180ms",
-        "220": "220ms",
+        "150": "150ms",
+        "200": "200ms",
+        "300": "300ms",
+        "400": "400ms",
       },
       keyframes: {
         "page-in": {
@@ -150,13 +158,18 @@ module.exports = {
           from: { height: "var(--radix-accordion-content-height)" },
           to: { height: "0" },
         },
+        "pulse-paper": {
+          "0%, 100%": { backgroundColor: "var(--paper-2)" },
+          "50%": { backgroundColor: "var(--paper-deep)" },
+        },
       },
       animation: {
-        "page-in": "page-in 180ms ease-out both",
+        "page-in": "page-in 300ms ease-out both",
         "panel-in": "panel-in 220ms ease-out both",
         "msg-in": "msg-in 240ms ease-out both",
         "accordion-down": "accordion-down 0.2s ease-out",
         "accordion-up": "accordion-up 0.2s ease-out",
+        "pulse-paper": "pulse-paper 1.5s ease-in-out infinite",
       },
     },
   },

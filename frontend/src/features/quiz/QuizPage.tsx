@@ -613,6 +613,7 @@ export function QuizPage() {
                                     ? "生活区不支持练习"
                                     : undefined
                               }
+                              style={{ color: '#FFFFFF' }}
                             >
                               {starting ? (
                                 <Loader2 className="w-4 h-4 animate-spin" />

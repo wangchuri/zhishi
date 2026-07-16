@@ -16,19 +16,18 @@ export function QuickActionCard({ icon: Icon, title, description, onClick, class
     <button
       onClick={onClick}
       className={cn(
-        "group text-left bg-surface border border-line-soft rounded-lg p-5 shadow-xs",
-        "hover:-translate-y-0.5 hover:shadow-md hover:border-primary/30 transition-all duration-160",
+        "group text-left card-paper-interactive p-4",
         className
       )}
     >
       <div className="flex items-center justify-between mb-3">
-        <div className="w-10 h-10 rounded-md bg-primary-soft text-primary flex items-center justify-center group-hover:bg-primary group-hover:text-white transition-colors">
+        <div className="w-10 h-10 rounded-[4px] bg-sea-subtle text-sea flex items-center justify-center group-hover:bg-sea group-hover:text-paper transition-colors">
           <Icon className="w-5 h-5" strokeWidth={2} />
         </div>
-        <ChevronRight className="w-4 h-4 text-ink-tertiary group-hover:text-primary group-hover:translate-x-0.5 transition-all" strokeWidth={2} />
+        <ChevronRight className="w-4 h-4 text-ink-disabled group-hover:text-sea group-hover:translate-x-0.5 transition-all" strokeWidth={2} />
       </div>
-      <div className="text-card-title font-semibold text-ink-primary mb-1">{title}</div>
-      <div className="text-small text-ink-tertiary leading-relaxed truncate-2">{description}</div>
+      <div className="font-display text-display-m text-ink mb-1">{title}</div>
+      <div className="text-caption text-ink-disabled leading-relaxed truncate-2">{description}</div>
     </button>
   )
 }

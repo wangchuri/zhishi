@@ -2,7 +2,7 @@ import json
 import logging
 from uuid import uuid4
 from datetime import datetime
-from typing import Optional, List
+from typing import Optional, List, AsyncGenerator
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
@@ -170,7 +170,7 @@ def _generate_assistant_response(user_message: str) -> str:
     return f"已收到：{user_message}"
 
 
-def _stream_agent_response(
+async def _stream_agent_response(
     user_id: int,
     session_id: str,
     message: str,
@@ -178,7 +178,7 @@ def _stream_agent_response(
     collection_id: Optional[str] = None,
     db: Optional[Session] = None,
     history: Optional[list] = None,
-):
+) -> AsyncGenerator[str, None]:
     if not dataset_id and not is_local_rag():
         logger.warning(f"_stream_agent_response: user_id={user_id} 没有 dataset_id，使用 echo 回退")
     if not dataset_id and not is_local_rag():
@@ -206,8 +206,8 @@ def _stream_agent_response(
 
         full_content = ""
 
-        for chunk in agent.predict_stream(
-            message, history, collection_id=collection_id, db=db
+        async for chunk in agent.predict_stream(
+            message, collection_id=collection_id, db=db
         ):
             role = chunk.get("role", "assistant")
             content = chunk.get("content", "")
@@ -253,7 +253,7 @@ def _stream_agent_response(
 
 
 @router.post("", response_model=ChatResponse)
-def send_chat(
+async def send_chat(
     request: ChatRequest,
     current_user: dict = Depends(get_current_active_user),
     db: Session = Depends(get_db),
@@ -310,9 +310,8 @@ def send_chat(
                 if history:
                     history = history[:-1]
                 full_content = ""
-                for chunk in agent.predict_stream(
+                async for chunk in agent.predict_stream(
                     request.content,
-                    history,
                     collection_id=collection_id,
                     db=db,
                 ):

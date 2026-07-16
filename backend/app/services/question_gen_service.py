@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import MAX_QUESTIONS_PER_DOCUMENT, MAX_PAGES_PER_GEN, QUESTION_GEN_ASYNC
 from app.core.database import SessionLocal
-from app.core.job_runner import run_in_background
+from app.core.job_runner import run_in_background, run_async_coro
 
 from app.crud import kb as kb_crud
 from app.crud import question as question_crud
@@ -330,14 +330,14 @@ def generate_from_pages(
     try:
         from app.services.question_gen_agent import agent_generate_from_pages
 
-        pairs = agent_generate_from_pages(
+        pairs = run_async_coro(agent_generate_from_pages(
             db=db,
             user_id=user_id,
             document_id=doc.id,
             pages=pages,
             questions_per_page=questions_per_page,
             tag_hint=tag_hint,
-        )
+        ))
 
         if not pairs:
             doc.question_gen_status = "failed"

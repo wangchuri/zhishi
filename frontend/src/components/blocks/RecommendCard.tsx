@@ -25,13 +25,13 @@ export function RecommendCard({
   return (
     <div
       className={cn(
-        "relative overflow-hidden rounded-xl bg-card-elevated border border-primary/15 shadow-primary p-6",
+        "relative overflow-hidden card-paper-interactive p-6 border-sea-subtle",
         className
       )}
     >
-      {/* 装饰性背景图形 - 透明度 6-10% */}
+      {/* 装饰性背景图形 - sea 色调 */}
       <svg
-        className="absolute -right-8 -top-8 w-56 h-56 text-primary opacity-[0.08] pointer-events-none"
+        className="absolute -right-8 -top-8 w-56 h-56 text-sea opacity-[0.06] pointer-events-none"
         viewBox="0 0 200 200"
         fill="none"
         aria-hidden
@@ -48,14 +48,14 @@ export function RecommendCard({
       </svg>
 
       <div className="relative">
-        <div className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-full bg-primary/10 text-primary text-small font-medium mb-4">
+        <div className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-full bg-sea-subtle text-sea text-small font-medium mb-4">
           <Sparkles className="w-3.5 h-3.5" strokeWidth={2} />
           {title}
         </div>
-        <div className="text-card-title font-semibold text-ink-primary mb-2 max-w-md">
+        <div className="font-display text-display-m text-ink mb-2 max-w-md">
           {highlight}
         </div>
-        <p className="text-caption text-ink-secondary max-w-md leading-relaxed mb-5">{description}</p>
+        <p className="text-caption text-ink-soft max-w-md leading-relaxed mb-5">{description}</p>
         <Button variant="primary" size="md" onClick={onAction}>
           {actionLabel}
           <ArrowRight className="w-4 h-4" strokeWidth={2} />

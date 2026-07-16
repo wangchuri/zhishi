@@ -18,11 +18,11 @@ interface StatCardProps {
 }
 
 const toneMap = {
-  primary: "bg-primary-soft text-primary",
+  primary: "bg-sea-subtle text-sea",
   success: "bg-success-soft text-success",
   warning: "bg-warning-soft text-warning",
   info: "bg-info-soft text-info",
-  neutral: "bg-surface-soft text-ink-secondary",
+  neutral: "bg-paper-2 text-ink-soft",
 }
 
 export function StatCard({ icon: Icon, label, value, hint, className, tone = "neutral" }: StatCardProps) {

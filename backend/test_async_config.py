@@ -26,85 +26,12 @@ def test_config_py_reexports():
 
     assert config.OCR_MAX_PARALLEL_PAGES >= 1
     assert config.MAX_QUESTIONS_PER_DOCUMENT >= 1
-    assert isinstance(config.LLM_ASYNC, bool)
     assert isinstance(config.IMAGE_OCR_ASYNC, bool)
     print(
         f"OK config.py: pipeline_async={config.DOCUMENT_PIPELINE_ASYNC}, "
         f"question_async={config.QUESTION_GEN_ASYNC}, "
-        f"llm_async={config.LLM_ASYNC}, image_ocr_async={config.IMAGE_OCR_ASYNC}"
+        f"image_ocr_async={config.IMAGE_OCR_ASYNC}"
     )
-
-
-def test_llm_runner_sync_path():
-    from unittest.mock import MagicMock
-
-    from app.services import llm_runner
-
-    llm = MagicMock()
-    llm.predict.return_value = {"content": "ok"}
-    with __import__("unittest.mock", fromlist=["patch"]).patch(
-        "app.services.llm_runner.LLM_ASYNC", False
-    ):
-        out = llm_runner.llm_predict_no_stream(llm, input_text="hi")
-    assert out["content"] == "ok"
-    llm.predict.assert_called_once()
-    print("OK llm_runner sync fallback")
-
-
-def test_llm_runner_resets_async_client_after_no_stream():
-    from unittest.mock import MagicMock, patch
-
-    from app.services import llm_runner
-
-    llm = MagicMock()
-    llm._async_client = object()
-
-    async def fake_apredict_no_stream(**kwargs):
-        return {"content": "planned"}
-
-    agent = MagicMock()
-    agent.llm = llm
-    agent.apredict_no_stream = fake_apredict_no_stream
-
-    with patch("app.services.llm_runner.LLM_ASYNC", True):
-        result = llm_runner.agent_predict_no_stream(agent, instruction="plan")
-
-    assert result["content"] == "planned"
-    assert llm._async_client is None
-    print("OK llm_runner resets async client after no-stream")
-
-
-def test_llm_runner_stream_resets_stale_async_client():
-    import asyncio
-    from unittest.mock import MagicMock, patch
-
-    import httpx
-
-    from app.services import llm_runner
-
-    llm = MagicMock()
-    loop = asyncio.new_event_loop()
-    try:
-        llm._async_client = httpx.AsyncClient()
-    finally:
-        loop.close()
-
-    agent = MagicMock()
-    agent.llm = llm
-
-    async def fake_stream():
-        yield {"role": "assistant", "content": "hi"}
-
-    agent.apredict = lambda **kwargs: fake_stream()
-
-    with patch("app.services.llm_runner.LLM_ASYNC", True):
-        chunks = list(
-            llm_runner.iter_agent_continue_stream(agent, instruction="tutor")
-        )
-
-    assert chunks == [{"role": "assistant", "content": "hi"}]
-    assert llm._async_client is None
-    print("OK llm_runner stream works after stale async client")
 
 
 def test_file_parser_defers_ocr_when_async():
@@ -169,9 +96,6 @@ def test_parallel_ocr_progress_thread_safe():
 if __name__ == "__main__":
     test_app_config_loads()
     test_config_py_reexports()
-    test_llm_runner_sync_path()
-    test_llm_runner_resets_async_client_after_no_stream()
-    test_llm_runner_stream_resets_stale_async_client()
     test_file_parser_defers_ocr_when_async()
     test_parallel_ocr_progress_thread_safe()
     print("\nAll async/config checks passed.")

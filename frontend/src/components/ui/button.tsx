@@ -4,35 +4,33 @@ import { cva, type VariantProps } from "class-variance-authority"
 import { cn } from "@/lib/utils"
 
 /**
- * 知拾按钮 · 对应设计第 10.1 节
+ * 知拾按钮 · 纸本设定集风格
  * variant:
- *   - primary   纯紫主按钮
- *   - gradient  渐变主 CTA / AI 按钮
- *   - secondary 白底浅边框
- *   - ghost     透明，hover 浅灰
- *   - danger    危险操作
+ *   - secondary 细描边，悬停转 sea 色
+ *   - ghost     透明，悬停 sea 色文字
+ *   - danger    砖红底
  * size: sm(36) / md(40) / lg(44) / xl(48)
+ * 所有圆角统一为 9999px（胶囊），与卡片 4px 圆角形成对比
  */
 const buttonVariants = cva(
-  "inline-flex items-center justify-center gap-2 whitespace-nowrap font-medium transition-all duration-160 disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-[18px] shrink-0 [&_svg]:shrink-0 outline-none focus-visible:ring-2 focus-visible:ring-primary/30 active:scale-[0.98]",
+  "inline-flex items-center justify-center gap-2 whitespace-nowrap font-medium transition-all duration-150 disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-[18px] shrink-0 [&_svg]:shrink-0 outline-none focus-visible:ring-2 focus-visible:ring-sea/30 active:scale-[0.98]",
   {
     variants: {
       variant: {
-        primary: "bg-primary text-white hover:bg-primary-hover shadow-xs hover:shadow-primary",
-        gradient: "bg-gradient-primary text-white shadow-primary hover:shadow-lg hover:-translate-y-0.5",
-        secondary: "bg-surface text-ink-primary border border-line hover:bg-surface-soft hover:border-line",
-        outline: "bg-surface text-ink-primary border border-line hover:bg-surface-soft hover:border-line",
-        ghost: "text-ink-secondary hover:bg-surface-soft hover:text-ink-primary",
-        danger: "bg-danger text-white hover:bg-danger/90 shadow-xs",
+        primary: "bg-ink text-white hover:bg-sea rounded-full",
+        secondary: "bg-transparent text-ink border border-line hover:border-sea hover:text-sea rounded-full",
+        outline: "bg-transparent text-ink border border-line hover:border-sea hover:text-sea rounded-full",
+        ghost: "text-ink-soft hover:text-sea rounded-full",
+        danger: "bg-danger text-white hover:bg-danger/90 rounded-full",
       },
       size: {
-        sm: "h-9 px-3 rounded-md text-caption gap-1.5",
-        md: "h-10 px-4 rounded-md text-body",
-        default: "h-10 px-4 rounded-md text-body",
-        lg: "h-11 px-5 rounded-md text-body",
-        xl: "h-12 px-6 rounded-md text-body",
-        icon: "h-10 w-10 rounded-md",
-        "icon-sm": "h-9 w-9 rounded-md",
+        sm: "h-9 px-3 text-caption gap-1.5",
+        md: "h-10 px-4 text-body",
+        default: "h-10 px-4 text-body",
+        lg: "h-11 px-5 text-body",
+        xl: "h-12 px-6 text-body",
+        icon: "h-10 w-10 rounded-full",
+        "icon-sm": "h-9 w-9 rounded-full",
       },
     },
     defaultVariants: { variant: "primary", size: "md" },

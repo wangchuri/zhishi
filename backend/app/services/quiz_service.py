@@ -143,14 +143,13 @@ def _parse_ai_grade_response(content: str) -> Tuple[str, str]:
     return "wrong", text[:200] if text else ""
 
 
-def _grade_by_ai(
+async def _grade_by_ai(
     question: GlobalQuestion, user_answer: Optional[str], *, qtype: str
 ) -> Tuple[str, str]:
     if not user_answer or not user_answer.strip():
         return "wrong", "未作答"
     try:
         from app.services.question_gen_service import _get_llm
-        from app.services.llm_runner import llm_predict_no_stream
 
         llm = _get_llm()
         if not llm:
@@ -171,8 +170,7 @@ def _grade_by_ai(
             f"学生答案：{user_answer}\n"
             "请输出 JSON。"
         )
-        resp = llm_predict_no_stream(
-            llm,
+        resp = await llm.apredict_no_stream(
             input_text=prompt,
             sys_prompt=GRADE_AI_SYS_PROMPT,
             temperature=0,
@@ -183,11 +181,11 @@ def _grade_by_ai(
         return "wrong", ""
 
 
-def _grade_short_answer(question: GlobalQuestion, user_answer: Optional[str]) -> Tuple[str, str]:
-    return _grade_by_ai(question, user_answer, qtype="short_answer")
+async def _grade_short_answer(question: GlobalQuestion, user_answer: Optional[str]) -> Tuple[str, str]:
+    return await _grade_by_ai(question, user_answer, qtype="short_answer")
 
 
-def _grade_answer(
+async def _grade_answer(
     question: GlobalQuestion,
     user_answer: Optional[str],
     status_hint: Optional[str],
@@ -203,12 +201,12 @@ def _grade_answer(
     if qtype == "fill_blank":
         string_status = _grade_fill_blank_string(question, user_answer)
         if request_ai_grade:
-            ai_status, ai_reason = _grade_by_ai(question, user_answer, qtype="fill_blank")
+            ai_status, ai_reason = await _grade_by_ai(question, user_answer, qtype="fill_blank")
             return ai_status, "ai", string_status, ai_reason or None
         return string_status, "string", string_status, None
 
     if qtype in ("short_answer", "application"):
-        ai_status, ai_reason = _grade_by_ai(question, user_answer, qtype=qtype)
+        ai_status, ai_reason = await _grade_by_ai(question, user_answer, qtype=qtype)
         return ai_status, "ai", None, ai_reason or None
 
     if not user_answer or not user_answer.strip():
@@ -346,7 +344,7 @@ def get_quiz_session(db: Session, user_id: int, session_id: str) -> QuizSessionO
     return _build_session_out(db, session)
 
 
-def submit_answer(
+async def submit_answer(
     db: Session,
     user_id: int,
     session_id: str,
@@ -385,7 +383,7 @@ def submit_answer(
             else:
                 raise HTTPException(status_code=400, detail="缺少用户答案，无法 AI 复判")
 
-    result_status, grade_method, string_match_status, ai_reason = _grade_answer(
+    result_status, grade_method, string_match_status, ai_reason = await _grade_answer(
         question,
         user_answer,
         status_hint,

@@ -138,11 +138,6 @@ QUESTION_GEN_ASYNC = (
     os.getenv("QUESTION_GEN_ASYNC", str(_app_cfg.question_gen_async)).lower() == "true"
 )
 
-# Tina LLM / Agent 是否使用 apredict（config.json llm_async）
-LLM_ASYNC = (
-    os.getenv("LLM_ASYNC", str(_app_cfg.llm_async)).lower() == "true"
-)
-
 # 图片上传 OCR 是否后台异步（config.json image_ocr_async）
 IMAGE_OCR_ASYNC = (
     os.getenv("IMAGE_OCR_ASYNC", str(_app_cfg.image_ocr_async)).lower() == "true"

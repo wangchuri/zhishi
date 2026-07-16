@@ -1,8 +1,6 @@
 import { useState, useRef, useEffect } from "react"
 import {
-  Sparkles,
   ArrowUp,
-  LogOut,
   PanelLeftClose,
   PanelLeftOpen,
   Plus,
@@ -11,13 +9,12 @@ import {
   GraduationCap,
   Home,
 } from "lucide-react"
-import { useNavigate, useSearchParams } from "react-router-dom"
+import { useSearchParams } from "react-router-dom"
 import { AppShell } from "@/components/layout/AppShell"
 import { ChatCitationSidebar } from "@/components/blocks/ChatCitationSidebar"
 import { Button } from "@/components/ui/button"
 import { ChatMessage as ChatMessageBlock } from "@/components/blocks/ChatMessage"
 import { chatApi, kbApi, normalizeChatHistory } from "@/lib/api"
-import { useAuth } from "@/context/AuthContext"
 import type { ChatMessage, Citation, KbCollection } from "@/types"
 import { Badge } from "@/components/ui/badge"
 import {
@@ -62,8 +59,6 @@ function persistHistorySidebarOpen(open: boolean) {
 }
 
 export function ChatPage() {
-  const { user, logout } = useAuth()
-  const navigate = useNavigate()
   const [searchParams] = useSearchParams()
 
   const [input, setInput] = useState("")
@@ -256,11 +251,6 @@ export function ChatPage() {
   const selectedCollection = collections.find((c) => c.id === collectionId)
   const zoneLabel = selectedCollection?.zone === "life" ? "生活区" : "学习区"
 
-  const handleLogout = () => {
-    logout()
-    navigate("/login")
-  }
-
   // ─── 格式化时间 ────────────────────────────────────
 
   const formatDate = (dateStr?: string) => {
@@ -328,10 +318,10 @@ export function ChatPage() {
                     onClick={() => handleSelectSession(s)}
                     onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') handleSelectSession(s) }}
                     className={cn(
-                      "w-full text-left px-3 py-2.5 rounded-md flex items-center gap-2 group transition-colors mb-0.5 cursor-pointer",
+                      "w-full text-left px-3 py-2.5 rounded-[4px] flex items-center gap-2 group transition-colors mb-0.5 cursor-pointer",
                       s.id === sessionId
-                        ? "bg-primary-soft text-primary"
-                        : "hover:bg-surface-soft text-ink-secondary",
+                        ? "bg-sea-subtle text-sea"
+                        : "hover:bg-paper-2 text-ink-soft",
                     )}
                   >
                     <span className="flex-1 truncate text-small">
@@ -373,36 +363,12 @@ export function ChatPage() {
 
         {/* ────── 对话主区域 ────── */}
         <div className="flex-1 flex flex-col min-w-0">
-          <div className="px-8 pt-6 pb-4 border-b border-line-soft">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full bg-gradient-primary flex items-center justify-center shadow-primary shrink-0">
-                  <Sparkles className="w-5 h-5 text-white" strokeWidth={2} />
-                </div>
-                <div>
-                  <div className="text-card-title font-semibold text-ink-primary leading-tight">Tina</div>
-                  <div className="text-small text-ink-tertiary">
-                    知识库助手 · {user?.nickname || ""}
-                  </div>
-                </div>
-              </div>
-              <button
-                onClick={handleLogout}
-                title="退出登录"
-                className="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-md text-small text-ink-tertiary hover:text-danger hover:bg-danger-soft transition-colors"
-              >
-                <LogOut className="w-4 h-4" strokeWidth={2} />
-                <span className="hidden lg:inline">退出</span>
-              </button>
-            </div>
-          </div>
-
           <div ref={scrollRef} className="flex-1 overflow-y-auto scroll-thin px-8 py-6">
-            <div className="max-w-[860px] mx-auto space-y-5">
+            <div className="max-w-[860px] mx-auto space-y-4">
               {loadingHistory ? (
                 <div className="flex items-center justify-center py-12">
-                  <div className="flex items-center gap-2 text-ink-tertiary">
-                    <div className="w-5 h-5 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
+                  <div className="flex items-center gap-2 text-ink-disabled">
+                    <div className="w-5 h-5 border-2 border-sea/30 border-t-sea rounded-full animate-spin" />
                     <span className="text-body">加载历史消息...</span>
                   </div>
                 </div>
@@ -416,20 +382,10 @@ export function ChatPage() {
                     />
                   ))}
                   {isStreaming && messages.length > 0 && messages[messages.length - 1].role === "assistant" && !messages[messages.length - 1].content && (
-                    <div className="flex gap-3 animate-msg-in">
-                      <div className="w-8 h-8 rounded-full bg-gradient-primary flex items-center justify-center shrink-0 shadow-primary mt-0.5">
-                        <Sparkles className="w-4 h-4 text-white" strokeWidth={2} />
-                      </div>
-                      <div className="flex items-center gap-1.5 pt-2">
-                        <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
-                        <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse [animation-delay:150ms]" />
-                        <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse [animation-delay:300ms]" />
-                      </div>
-                    </div>
-                  )}
-                  {messages.length <= 1 && (
-                    <div className="pt-2">
-                      <div className="text-small text-ink-tertiary mb-2">开始对话吧</div>
+                    <div className="flex items-center gap-1.5 pt-1 animate-msg-in">
+                      <span className="w-1.5 h-1.5 rounded-full bg-sea animate-pulse" />
+                      <span className="w-1.5 h-1.5 rounded-full bg-sea animate-pulse [animation-delay:150ms]" />
+                      <span className="w-1.5 h-1.5 rounded-full bg-sea animate-pulse [animation-delay:300ms]" />
                     </div>
                   )}
                 </>

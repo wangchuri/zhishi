@@ -11,9 +11,9 @@ const chipVariants = cva(
   {
     variants: {
       variant: {
-        default: "bg-surface text-ink-secondary border border-line-soft hover:border-line hover:bg-surface-soft",
-        selected: "bg-primary-soft text-primary-active border border-primary/30",
-        filter: "bg-surface text-ink-secondary border border-line-soft hover:border-primary/40 hover:text-primary",
+        default: "bg-paper-2 text-ink-soft border border-line-light hover:bg-paper-deep",
+        selected: "bg-sea-subtle text-sea border border-sea/30",
+        filter: "bg-paper-2 text-ink-soft border border-line-light hover:border-sea/40 hover:text-sea",
       },
       size: {
         sm: "h-7 px-3 text-small",

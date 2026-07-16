@@ -6,9 +6,8 @@ import logging
 from fastapi import APIRouter, Depends
 
 from app.api.deps import get_current_active_user
-from app.core.config import LLM_ASYNC, is_local_rag
+from app.core.config import is_local_rag
 from app.services.dify_kb import DifyKB
-from app.services.llm_runner import llm_predict_no_stream
 from app.utils.tina_loader import tina_env_path
 from tina.llm import BaseAPI
 
@@ -91,14 +90,9 @@ async def get_dashboard_suggestions(
 
     try:
         llm = BaseAPI(env_path=tina_env_path())
-        if LLM_ASYNC:
-            response = await llm.apredict_no_stream(
-                messages=messages, temperature=0.7, max_tokens=300
-            )
-        else:
-            response = llm_predict_no_stream(
-                llm, messages=messages, temperature=0.7, max_tokens=300
-            )
+        response = await llm.apredict_no_stream(
+            messages=messages, temperature=0.7, max_tokens=300
+        )
         content = response.get("content", "")
         return {"suggestions": _parse_suggestions(content)}
     except Exception as e:

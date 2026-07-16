@@ -24,13 +24,13 @@ router = APIRouter(tags=["针对训练"])
     response_model=TargetedTrainingStartOut,
     status_code=status.HTTP_201_CREATED,
 )
-def start_targeted_training(
+async def start_targeted_training(
     payload: TargetedTrainingStartIn = TargetedTrainingStartIn(),
     db: Session = Depends(get_db),
     current_user: dict = Depends(get_current_active_user),
 ):
     """Agent 制定训练计划：选题 + rationale，并创建刷题会话。支持 report_id 与恢复未完成会话。"""
-    result = training_service.start_targeted_training(
+    result = await training_service.start_targeted_training(
         db,
         current_user["user_id"],
         report_id=payload.report_id,
@@ -74,7 +74,7 @@ def resume_targeted_training(
     "/targeted/tutor/{agent_session_id}",
     response_model=None,
 )
-def training_tutor_message(
+async def training_tutor_message(
     agent_session_id: str,
     payload: TrainingTutorMessageCreate,
     db: Session = Depends(get_db),
@@ -85,9 +85,9 @@ def training_tutor_message(
 
     if payload.stream:
 
-        def sse_stream():
+        async def sse_stream():
             try:
-                for chunk in training_service.stream_training_tutor(
+                async for chunk in training_service.stream_training_tutor(
                     db, user_id, agent_session_id, payload.content
                 ):
                     data = json.dumps(
@@ -119,7 +119,7 @@ def training_tutor_message(
         )
 
     full_content = ""
-    for chunk in training_service.stream_training_tutor(
+    async for chunk in training_service.stream_training_tutor(
         db, user_id, agent_session_id, payload.content
     ):
         if chunk.get("content"):

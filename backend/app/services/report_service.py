@@ -11,7 +11,6 @@ from app.crud import kb as kb_crud
 from app.crud import note as note_crud
 from app.schemas.report import LearningReportGenerateOut, ReportOut
 from app.services import analytics_service
-from app.services.llm_runner import llm_predict_no_stream
 
 logger = logging.getLogger(__name__)
 
@@ -94,7 +93,7 @@ def _build_stats_payload(db: Session, user_id: int) -> str:
     return "\n".join(lines)
 
 
-def generate_learning_report(
+async def generate_learning_report(
     db: Session, user_id: int
 ) -> LearningReportGenerateOut:
     stats_text = _build_stats_payload(db, user_id)
@@ -103,8 +102,7 @@ def generate_learning_report(
 
     if llm:
         try:
-            resp = llm_predict_no_stream(
-                llm,
+            resp = await llm.apredict_no_stream(
                 input_text=f"请根据以下学习数据生成 Markdown 学习报告：\n\n{stats_text}",
                 sys_prompt=REPORT_SYSTEM_PROMPT,
                 temperature=0.4,

@@ -47,31 +47,31 @@ export function Topbar() {
   }
 
   return (
-    <header className="h-16 shrink-0 border-b border-line-soft bg-surface/80 backdrop-blur-xl flex items-center gap-3 px-4 md:px-6">
+    <header className="h-16 shrink-0 border-b border-line bg-header-glass flex items-center gap-3 px-4 md:px-6">
       {/* 平板端：汉堡菜单 */}
       <button
         onClick={toggleMobileMenu}
-        className="lg:hidden inline-flex items-center justify-center w-10 h-10 rounded-md text-ink-secondary hover:bg-surface-soft hover:text-ink-primary transition-colors -ml-1"
+        className="lg:hidden inline-flex items-center justify-center w-10 h-10 rounded-[4px] text-ink-soft hover:bg-paper-2 hover:text-ink transition-colors -ml-1"
         aria-label="打开导航菜单"
       >
         <Menu className="w-5 h-5" strokeWidth={2} />
       </button>
 
-      {/* 左侧：页面标题（平板端自适应） */}
-      <div className="text-card-title font-semibold text-ink-primary shrink-0 min-w-0 truncate">
-        {title}
+      {/* 左侧：页面标题（品牌名只在侧栏） */}
+      <div className="flex items-center shrink-0 min-w-0">
+        <span className="text-title-s text-ink truncate">{title}</span>
       </div>
 
       {/* 中间：搜索框 */}
       <div className="flex-1 max-w-[560px] mx-auto">
         <div className="relative group">
-          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-[18px] h-[18px] text-ink-tertiary group-focus-within:text-primary transition-colors" strokeWidth={2} />
+          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-[18px] h-[18px] text-ink-disabled group-focus-within:text-sea transition-colors" strokeWidth={2} />
           <input
             type="text"
             placeholder="搜索笔记、文档、标签或向 Tina 提问..."
-            className="w-full h-10 pl-11 pr-16 rounded-md bg-bg-subtle border border-line-soft text-body text-ink-primary placeholder:text-ink-tertiary focus:outline-none focus:border-primary/50 focus:bg-surface focus:ring-2 focus:ring-primary/10 transition-all"
+            className="w-full h-10 pl-11 pr-16 rounded-[4px] bg-paper-2 border border-line text-body text-ink placeholder:text-ink-disabled focus:outline-none focus:border-sea focus:bg-paper focus:ring-1 focus:ring-sea-subtle transition-all"
           />
-          <kbd className="absolute right-3 top-1/2 -translate-y-1/2 hidden sm:flex items-center gap-0.5 px-1.5 h-5 rounded border border-line-soft bg-surface text-small text-ink-tertiary">
+          <kbd className="absolute right-3 top-1/2 -translate-y-1/2 hidden sm:flex items-center gap-0.5 px-1.5 h-5 rounded-[4px] border border-line bg-paper text-small text-ink-disabled">
             ⌘ K
           </kbd>
         </div>
@@ -82,32 +82,32 @@ export function Topbar() {
         <button
           onClick={toggleRightPanel}
           className={cn(
-            "inline-flex items-center justify-center w-9 h-9 rounded-md transition-colors",
-            rightPanelOpen ? "text-primary bg-primary-soft" : "text-ink-secondary hover:bg-primary-subtle hover:text-primary",
+            "inline-flex items-center justify-center w-9 h-9 rounded-[4px] transition-colors",
+            rightPanelOpen ? "text-sea bg-sea-subtle" : "text-ink-soft hover:bg-sea-subtle hover:text-sea",
           )}
           aria-label="切换右侧面板"
         >
           <PanelRight className="w-[18px] h-[18px]" strokeWidth={2} />
         </button>
 
-        <div className="w-px h-6 bg-line-soft mx-1" />
+        <div className="w-px h-6 bg-line mx-1" />
 
         <div ref={menuRef} className="relative">
           <button
             onClick={() => setMenuOpen(!menuOpen)}
-            className="w-9 h-9 rounded-full bg-primary-soft text-primary-active flex items-center justify-center text-small font-semibold cursor-pointer hover:ring-2 hover:ring-primary/20 transition-all"
+            className="w-9 h-9 rounded-full bg-sea-subtle text-sea flex items-center justify-center text-small font-semibold cursor-pointer hover:ring-2 hover:ring-sea-subtle transition-all"
           >
             {user?.nickname?.charAt(0) || "?"}
           </button>
           {menuOpen && (
-            <div className="absolute right-0 top-11 w-48 bg-surface border border-line-soft rounded-lg shadow-md py-1 z-50 animate-in fade-in slide-in-from-top-1">
-              <div className="px-3 py-2 border-b border-line-soft">
-                <div className="text-small font-medium text-ink-primary">{user?.nickname || "用户"}</div>
-                <div className="text-caption text-ink-tertiary truncate">{user?.email || ""}</div>
+            <div className="absolute right-0 top-11 w-48 bg-paper border border-line rounded-[4px] shadow-sm py-1 z-50">
+              <div className="px-3 py-2 border-b border-line-light">
+                <div className="text-small font-medium text-ink">{user?.nickname || "用户"}</div>
+                <div className="text-caption text-ink-disabled truncate">{user?.email || ""}</div>
               </div>
               <button
                 onClick={handleLogout}
-                className="w-full flex items-center gap-2.5 px-3 py-2.5 text-small text-ink-secondary hover:text-danger hover:bg-danger-soft transition-colors"
+                className="w-full flex items-center gap-2.5 px-3 py-2.5 text-small text-ink-soft hover:text-danger hover:bg-danger-soft transition-colors"
               >
                 <LogOut className="w-4 h-4" strokeWidth={2} />
                 退出登录

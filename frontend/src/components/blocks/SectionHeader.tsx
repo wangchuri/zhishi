@@ -13,8 +13,8 @@ export function SectionHeader({ title, subtitle, children, className }: SectionH
   return (
     <div className={cn("flex items-center justify-between gap-4 mb-4", className)}>
       <div className="min-w-0">
-        <h2 className="text-section-title text-ink-primary leading-tight">{title}</h2>
-        {subtitle && <p className="text-caption text-ink-tertiary mt-0.5">{subtitle}</p>}
+        <h2 className="font-display text-display-m text-ink leading-tight">{title}</h2>
+        {subtitle && <p className="text-caption text-ink-disabled mt-0.5">{subtitle}</p>}
       </div>
       {children && <div className="flex items-center gap-2 shrink-0">{children}</div>}
     </div>

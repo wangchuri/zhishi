@@ -21,17 +21,17 @@ export function AppShell({ children, maxWidth = 1180, noPadding = false }: AppSh
   const { mobileMenuOpen, setMobileMenuOpen } = useUI()
 
   return (
-    <div className="relative flex h-screen overflow-hidden bg-bg">
+    <div className="relative flex h-screen overflow-hidden bg-paper bg-paper-gradient">
       {/* 平板端：侧边栏抽屉遮罩 */}
       {mobileMenuOpen && (
         <div
-          className="fixed inset-0 bg-ink-primary/30 backdrop-blur-[2px] z-30 lg:hidden"
+          className="fixed inset-0 bg-ink/40 backdrop-blur-[2px] z-30 lg:hidden"
           onClick={() => setMobileMenuOpen(false)}
         />
       )}
       {/* 桌面端：static sidebar；平板端：fixed 抽屉 */}
       <div className={cn(
-        "shrink-0 flex flex-col border-r border-line-soft bg-surface transition-all duration-220 z-40",
+        "shrink-0 flex flex-col border-r border-line-light bg-paper transition-all duration-200 z-40",
         "fixed left-0 top-0 bottom-0 lg:static lg:z-auto",
         mobileMenuOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0",
       )}>
@@ -41,7 +41,7 @@ export function AppShell({ children, maxWidth = 1180, noPadding = false }: AppSh
         <Topbar />
         <main
           className={cn(
-            "flex-1 bg-bg",
+            "flex-1",
             noPadding ? "overflow-hidden" : "overflow-y-auto scroll-thin p-4 md:p-6 lg:p-8",
           )}
         >

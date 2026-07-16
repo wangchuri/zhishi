@@ -2,7 +2,7 @@
 import json
 import logging
 import re
-from typing import List, Optional
+from typing import AsyncGenerator, List, Optional
 
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
@@ -158,7 +158,7 @@ def resume_targeted_training(
     return _plan_to_start_out(db, user_id, plan, session_out)
 
 
-def start_targeted_training(
+async def start_targeted_training(
     db: Session,
     user_id: int,
     *,
@@ -192,7 +192,7 @@ def start_targeted_training(
     plan: TrainingPlanResult
 
     if coach.is_ready:
-        plan = coach.plan_training(
+        plan = await coach.plan_training(
             report_content=report_content,
             report_title=report_title,
         )
@@ -263,13 +263,13 @@ def _resolve_coach_agent(
     return coach
 
 
-def stream_training_tutor(
+async def stream_training_tutor(
     db: Session,
     user_id: int,
     agent_session_id: str,
     message: str,
-):
+) -> AsyncGenerator[dict, None]:
     """针对训练页 AI 辅导 SSE 流。"""
     coach = _resolve_coach_agent(db, user_id, agent_session_id)
-    for chunk in coach.tutor_stream(message):
+    async for chunk in coach.tutor_stream(message):
         yield chunk
