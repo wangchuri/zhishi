@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Link, useNavigate, useParams } from "react-router-dom"
 import {
   ArrowLeft,
@@ -7,13 +7,13 @@ import {
   Loader2,
   Sparkles,
   Square,
+  Bot,
 } from "lucide-react"
 import { AppShell } from "@/components/layout/AppShell"
 import { PageHeader } from "@/components/blocks/PageHeader"
 import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/ui/empty-state"
 import { Badge } from "@/components/ui/badge"
-import { Alert, AlertDescription } from "@/components/ui/alert"
 import { DocumentPipelineBadge } from "@/components/blocks/DocumentPipelineBadge"
 import { DocumentContentViewer } from "@/components/blocks/DocumentContentViewer"
 import { kbApi, questionsApi } from "@/lib/api"
@@ -43,6 +43,26 @@ export function QuestionGenDocPage() {
   const [working, setWorking] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [result, setResult] = useState<PageQuestionResult | null>(null)
+  const [streamContent, setStreamContent] = useState<string>("")
+  const streamEndRef = useRef<HTMLDivElement>(null)
+
+  // 仅当用户已滚动到底部时才自动跟随（仅滚动右侧 AI 日志容器，不影响整页）
+  const [userScrolled, setUserScrolled] = useState(true)
+  const streamContainerRef = useRef<HTMLDivElement>(null)
+
+  const handleStreamScroll = useCallback(() => {
+    if (!streamContainerRef.current) return
+    const el = streamContainerRef.current
+    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40
+    setUserScrolled(atBottom)
+  }, [])
+
+  useEffect(() => {
+    if (working && userScrolled && streamContainerRef.current) {
+      const el = streamContainerRef.current
+      el.scrollTop = el.scrollHeight
+    }
+  }, [streamContent, working, userScrolled])
 
   const selectedPageList = useMemo(
     () => pages.filter((p) => selectedPages.has(p.page_number)),
@@ -106,6 +126,7 @@ export function QuestionGenDocPage() {
     }
   }, [documentId, activePageNumber])
 
+  // 流式模式下不需要轮询，stream 完成后直接更新状态
   useEffect(() => {
     if (!documentId || !working) return
     const timer = window.setInterval(async () => {
@@ -114,16 +135,10 @@ export function QuestionGenDocPage() {
         const doc = docs.find((d) => d.id === documentId)
         if (!doc) return
         updateDocument(documentId, { question_gen_status: doc.question_gen_status })
-        if (doc.question_gen_status === "completed" || doc.question_gen_status === "failed") {
-          setWorking(false)
-          setResult((prev) =>
-            prev ? { ...prev, question_gen_status: doc.question_gen_status } : prev
-          )
-        }
       } catch {
-        /* ignore poll errors */
+        /* ignore */
       }
-    }, 2500)
+    }, 5000)
     return () => window.clearInterval(timer)
   }, [documentId, working, refreshDocuments, updateDocument])
 
@@ -149,18 +164,39 @@ export function QuestionGenDocPage() {
     setWorking(true)
     setError(null)
     setResult(null)
+    setStreamContent("")
+
+    const pageNumbers = Array.from(selectedPages).sort((a, b) => a - b)
+
     try {
-      const res = await questionsApi.generateFromPages({
-        document_id: documentId,
-        page_numbers: Array.from(selectedPages).sort((a, b) => a - b),
-        questions_per_page: 1,
-      })
-      setResult(res)
-      if (res.question_gen_status === "processing") {
-        updateDocument(documentId, { question_gen_status: "processing" })
-      } else {
-        setWorking(false)
-      }
+      await questionsApi.generateStream(
+        {
+          document_id: documentId,
+          page_numbers: pageNumbers,
+          questions_per_page: 1,
+        },
+        (chunk) => {
+          if (chunk.event === "chunk" && chunk.content) {
+            setStreamContent((prev) => prev + chunk.content)
+          } else if (chunk.event === "result") {
+            // 流式出题完成，刷新文档状态
+            updateDocument(documentId, { question_gen_status: "completed" })
+            setResult({
+              document_id: documentId,
+              page_numbers: pageNumbers,
+              mode: "generate",
+              question_gen_status: "completed",
+              questions_created: chunk.questions?.length || 0,
+              questions_reused: 0,
+              total_questions: chunk.questions?.length || 0,
+            })
+            setWorking(false)
+          } else if (chunk.event === "error") {
+            setError(chunk.content || "出题失败")
+            setWorking(false)
+          }
+        }
+      )
     } catch (e) {
       setError(e instanceof Error ? e.message : "批量出题失败")
       setWorking(false)
@@ -172,10 +208,10 @@ export function QuestionGenDocPage() {
   return (
     <AppShell maxWidth={null} noPadding>
       <div className="flex flex-col h-full">
-        <div className="px-8 pt-6 pb-4 border-b border-line-soft shrink-0">
+        <div className="px-8 pt-6 pb-4 border-b border-line shrink-0">
           <PageHeader
             title={displayName}
-            subtitle="按页浏览内容，选择页面后提取或 AI 生成题目"
+            subtitle="按页浏览内容，选择页面后由 AI 自动生成题目"
           >
             <Button
               variant="ghost"
@@ -202,60 +238,38 @@ export function QuestionGenDocPage() {
         </div>
 
         {error && (
-          <Alert className="mx-8 mt-4 border-danger/30 bg-danger-soft shrink-0">
-            <AlertDescription className="text-danger">{error}</AlertDescription>
-          </Alert>
+          <div className="mx-8 mt-4 rounded-[4px] border border-danger/30 bg-danger-soft px-4 py-2 text-caption text-danger shrink-0">
+            {error}
+          </div>
         )}
 
-          {!hasPageMarkers && pages.length > 0 && (
-          <Alert className="mx-8 mt-4 border-line-soft bg-surface-soft shrink-0">
-            <AlertDescription className="text-ink-secondary">
-              该文档无「## 第 N 页」标记，已作为单页全文展示。扫描 PDF 经 OCR 后会自动带页码。
-            </AlertDescription>
-          </Alert>
+        {!hasPageMarkers && pages.length > 0 && (
+          <div className="mx-8 mt-4 rounded-[4px] border border-line-light bg-paper-2 px-4 py-2 text-caption text-ink-soft shrink-0">
+            该文档无「## 第 N 页」标记，已作为单页全文展示。扫描 PDF 经 OCR 后会自动带页码。
+          </div>
         )}
 
-          {working && (
-            <Alert className="mx-8 mt-4 border-primary/20 bg-primary-soft shrink-0">
-              <AlertDescription className="text-ink-primary text-caption">
-                出题正在进行中，Agent 会检索文档内容后批量生成题目，请耐心等待…
-              </AlertDescription>
-            </Alert>
-          )}
-
-        <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[200px_minmax(0,1fr)_280px] gap-0 overflow-hidden">
+        <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[200px_minmax(0,1fr)_320px] gap-0 overflow-hidden">
           {/* 左：页码列表 */}
-          <div className="border-r border-line-soft bg-surface/60 flex flex-col min-h-0 overflow-hidden">
-            <div className="px-3 py-3 border-b border-line-soft flex items-center justify-between shrink-0">
-              <span className="text-small font-medium text-ink-primary">页码</span>
+          <div className="border-r border-line-light bg-paper/60 flex flex-col min-h-0 overflow-hidden">
+            <div className="px-3 py-3 border-b border-line-light flex items-center justify-between shrink-0">
+              <span className="text-small font-medium text-ink">页码</span>
               {pages.length > 0 && (
                 <div className="flex gap-1">
-                  <button
-                    type="button"
-                    onClick={selectAll}
-                    className="text-caption text-primary hover:underline"
-                  >
-                    全选
-                  </button>
-                  <span className="text-caption text-ink-tertiary">·</span>
-                  <button
-                    type="button"
-                    onClick={clearSelection}
-                    className="text-caption text-ink-tertiary hover:underline"
-                  >
-                    清空
-                  </button>
+                  <button type="button" onClick={selectAll} className="text-caption text-sea hover:underline">全选</button>
+                  <span className="text-caption text-ink-disabled">·</span>
+                  <button type="button" onClick={clearSelection} className="text-caption text-ink-disabled hover:underline">清空</button>
                 </div>
               )}
             </div>
             <div className="flex-1 min-h-0 overflow-y-auto scroll-thin p-2">
               {loadingPages ? (
-                <div className="flex items-center justify-center py-8 text-ink-tertiary">
+                <div className="flex items-center justify-center py-8 text-ink-disabled">
                   <Loader2 className="h-4 w-4 animate-spin mr-2" />
                   加载中…
                 </div>
               ) : pages.length === 0 ? (
-                <div className="text-caption text-ink-tertiary text-center py-8">暂无页面</div>
+                <div className="text-caption text-ink-disabled text-center py-8">暂无页面</div>
               ) : (
                 pages.map((page) => {
                   const isActive = activePageNumber === page.page_number
@@ -264,19 +278,18 @@ export function QuestionGenDocPage() {
                     <div
                       key={page.page_number}
                       className={cn(
-                        "rounded-md mb-0.5 transition-colors flex items-start gap-1",
-                        isActive && "bg-primary-soft/60"
+                        "rounded-[4px] mb-0.5 transition-colors flex items-start gap-1",
+                        isActive && "bg-sea-subtle"
                       )}
                     >
                       <button
                         type="button"
                         onClick={(e) => togglePage(page.page_number, e)}
-                        className="shrink-0 px-2 py-2.5 text-ink-tertiary hover:text-primary"
+                        className="shrink-0 px-2 py-2.5 text-ink-disabled hover:text-sea"
                         title={isSelected ? "取消选中" : "选中此页"}
-                        aria-label={isSelected ? "取消选中" : "选中此页"}
                       >
                         {isSelected ? (
-                          <CheckSquare className="h-4 w-4 text-primary" />
+                          <CheckSquare className="h-4 w-4 text-sea" />
                         ) : (
                           <Square className="h-4 w-4" />
                         )}
@@ -286,30 +299,18 @@ export function QuestionGenDocPage() {
                         onClick={() => handlePageClick(page.page_number)}
                         className={cn(
                           "flex-1 min-w-0 text-left px-1 py-2.5 text-small transition-colors",
-                          isActive
-                            ? "text-primary font-medium"
-                            : "text-ink-secondary hover:bg-surface-soft"
+                          isActive ? "text-ink font-medium" : "text-ink-soft hover:bg-paper-2"
                         )}
                       >
                         <div className="truncate">{page.title}</div>
                         {(page.has_builtin_questions || page.is_key_page) && (
                           <div className="flex flex-wrap gap-1 mt-1">
-                            {page.has_builtin_questions && (
-                              <Badge variant="neutral" size="sm">
-                                含习题
-                              </Badge>
-                            )}
-                            {page.is_key_page && (
-                              <Badge variant="info" size="sm">
-                                重点
-                              </Badge>
-                            )}
+                            {page.has_builtin_questions && <Badge variant="neutral" size="sm">含习题</Badge>}
+                            {page.is_key_page && <Badge variant="primary" size="sm">重点</Badge>}
                           </div>
                         )}
                         {page.preview && (
-                          <div className="text-caption text-ink-tertiary truncate mt-0.5">
-                            {page.preview}
-                          </div>
+                          <div className="text-caption text-ink-disabled truncate mt-0.5">{page.preview}</div>
                         )}
                       </button>
                     </div>
@@ -320,29 +321,21 @@ export function QuestionGenDocPage() {
           </div>
 
           {/* 中：页内容预览 */}
-          <div className="flex flex-col min-h-0 overflow-hidden bg-surface">
-            <div className="px-5 py-3 border-b border-line-soft shrink-0">
-              <span className="text-body font-medium text-ink-primary">
+          <div className="flex flex-col min-h-0 overflow-hidden bg-paper">
+            <div className="px-5 py-3 border-b border-line-light shrink-0">
+              <span className="text-body font-medium text-ink">
                 {pageDetail?.title || (activePageNumber ? `第 ${activePageNumber} 页` : "页内容预览")}
               </span>
               {pageDetail && (
                 <div className="flex flex-wrap gap-1 mt-2">
-                  {pageDetail.has_builtin_questions && (
-                    <Badge variant="neutral" size="sm">
-                      含习题
-                    </Badge>
-                  )}
-                  {pageDetail.is_key_page && (
-                    <Badge variant="info" size="sm">
-                      重点
-                    </Badge>
-                  )}
+                  {pageDetail.has_builtin_questions && <Badge variant="neutral" size="sm">含习题</Badge>}
+                  {pageDetail.is_key_page && <Badge variant="primary" size="sm">重点</Badge>}
                 </div>
               )}
             </div>
             <div className="flex-1 min-h-0 overflow-y-auto scroll-thin p-5">
               {loadingDetail ? (
-                <div className="flex items-center justify-center py-16 text-ink-tertiary">
+                <div className="flex items-center justify-center py-16 text-ink-disabled">
                   <Loader2 className="h-5 w-5 animate-spin mr-2" />
                   加载页内容…
                 </div>
@@ -356,11 +349,7 @@ export function QuestionGenDocPage() {
               ) : (
                 <DocumentContentViewer
                   docId={documentId}
-                  previewMode={
-                    pageDetail.preview_mode === "pdf" || docPreviewMode === "pdf"
-                      ? "pdf"
-                      : "markdown"
-                  }
+                  previewMode={pageDetail.preview_mode === "pdf" || docPreviewMode === "pdf" ? "pdf" : "markdown"}
                   content={pageDetail.content || ""}
                   pageNumber={pageDetail.page_number}
                 />
@@ -368,67 +357,79 @@ export function QuestionGenDocPage() {
             </div>
           </div>
 
-          {/* 右：出题操作 */}
-          <div className="border-l border-line-soft bg-surface/60 flex flex-col min-h-0 overflow-hidden">
-            <div className="px-4 py-3 border-b border-line-soft shrink-0">
-              <h3 className="text-body font-semibold text-ink-primary">出题模式</h3>
+          {/* 右：出题操作 + AI 推理过程 */}
+          <div className="border-l border-line-light bg-paper/60 flex flex-col min-h-0 overflow-hidden">
+            <div className="px-4 py-3 border-b border-line-light shrink-0">
+              <h3 className="font-display text-title-s text-ink">出题</h3>
             </div>
-            <div className="flex-1 min-h-0 overflow-y-auto scroll-thin p-4 flex flex-col gap-3">
-              <p className="text-caption text-ink-secondary">
+            <div className="flex flex-col gap-3 p-4 shrink-0 border-b border-line-light">
+              <p className="text-caption text-ink-soft">
                 在左侧勾选要出题的页面。已选{" "}
-                <span className="font-medium text-ink-primary">{selectedPages.size}</span> 页
+                <span className="font-medium text-ink">{selectedPages.size}</span> 页
               </p>
 
               {selectedPages.size > 0 && (
-                <div className="text-caption text-ink-tertiary space-y-1">
-              {hasKeySelected && <p>· 选中页含重点内容</p>}
-              <p className="text-ink-tertiary">· 单次最多选择 10 页（可在配置中调整）</p>
+                <div className="text-caption text-ink-disabled space-y-1">
+                  {hasKeySelected && <p>· 选中页含重点内容</p>}
+                  <p>· 单次最多选择 10 页</p>
                 </div>
               )}
 
-              <div className="flex flex-col gap-2 mt-auto">
-                <Button
-                  className="w-full justify-start"
-                  size="md"
-                  disabled={working || selectedPages.size === 0}
-                  onClick={runGenerate}
-                >
-                  {working ? (
-                    <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                  ) : (
-                    <Sparkles className="h-4 w-4 mr-2" />
-                  )}
-                  AI 批量出题
-                </Button>
-              </div>
+              <Button
+                className="w-full"
+                size="md"
+                disabled={working || selectedPages.size === 0}
+                onClick={runGenerate}
+              >
+                {working ? (
+                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                ) : (
+                  <Sparkles className="h-4 w-4 mr-2" />
+                )}
+                AI 批量出题
+              </Button>
 
-              {result && (
-                <Alert
-                  className={
-                    result.question_gen_status === "processing"
-                      ? "border-line-soft bg-surface-soft"
-                      : "border-success/30 bg-success-soft"
-                  }
-                >
-                  <AlertDescription className="text-caption text-ink-primary">
-                    {result.question_gen_status === "processing" ? (
-                      <>正在后台生成题目，Agent 检索中...</>
-                    ) : (
-                      <>
-                        生成完成：新建{" "}
-                        {result.questions_created} 题，复用 {result.questions_reused} 题，共{" "}
-                        {result.total_questions} 题。
-                        <Link
-                          to={`/quiz?document_id=${result.document_id}`}
-                          className="ml-1 text-primary hover:underline"
-                        >
-                          去题库
-                        </Link>
-                      </>
-                    )}
-                  </AlertDescription>
-                </Alert>
+              {result && !working && (
+                <div className="rounded-[4px] border border-sea-subtle bg-sea-subtle px-3 py-2 text-caption text-ink">
+                  <span>生成完成：</span>
+                  {result.total_questions > 0 ? (
+                    <>
+                      新建 {result.questions_created} 题，共 {result.total_questions} 题。
+                      <Link to={`/quiz?document_id=${result.document_id}`} className="ml-1 text-sea hover:underline">去题库</Link>
+                    </>
+                  ) : (
+                    "未生成题目"
+                  )}
+                </div>
               )}
+            </div>
+
+            {/* AI 推理日志区域 — 固定高度，内容自适应滚动 */}
+            <div
+              ref={streamContainerRef}
+              onScroll={handleStreamScroll}
+              className="flex-1 min-h-0 overflow-y-auto scroll-thin bg-paper-2 p-4"
+              style={{ maxHeight: "calc(100vh - 280px)" }}
+            >
+              {working && streamContent && (
+                <>
+                  <div className="flex items-center gap-1.5 mb-2 shrink-0">
+                    <Bot className="w-3.5 h-3.5 text-sea" strokeWidth={2} />
+                    <span className="text-caption font-medium text-sea">AI 正在出题...</span>
+                    <Loader2 className="w-3 h-3 animate-spin text-sea" />
+                  </div>
+                  <div className="text-caption text-ink leading-relaxed whitespace-pre-wrap font-mono text-[12px]">
+                    {streamContent}
+                  </div>
+                </>
+              )}
+              {!working && !streamContent && (
+                <div className="text-caption text-ink-disabled text-center py-8">点击"AI 批量出题"开始生成</div>
+              )}
+              {!working && streamContent && (
+                <div className="text-caption text-sea mt-2">✓ 出题完成</div>
+              )}
+              <div ref={streamEndRef} />
             </div>
           </div>
         </div>

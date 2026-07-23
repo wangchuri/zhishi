@@ -46,6 +46,7 @@ class QuestionGenTools:
           示例：["微积分", "定积分", "牛顿-莱布尼茨公式"]、["Python", "列表推导式"]
           避免使用："自动生成"、"第X页"、"Page X"、"general" 等无意义标签
         - reference_text (str): 题目所依据的原文关键片段（50-200 字）
+        - source (str): 题目来源，"textbook"（书中例题/习题）或 "ai_generated"（AI自行设计）
 
         Args:
             questions (list): 题目列表，每项为符合上述格式的 dict

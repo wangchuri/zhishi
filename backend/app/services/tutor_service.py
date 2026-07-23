@@ -283,10 +283,23 @@ class SocraticTutorAgent:
             yield {"role": "assistant", "content": "抱歉，AI 辅导服务暂时不可用，请稍后重试。"}
             return
         try:
-            async for chunk in self._agent.apredict(instruction=message, history=history, system_prompt=self.system_prompt):
+            self._agent.clear_messages()
+            self._agent.context_manager.set_system_message(self.system_prompt)
+            if history:
+                for msg in history:
+                    role = msg.get("role", "user")
+                    part = msg.get("content", "")
+                    if role in ("user", "assistant"):
+                        self._agent.add_message(role=role, content=part)
+            async for chunk in self._agent.apredict(instruction=message):
                 yield {
                     "role": chunk.get("role", "assistant"),
                     "content": chunk.get("content", ""),
+                    **(
+                        {"reasoning_content": chunk["reasoning_content"]}
+                        if chunk.get("reasoning_content")
+                        else {}
+                    ),
                 }
         except Exception as e:
             logger.error(f"SocraticTutorAgent.predict_stream 错误: {e}")
@@ -496,6 +509,8 @@ async def stream_tutor_message(
                 "role": role,
                 "content": part,
             }
+            if chunk.get("reasoning_content"):
+                payload["reasoning_content"] = chunk["reasoning_content"]
             data = json.dumps(payload, ensure_ascii=False)
             yield f"event: message\ndata: {data}\n\n"
 

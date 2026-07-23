@@ -284,6 +284,7 @@ def _to_session_question_out(
         stem=question.stem,
         question_type=question.question_type,
         options=options,
+        source_type=question.source_type,
     )
 
 
@@ -407,22 +408,13 @@ async def submit_answer(
     if answered_count >= total:
         quiz_crud.complete_session(db, session)
 
-    explanation = None
-    citation = None
-    correct_answer = None
-
-    if result_status in ("wrong", "unknown", "partial"):
-        explanation = question.explanation
-        citation = _build_citation(db, question_id, session.document_id)
-        correct_answer = question.answer
-    elif result_status == "correct":
-        correct_answer = question.answer
+    citation = _build_citation(db, question_id, session.document_id) if result_status != "correct" else None
 
     return AnswerResult(
         question_id=question_id,
         status=result_status,
-        correct_answer=correct_answer,
-        explanation=explanation,
+        correct_answer=question.answer,
+        explanation=question.explanation,
         citation=citation,
         grade_method=grade_method,
         string_match_status=string_match_status,

@@ -21,12 +21,22 @@ interface MarkdownWithMathProps {
 
 /**
  * 支持 GFM + LaTeX（$...$ 行内、$$...$$ 块级）的 Markdown 渲染。
+ *
+ * 同时兼容 \(...\) 和 \[...\] 语法（LLM 常见格式），自动转换为 $/$$。
  * 行内公式示例：质能方程 $E=mc^2$
  * 块级公式示例：
  * $$
  * \int_0^1 x^2 dx = \frac{1}{3}
  * $$
  */
+function preprocessLatex(content: string): string {
+  // 将 \( ... \) 替换为 $ ... $ （行内公式）
+  let result = content.replace(/\\\(/g, "$").replace(/\\\)/g, "$")
+  // 将 \[ ... \] 替换为 $$ ... $$ （块级公式）
+  result = result.replace(/\\\[/g, "$$").replace(/\\\]/g, "$$")
+  return result
+}
+
 export function MarkdownWithMath({
   children,
   className,
@@ -34,10 +44,12 @@ export function MarkdownWithMath({
 }: MarkdownWithMathProps) {
   if (!children) return null
 
+  const processed = preprocessLatex(children)
+
   return (
     <div className={cn(proseClass, className)}>
       <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]}>
-        {children}
+        {processed}
       </ReactMarkdown>
     </div>
   )

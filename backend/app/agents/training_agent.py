@@ -15,7 +15,7 @@ from app.utils.tina_loader import tina_env_path
 from tina import Agent
 from tina.llm import BaseAPI
 
-from app.services.training_tools import TrainingTools
+from app.tools.training_tools import TrainingTools
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session

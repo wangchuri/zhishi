@@ -174,6 +174,7 @@ export interface QuizSessionQuestion {
   stem: string
   question_type: string
   options?: QuestionOption[]
+  source_type?: string
 }
 
 /** 刷题会话 */
@@ -346,6 +347,7 @@ export interface TargetedTrainingActiveSession {
 export interface TutorMessage {
   role: "user" | "assistant" | string
   content: string
+  reasoning_content?: string
   created_at?: string
 }
 

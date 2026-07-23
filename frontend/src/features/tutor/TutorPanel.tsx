@@ -1,5 +1,5 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react"
-import { Loader2, Send, Sparkles, X } from "lucide-react"
+import { ChevronDown, ChevronRight, Loader2, Send, Sparkles, X } from "lucide-react"
 import { tutorApi } from "@/lib/api"
 import type { TutorMessage, TutorSession } from "@/types"
 import { Button } from "@/components/ui/button"
@@ -12,12 +12,36 @@ import { cn } from "@/lib/utils"
 
 const SCROLL_BOTTOM_THRESHOLD = 48
 
+function ReasoningBlock({ content }: { content: string }) {
+  const [open, setOpen] = useState(false)
+
+  return (
+    <div className="mb-2">
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        className="flex items-center gap-1 text-caption text-ink-tertiary hover:text-ink-secondary transition-colors"
+      >
+        {open ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+        <span className="font-mono">Thinking...</span>
+      </button>
+      {open && (
+        <div className="mt-1 p-2 rounded bg-ink-tertiary/5 border border-line-soft text-small text-ink-soft leading-relaxed">
+          {content}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function TutorMessageBody({
   content,
+  reasoningContent,
   role,
   isStreamingPlaceholder,
 }: {
   content: string
+  reasoningContent?: string
   role: TutorMessage["role"]
   isStreamingPlaceholder?: boolean
 }) {
@@ -26,11 +50,14 @@ function TutorMessageBody({
   }
 
   return (
-    <MarkdownWithMath
-      proseClass={role === "user" ? markdownProseInvertClass : markdownProseClass}
-    >
-      {content}
-    </MarkdownWithMath>
+    <>
+      {reasoningContent && <ReasoningBlock content={reasoningContent} />}
+      <MarkdownWithMath
+        proseClass={role === "user" ? markdownProseInvertClass : markdownProseClass}
+      >
+        {content}
+      </MarkdownWithMath>
+    </>
   )
 }
 
@@ -135,6 +162,7 @@ export const TutorPanel = forwardRef<TutorPanelHandle, TutorPanelProps>(function
     setMessages((prev) => [...prev, assistantMsg])
 
     try {
+      let reasoningBuffer = ""
       await tutorApi.sendMessageStream(activeSession.id, trimmed, (chunk) => {
         if (typeof chunk.content === "string") {
           setMessages((prev) => {
@@ -142,6 +170,17 @@ export const TutorPanel = forwardRef<TutorPanelHandle, TutorPanelProps>(function
             const last = next[next.length - 1]
             if (last?.role === "assistant") {
               next[next.length - 1] = { ...last, content: last.content + chunk.content }
+            }
+            return next
+          })
+        }
+        if (chunk.reasoning_content) {
+          reasoningBuffer += chunk.reasoning_content
+          setMessages((prev) => {
+            const next = [...prev]
+            const last = next[next.length - 1]
+            if (last?.role === "assistant") {
+              next[next.length - 1] = { ...last, reasoning_content: reasoningBuffer }
             }
             return next
           })
@@ -262,6 +301,7 @@ export const TutorPanel = forwardRef<TutorPanelHandle, TutorPanelProps>(function
               >
                 <TutorMessageBody
                   content={m.content}
+                  reasoningContent={m.reasoning_content}
                   role={m.role}
                   isStreamingPlaceholder={sending && i === messages.length - 1 && m.role === "assistant"}
                 />

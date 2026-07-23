@@ -130,6 +130,9 @@ def _normalize_question(raw: dict) -> Optional[dict]:
     tags = [t for t in tags if t not in ("自动生成", "") and not re.match(r"^第?\d+页?$|^page\s?\d+$", t, re.IGNORECASE)]
 
     ref_text = (raw.get("reference_text") or "").strip() or None
+    source = raw.get("source") or "ai_generated"
+    if source not in ("textbook", "ai_generated"):
+        source = "ai_generated"
     return {
         "stem": stem,
         "options": norm_options,
@@ -138,6 +141,7 @@ def _normalize_question(raw: dict) -> Optional[dict]:
         "tags": tags,
         "question_type": qtype,
         "reference_text": ref_text,
+        "source": source,
     }
 
 
@@ -328,7 +332,7 @@ def generate_from_pages(
     db.flush()
 
     try:
-        from app.services.question_gen_agent import agent_generate_from_pages
+        from app.agents.question_gen_agent import agent_generate_from_pages
 
         pairs = run_async_coro(agent_generate_from_pages(
             db=db,
@@ -355,13 +359,14 @@ def generate_from_pages(
         for page, qdata in pairs:
             if total_questions >= MAX_QUESTIONS_PER_DOCUMENT:
                 break
+            source_type = qdata.get("source", "ai_generated")
             created, reused = _persist_question_from_page(
                 db,
                 user_id=user_id,
                 document=doc,
                 page=page,
                 qdata=qdata,
-                source_type="generated",
+                source_type=source_type,
             )
             if created:
                 created_count += 1

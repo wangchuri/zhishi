@@ -397,6 +397,7 @@ export function QuizPage() {
     setTextAnswer("")
     setBlankAnswers([])
     setLastResult(null)
+    setReviewItems([])
     setQuestionStartTime(Date.now())
   }
 
@@ -452,7 +453,6 @@ export function QuizPage() {
     setSubmitting(true)
     setError(null)
     const timeSpent = Math.round((Date.now() - questionStartTime) / 1000)
-    tutorPanelRef.current?.sendMessage("我不会做这道题，请给我一些提示")
     try {
       const res = await quizApi.submitAnswer(session.id, {
         question_id: currentQuestion.question_id,
@@ -460,7 +460,6 @@ export function QuizPage() {
         time_spent_seconds: timeSpent,
       })
       const result = res as unknown as QuizAnswerResult
-      setLastResult(result)
       setSession((prev) =>
         prev
           ? {
@@ -470,9 +469,14 @@ export function QuizPage() {
             }
           : prev
       )
-      if (result.session_status === "completed") {
-        await finishSession(session.id)
-      }
+      addReviewItem(result, currentQuestion.stem, "我不会")
+      // "我不会" 不展示答案，直接跳到下一题，由 Tutor 窗口进行辅导
+      await advanceOrFinish(result)
+      // advanceOrFinish 会切换 currentIndex → TutorPanel 重新挂载，
+      // 延时发送消息确保新面板已就绪
+      setTimeout(() => {
+        tutorPanelRef.current?.sendMessage("我不会做这道题，请给我一些提示")
+      }, 100)
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "标记失败"
       if (isSessionExpiredError(msg)) handleSessionExpired()
@@ -694,6 +698,15 @@ export function QuizPage() {
                   {QUESTION_TYPE_LABEL[currentQuestion.question_type] ||
                     currentQuestion.question_type}
                 </Badge>
+                {currentQuestion.source_type === "textbook" ? (
+                  <Badge variant="success" size="sm">
+                    📖 课本原题
+                  </Badge>
+                ) : (
+                  <Badge variant="warning" size="sm">
+                    🤖 AI 出题
+                  </Badge>
+                )}
               </div>
               <span className="text-small text-ink-tertiary truncate max-w-[50%]">
                 {selectedDocument?.name || session.title}
@@ -746,7 +759,7 @@ export function QuizPage() {
             )}
           </div>
 
-          <div className="flex flex-col gap-4 min-h-0 h-[420px] lg:h-full overflow-hidden">
+          <div className="flex flex-col min-h-0 h-[420px] lg:h-full overflow-hidden">
             <TutorPanel
               ref={tutorPanelRef}
               key={currentQuestion.question_id}
@@ -754,13 +767,13 @@ export function QuizPage() {
               quizSessionId={session.id}
               className="flex-1 min-h-0"
             />
-            {reviewItems.length > 0 && (
-              <div className="bg-surface border border-line-soft rounded-lg p-4 shrink-0 max-h-[40%] overflow-y-auto scroll-thin">
-                <div className="text-card-title font-semibold text-ink-primary mb-3">本题回顾</div>
-                <QuizReviewPanel items={reviewItems} />
-              </div>
-            )}
           </div>
+        </div>
+      )}
+      {phase === "quiz" && reviewItems.length > 0 && (
+        <div className="mt-4 bg-surface border border-line-soft rounded-lg p-4 max-h-[200px] overflow-y-auto scroll-thin">
+          <div className="text-card-title font-semibold text-ink-primary mb-3">本题回顾</div>
+          <QuizReviewPanel items={reviewItems} />
         </div>
       )}
 

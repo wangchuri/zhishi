@@ -324,16 +324,9 @@ export const questionsApi = {
     return request<any>("POST", "/api/v1/questions/generate", data)
   },
 
-  list(params?: { document_id?: string; collection_id?: string }) {
-    const qs = new URLSearchParams()
-    if (params?.document_id) qs.set("document_id", params.document_id)
-    if (params?.collection_id) qs.set("collection_id", params.collection_id)
-    const query = qs.toString()
-    return request<any>("GET", `/api/v1/questions${query ? `?${query}` : ""}`)
-  },
-
-  get(questionId: string) {
-    return request<any>("GET", `/api/v1/questions/${questionId}`)
+  list(params: { document_id?: string }) {
+    const qs = params.document_id ? `?document_id=${params.document_id}` : ""
+    return request<any>("GET", `/api/v1/questions${qs}`)
   },
 
   generateFromPages(data: {
@@ -342,6 +335,50 @@ export const questionsApi = {
     questions_per_page?: number
   }) {
     return request<PageQuestionResult>("POST", "/api/v1/questions/generate-from-pages", data)
+  },
+
+  generateStream(data: {
+    document_id: string
+    page_numbers: number[]
+    questions_per_page?: number
+  }, onChunk: (chunk: { event: string; content?: string; questions?: any[] }) => void): Promise<void> {
+    const token = getToken()
+    return fetch(`${API_BASE}/api/v1/questions/generate-stream`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(data),
+    }).then(async (res) => {
+      if (!res.ok) {
+        const err = await res.text()
+        throw new Error(err)
+      }
+      const reader = res.body?.getReader()
+      if (!reader) return
+      const decoder = new TextDecoder()
+      let buffer = ""
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buffer += decoder.decode(value, { stream: true })
+        const lines = buffer.split("\n")
+        buffer = lines.pop() || ""
+        for (const line of lines) {
+          if (line.startsWith("data: ")) {
+            try {
+              const chunk = JSON.parse(line.slice(6))
+              onChunk(chunk)
+            } catch { /* ignore parse errors */ }
+          }
+        }
+      }
+    })
+  },
+
+  get(questionId: string) {
+    return request<any>("GET", `/api/v1/questions/${questionId}`)
   },
 
   extractFromPages(data: { document_id: string; page_numbers: number[] }) {

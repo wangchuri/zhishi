@@ -34,6 +34,7 @@ class QuizSessionQuestionOut(BaseModel):
     stem: str
     question_type: str
     options: Optional[List[QuestionOption]] = None
+    source_type: Optional[str] = None
 
 
 class QuizSessionOut(BaseModel):

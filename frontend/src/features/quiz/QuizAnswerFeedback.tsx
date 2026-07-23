@@ -58,6 +58,7 @@ export function QuizAnswerFeedback({
   const qtype = question.question_type || "single_choice"
   const info = statusLabel(lastResult.status)
   const correctDisplay = formatCorrectAnswerDisplay(lastResult.correct_answer, qtype)
+  const isUnknown = lastResult.status === "unknown"
   const showAiReview =
     isFillBlankQuestion(qtype) &&
     lastResult.status === "wrong" &&
@@ -93,13 +94,13 @@ export function QuizAnswerFeedback({
           </p>
         )}
 
-      {lastResult.explanation && (
+      {!isUnknown && lastResult.explanation && (
         <div className="text-body text-ink-primary bg-surface-soft rounded-md p-3 border border-line-soft">
           <MarkdownWithMath>{lastResult.explanation}</MarkdownWithMath>
         </div>
       )}
 
-      {lastResult.status !== "correct" && lastResult.citation && (
+      {!isUnknown && lastResult.status !== "correct" && lastResult.citation && (
         <CitationCard citation={lastResult.citation} />
       )}
 

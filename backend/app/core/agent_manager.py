@@ -6,6 +6,8 @@ import time
 import threading
 from typing import Optional, Dict
 
+from app.agents.zhishi_agent import ZhishiAgent
+
 logger = logging.getLogger(__name__)
 
 
@@ -36,8 +38,6 @@ class AgentManager:
         Returns:
             ZhishiAgent 实例
         """
-        from app.services.zhishi_agent import ZhishiAgent
-
         with self._lock:
             agent = self._agents.get(user_id)
 
