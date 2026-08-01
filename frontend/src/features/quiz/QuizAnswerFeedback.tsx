@@ -17,6 +17,7 @@ type QuizAnswerFeedbackProps = {
   submitting: boolean
   onNext: () => void
   onAiReview?: () => void
+  onMarkUnknown?: () => void
 }
 
 function statusLabel(status: string): { text: string; className: string; icon: ReactNode } {
@@ -54,6 +55,7 @@ export function QuizAnswerFeedback({
   submitting,
   onNext,
   onAiReview,
+  onMarkUnknown,
 }: QuizAnswerFeedbackProps) {
   const qtype = question.question_type || "single_choice"
   const info = statusLabel(lastResult.status)
@@ -118,6 +120,12 @@ export function QuizAnswerFeedback({
                 让 AI 判断
               </>
             )}
+          </Button>
+        )}
+        {!isUnknown && lastResult.status !== "correct" && onMarkUnknown && (
+          <Button variant="secondary" size="md" onClick={onMarkUnknown} disabled={submitting}>
+            <HelpCircle className="w-4 h-4" strokeWidth={2} />
+            标记为不会
           </Button>
         )}
         <Button variant="primary" size="md" onClick={onNext}>

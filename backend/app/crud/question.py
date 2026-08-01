@@ -31,6 +31,8 @@ def create_global_question(
     explanation: Optional[str],
     tags_json: Optional[str],
     source_type: str = "generated",
+    html_content: Optional[str] = None,
+    answer_params: Optional[str] = None,
 ) -> GlobalQuestion:
     row = GlobalQuestion(
         content_hash=content_hash,
@@ -41,6 +43,8 @@ def create_global_question(
         explanation=explanation,
         tags=tags_json,
         source_type=source_type,
+        html_content=html_content,
+        answer_params=answer_params,
     )
     db.add(row)
     db.flush()

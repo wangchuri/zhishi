@@ -110,6 +110,7 @@ export function QuizPage() {
   const [selectedOption, setSelectedOption] = useState<string | null>(null)
   const [textAnswer, setTextAnswer] = useState("")
   const [blankAnswers, setBlankAnswers] = useState<string[]>([])
+  const [customAnswers, setCustomAnswers] = useState<Record<string, string>>({})
   const [submitting, setSubmitting] = useState(false)
   const [lastResult, setLastResult] = useState<QuizAnswerResult | null>(null)
   const [reviewItems, setReviewItems] = useState<QuizReviewItem[]>([])
@@ -120,9 +121,29 @@ export function QuizPage() {
   } | null>(null)
   const [questionListData, setQuestionListData] = useState<QuestionListResult | null>(null)
   const [loadingQuestions, setLoadingQuestions] = useState(false)
+  const [loadingSession, setLoadingSession] = useState(false)
   const [questionStartTime, setQuestionStartTime] = useState(Date.now())
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [deletingQuestions, setDeletingQuestions] = useState(false)
+
+  // 如果 URL 中有 session_id，直接加载该会话（从 /quiz/doc/:docId 跳转过来）
+  const sessionIdFromUrl = searchParams.get("session_id")
+  useEffect(() => {
+    if (!sessionIdFromUrl) return
+    setLoadingSession(true)
+    quizApi
+      .getSession(sessionIdFromUrl)
+      .then((res) => {
+        const s = res as unknown as QuizSession
+        setSession(s)
+        setCurrentIndex(s.answered_count) // 跳转到已答位置
+        setPhase("quiz")
+      })
+      .catch(() => {
+        setSetupAlert("会话加载失败，请重新选择资料开始练习")
+      })
+      .finally(() => setLoadingSession(false))
+  }, [sessionIdFromUrl])
 
   const selectedDocument = documents.find((d) => d.id === selectedDocumentId)
   const isLifeZone = selectedCollection?.zone === "life"
@@ -287,6 +308,7 @@ export function QuizPage() {
     }
     setTextAnswer("")
     setSelectedOption(null)
+    setCustomAnswers({})
   }, [currentQuestion?.question_id])
 
   const docReadyForQuiz =
@@ -404,8 +426,8 @@ export function QuizPage() {
   const submitAnswerCore = async (opts?: { requestAiGrade?: boolean }) => {
     if (!session || !currentQuestion || submitting) return
     const qtype = currentQuestion.question_type || "single_choice"
-    const payload = buildUserAnswerPayload(qtype, selectedOption, textAnswer, blankAnswers)
-    if (!opts?.requestAiGrade && !canSubmitAnswer(qtype, selectedOption, textAnswer, blankAnswers)) {
+    const payload = buildUserAnswerPayload(qtype, selectedOption, textAnswer, blankAnswers, customAnswers)
+    if (!opts?.requestAiGrade && !canSubmitAnswer(qtype, selectedOption, textAnswer, blankAnswers, customAnswers)) {
       return
     }
 
@@ -470,13 +492,33 @@ export function QuizPage() {
           : prev
       )
       addReviewItem(result, currentQuestion.stem, "我不会")
-      // "我不会" 不展示答案，直接跳到下一题，由 Tutor 窗口进行辅导
-      await advanceOrFinish(result)
-      // advanceOrFinish 会切换 currentIndex → TutorPanel 重新挂载，
-      // 延时发送消息确保新面板已就绪
-      setTimeout(() => {
-        tutorPanelRef.current?.sendMessage("我不会做这道题，请给我一些提示")
-      }, 100)
+      // "我不会" 不展示答案，由 Tutor 窗口进行辅导，
+      // 设置 lastResult 让反馈面板显示「已标记「我不会」」
+      setLastResult(result)
+      // 发送辅导消息到当前题的 TutorPanel
+      tutorPanelRef.current?.sendMessage("我不会做这道题，请给我一些提示")
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "标记失败"
+      if (isSessionExpiredError(msg)) handleSessionExpired()
+      else setError(msg)
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  const handleMarkAsUnknown = async () => {
+    if (!session || !currentQuestion || submitting) return
+    setSubmitting(true)
+    setError(null)
+    try {
+      const res = await quizApi.submitAnswer(session.id, {
+        question_id: currentQuestion.question_id,
+        status: "unknown",
+      })
+      const result = res as unknown as QuizAnswerResult
+      setLastResult(result)
+      addReviewItem(result, currentQuestion.stem, "我不会")
+      tutorPanelRef.current?.sendMessage("这道题我做错了，请帮我讲解一下")
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "标记失败"
       if (isSessionExpiredError(msg)) handleSessionExpired()
@@ -718,11 +760,13 @@ export function QuizPage() {
               selectedOption={selectedOption}
               textAnswer={textAnswer}
               blankAnswers={blankAnswers}
+              customAnswers={customAnswers}
               lastResult={lastResult}
               submitting={submitting}
               onSelectOption={setSelectedOption}
               onTextAnswerChange={setTextAnswer}
               onBlankAnswersChange={setBlankAnswers}
+              onCustomAnswersChange={setCustomAnswers}
             />
 
             {!lastResult ? (
@@ -755,6 +799,7 @@ export function QuizPage() {
                 submitting={submitting}
                 onNext={handleNextAfterReview}
                 onAiReview={handleAiReview}
+                onMarkUnknown={handleMarkAsUnknown}
               />
             )}
           </div>

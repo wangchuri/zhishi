@@ -153,9 +153,14 @@ def get_learning_stats(db: Session, user_id: int) -> LearningStatsOut:
     )
 
 
-def get_tag_stats(db: Session, user_id: int) -> TagStatsListOut:
-    """按 tag 与 question_type 聚合 quiz_answers 统计。"""
-    rows = question_crud.list_user_questions(db, user_id)
+def get_tag_stats(
+    db: Session, user_id: int, document_id: Optional[str] = None
+) -> TagStatsListOut:
+    """按 tag 与 question_type 聚合 quiz_answers 统计。
+    
+    可通过 document_id 限定范围到单个文档。
+    """
+    rows = question_crud.list_user_questions(db, user_id, document_id=document_id)
     question_ids = [q.id for _, q in rows]
     q_map = {q.id: q for _, q in rows}
     stats_map = quiz_crud.get_user_answer_stats_for_questions(db, user_id, question_ids)

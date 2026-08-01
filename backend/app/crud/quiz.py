@@ -176,6 +176,22 @@ def list_recent_sessions(
     )
 
 
+def get_latest_active_session_for_document(
+    db: Session, user_id: int, document_id: str
+) -> Optional[QuizSession]:
+    """返回指定文档下最近一条 status='active' 的会话。"""
+    return (
+        db.query(QuizSession)
+        .filter(
+            QuizSession.user_id == user_id,
+            QuizSession.document_id == document_id,
+            QuizSession.status == "active",
+        )
+        .order_by(QuizSession.started_at.desc())
+        .first()
+    )
+
+
 def list_recent_answers(
     db: Session, user_id: int, limit: int = 10
 ) -> List[Tuple[QuizAnswer, GlobalQuestion, QuizSession]]:

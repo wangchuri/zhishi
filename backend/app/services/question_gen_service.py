@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import MAX_QUESTIONS_PER_DOCUMENT, MAX_PAGES_PER_GEN, QUESTION_GEN_ASYNC
 from app.core.database import SessionLocal
-from app.core.job_runner import run_in_background, run_async_coro
+from app.core.job_runner import run_in_background, run_async_coro, run_async_coro_parallel
 
 from app.crud import kb as kb_crud
 from app.crud import question as question_crud
@@ -92,6 +92,9 @@ def _normalize_question(raw: dict) -> Optional[dict]:
         if key and text:
             norm_options.append({"key": key, "text": text})
 
+    html_content = raw.get("html_content")
+    answer_params = raw.get("answer_params")
+
     if qtype == "single_choice":
         answer = answer.upper()
         if len(norm_options) < 2 or answer not in {o["key"] for o in norm_options}:
@@ -117,6 +120,10 @@ def _normalize_question(raw: dict) -> Optional[dict]:
     elif qtype in ("short_answer", "application"):
         if not norm_options:
             norm_options = []
+    elif qtype == "custom":
+        if not html_content or not html_content.strip():
+            return None
+        norm_options = []
     else:
         qtype = "single_choice"
         answer = answer.upper()
@@ -133,7 +140,7 @@ def _normalize_question(raw: dict) -> Optional[dict]:
     source = raw.get("source") or "ai_generated"
     if source not in ("textbook", "ai_generated"):
         source = "ai_generated"
-    return {
+    result = {
         "stem": stem,
         "options": norm_options,
         "answer": answer,
@@ -143,6 +150,12 @@ def _normalize_question(raw: dict) -> Optional[dict]:
         "reference_text": ref_text,
         "source": source,
     }
+
+    if qtype == "custom":
+        result["html_content"] = html_content
+        result["answer_params"] = answer_params
+
+    return result
 
 
 # ───── TAG 辅助 ─────
@@ -242,6 +255,8 @@ def _persist_question_core(
         question = existing
         reused = True
     else:
+        html_content = qdata.get("html_content")
+        answer_params = qdata.get("answer_params")
         question = question_crud.create_global_question(
             db,
             content_hash=content_hash,
@@ -252,6 +267,8 @@ def _persist_question_core(
             explanation=qdata.get("explanation"),
             tags_json=tags_json,
             source_type=source_type,
+            html_content=html_content,
+            answer_params=answer_params,
         )
         created = True
         reused = False
@@ -311,11 +328,10 @@ def generate_from_pages(
     page_numbers: List[int],
     questions_per_page: int = 1,
 ) -> PageQuestionResponse:
-    """对选中页批量出题，走 Agent 路径（含 Chroma 检索 + 批量提交）。"""
+    """对选中页批量出题，每页独立 Agent 并发执行，最大 5 个并发。"""
     doc = kb_crud.get_document_by_id_or_dify(db, user_id, document_id)
     doc = _validate_document_for_page_ops(doc)
 
-    # 页数上限检查
     if MAX_PAGES_PER_GEN > 0 and len(page_numbers) > MAX_PAGES_PER_GEN:
         raise HTTPException(
             status_code=400,
@@ -323,56 +339,56 @@ def generate_from_pages(
         )
 
     pages = get_pages_by_numbers(db, doc, page_numbers)
-    created_count = 0
-    reused_count = 0
-    total_questions = 0
     tag_hint = _format_tag_hint(_existing_tag_names(db, user_id, document_id=doc.id))
 
     doc.question_gen_status = "processing"
     db.flush()
 
     try:
-        from app.agents.question_gen_agent import agent_generate_from_pages
+        from app.agents.question_gen_agent import agent_generate_single_page
 
-        pairs = run_async_coro(agent_generate_from_pages(
-            db=db,
-            user_id=user_id,
-            document_id=doc.id,
-            pages=pages,
-            questions_per_page=questions_per_page,
-            tag_hint=tag_hint,
-        ))
-
-        if not pairs:
-            doc.question_gen_status = "failed"
-            db.flush()
-            return PageQuestionResponse(
-                document_id=doc.id,
-                page_numbers=page_numbers,
-                mode="generate",
-                question_gen_status="failed",
-                questions_created=0,
-                questions_reused=0,
-                total_questions=0,
-            )
-
-        for page, qdata in pairs:
-            if total_questions >= MAX_QUESTIONS_PER_DOCUMENT:
-                break
-            source_type = qdata.get("source", "ai_generated")
-            created, reused = _persist_question_from_page(
-                db,
+        # 每页独立出一个 Agent 任务
+        async def gen_one(page: dict) -> List[Tuple[dict, dict]]:
+            return await agent_generate_single_page(
+                db=db,
                 user_id=user_id,
-                document=doc,
-                page=page,
-                qdata=qdata,
-                source_type=source_type,
+                document_id=doc.id,
+                pages=pages,               # 所有页上下文（供 get_near_page）
+                current_page=page,         # 当前页（提示仅包含本页内容）
+                questions_per_page=questions_per_page,
+                tag_hint=tag_hint,
             )
-            if created:
-                created_count += 1
-            if reused:
-                reused_count += 1
-            total_questions += 1
+
+        # 并发执行，Semaphore(5) 由 run_async_coro_parallel 内部控制
+        all_results = run_async_coro_parallel(
+            *[gen_one(p) for p in pages],
+            max_concurrent=5,
+        )
+
+        created_count = 0
+        reused_count = 0
+        total_questions = 0
+
+        for pairs in all_results:
+            if not pairs:
+                continue
+            for page, qdata in pairs:
+                if total_questions >= MAX_QUESTIONS_PER_DOCUMENT:
+                    break
+                source_type = qdata.get("source", "ai_generated")
+                created, reused = _persist_question_from_page(
+                    db,
+                    user_id=user_id,
+                    document=doc,
+                    page=page,
+                    qdata=qdata,
+                    source_type=source_type,
+                )
+                if created:
+                    created_count += 1
+                if reused:
+                    reused_count += 1
+                total_questions += 1
 
         doc.question_gen_status = "completed" if total_questions > 0 else "failed"
         db.flush()

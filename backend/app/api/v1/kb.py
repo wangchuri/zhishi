@@ -258,6 +258,42 @@ def get_document_page(
     )
 
 
+# ─── 缩略图 ─────────────────────────────────────────────
+
+@router.get("/documents/{doc_id}/thumbnail")
+def get_document_thumbnail(
+    doc_id: str,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_active_user),
+):
+    """文档封面缩略图（PNG）。未生成时动态创建并缓存。"""
+    from app.services.thumbnail_service import generate_thumbnail, get_thumbnail_path
+
+    doc = kb_crud.get_document_by_id_or_dify(db, current_user["user_id"], doc_id)
+    if not doc:
+        raise HTTPException(status_code=404, detail="文档不存在")
+
+    # 尝试读取已缓存的缩略图
+    thumb_path = get_thumbnail_path(doc.content_hash) if doc.content_hash else None
+    if not thumb_path and doc.content_hash:
+        # 动态生成
+        from app.services.storage_service import storage_service
+        raw_path = doc.raw_storage_path
+        file_bytes = None
+        if raw_path:
+            file_bytes = storage_service.read_file_at_path(raw_path)
+        if file_bytes:
+            suffix = (Path(doc.name).suffix if doc.name else ".bin").lower()
+            generate_thumbnail(doc.content_hash, file_bytes, suffix.lstrip("."), filename_hint=doc.display_name or doc.name)
+            thumb_path = get_thumbnail_path(doc.content_hash)
+
+    if not thumb_path:
+        raise HTTPException(status_code=404, detail="缩略图不可用")
+
+    from fastapi.responses import FileResponse
+    return FileResponse(thumb_path, media_type="image/png")
+
+
 # ─── 配置查询（供前端使用） ───────────────────────────────
 
 @router.get("/config")

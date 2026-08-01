@@ -4,8 +4,10 @@ import { cn } from "@/lib/utils"
 import {
   getBlankCount,
   isChoiceQuestion,
+  isCustomQuestion,
   isFillBlankQuestion,
   isTextQuestion,
+  parseAnswerParams,
   splitStemWithBlanks,
 } from "./quizQuestionUtils"
 
@@ -14,11 +16,13 @@ type QuizQuestionInputProps = {
   selectedOption: string | null
   textAnswer: string
   blankAnswers: string[]
+  customAnswers: Record<string, string>
   lastResult: QuizAnswerResult | null
   submitting: boolean
   onSelectOption: (key: string) => void
   onTextAnswerChange: (value: string) => void
   onBlankAnswersChange: (values: string[]) => void
+  onCustomAnswersChange?: (values: Record<string, string>) => void
 }
 
 export function QuizQuestionInput({
@@ -26,11 +30,13 @@ export function QuizQuestionInput({
   selectedOption,
   textAnswer,
   blankAnswers,
+  customAnswers,
   lastResult,
   submitting,
   onSelectOption,
   onTextAnswerChange,
   onBlankAnswersChange,
+  onCustomAnswersChange,
 }: QuizQuestionInputProps) {
   const qtype = question.question_type || "single_choice"
   const disabled = !!lastResult || submitting
@@ -153,6 +159,70 @@ export function QuizQuestionInput({
           disabled={disabled}
         />
       </>
+    )
+  }
+
+  if (isCustomQuestion(qtype)) {
+    const params = parseAnswerParams(question.answer_params ?? null)
+    const htmlContent = question.html_content ?? ""
+
+    const handleCustomChange = (key: string, value: string) => {
+      if (!onCustomAnswersChange) return
+      const next = { ...customAnswers }
+      next[key] = value
+      onCustomAnswersChange(next)
+    }
+
+    return (
+      <div className="mb-6 space-y-4">
+        <MarkdownWithMath className="text-card-title font-semibold leading-relaxed">
+          {question.stem}
+        </MarkdownWithMath>
+
+        {/* HTML 渲染区域 */}
+        {htmlContent && (
+          <div className="border border-line-soft rounded-lg overflow-hidden">
+            <iframe
+              sandbox="allow-scripts"
+              srcDoc={htmlContent}
+              title="自定义题目"
+              className="w-full"
+              style={{ border: "none", minHeight: 300, maxHeight: 500 }}
+            />
+          </div>
+        )}
+
+        {/* 答案输入表单 */}
+        {params.length > 0 && (
+          <div className="space-y-3 border border-line-soft rounded-lg p-4 bg-surface">
+            <div className="text-small font-medium text-ink-primary mb-2">请填写答案</div>
+            {params.map((p) => (
+              <div key={p.key}>
+                <label className="block text-small text-ink-secondary mb-1">{p.label}</label>
+                {p.type === "textarea" ? (
+                  <textarea
+                    value={customAnswers[p.key] ?? ""}
+                    onChange={(e) => handleCustomChange(p.key, e.target.value)}
+                    disabled={disabled}
+                    rows={3}
+                    className="w-full rounded-lg border border-line-soft bg-surface px-3 py-2 text-body focus:outline-none focus:ring-2 focus:ring-primary/30"
+                    placeholder={`请输入${p.label}`}
+                  />
+                ) : (
+                  <input
+                    type={p.type === "number" ? "number" : "text"}
+                    value={customAnswers[p.key] ?? ""}
+                    onChange={(e) => handleCustomChange(p.key, e.target.value)}
+                    disabled={disabled}
+                    className="w-full rounded-lg border border-line-soft bg-surface px-3 py-2 text-body focus:outline-none focus:ring-2 focus:ring-primary/30"
+                    placeholder={`请输入${p.label}`}
+                  />
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     )
   }
 

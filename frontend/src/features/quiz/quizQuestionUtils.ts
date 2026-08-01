@@ -5,6 +5,7 @@ export const QUESTION_TYPE_LABEL: Record<string, string> = {
   fill_blank: "填空题",
   short_answer: "简答题",
   application: "应用题",
+  custom: "自定义题",
 }
 
 const BLANK_PATTERN = /_{3,}|\{\{blank\}\}/gi
@@ -21,8 +22,21 @@ export function isTextQuestion(qtype?: string | null): boolean {
   return qtype === "short_answer" || qtype === "application"
 }
 
+export function isCustomQuestion(qtype?: string | null): boolean {
+  return qtype === "custom"
+}
+
 export function isAiGradedQuestion(qtype?: string | null): boolean {
   return isTextQuestion(qtype) || isFillBlankQuestion(qtype)
+}
+
+export function parseAnswerParams(raw: string | null | undefined): Array<{ key: string; label: string; type: string }> {
+  if (!raw) return []
+  try {
+    const parsed = JSON.parse(raw)
+    if (Array.isArray(parsed)) return parsed
+  } catch { /* ignore */ }
+  return []
 }
 
 export function countBlankSlots(stem: string): number {
@@ -88,12 +102,16 @@ export function canSubmitAnswer(
   qtype: string | undefined,
   selectedOption: string | null,
   textAnswer: string,
-  blankAnswers: string[]
+  blankAnswers: string[],
+  customAnswers?: Record<string, string>
 ): boolean {
   if (isChoiceQuestion(qtype)) return !!selectedOption
   if (isFillBlankQuestion(qtype)) {
     const needed = Math.max(blankAnswers.length, 1)
     return blankAnswers.slice(0, needed).every((v) => v.trim().length > 0)
+  }
+  if (isCustomQuestion(qtype)) {
+    return Object.values(customAnswers ?? {}).some((v) => v.trim().length > 0)
   }
   return textAnswer.trim().length > 0
 }
@@ -102,9 +120,11 @@ export function buildUserAnswerPayload(
   qtype: string | undefined,
   selectedOption: string | null,
   textAnswer: string,
-  blankAnswers: string[]
+  blankAnswers: string[],
+  customAnswers?: Record<string, string>
 ): string {
   if (isChoiceQuestion(qtype)) return selectedOption!
   if (isFillBlankQuestion(qtype)) return serializeBlankAnswers(blankAnswers.map((v) => v.trim()))
+  if (isCustomQuestion(qtype)) return JSON.stringify(customAnswers ?? {})
   return textAnswer.trim()
 }

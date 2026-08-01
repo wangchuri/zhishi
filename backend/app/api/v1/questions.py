@@ -72,8 +72,8 @@ async def generate_from_pages_stream(
     current_user: dict = Depends(get_current_active_user),
 ):
     """
-    流式出题 SSE 接口。
-    实时推送 Agent 推理过程，完成后推送结果。
+    流式出题 SSE 接口（按页并发出题）。
+    每页独立 Agent 并发执行，实时推送每页完成进度。
     """
     user_id = current_user["user_id"]
     document_id = payload.document_id
@@ -85,52 +85,39 @@ async def generate_from_pages_stream(
     tag_hint = "、".join([r.name for r in tag_names[:40]]) if tag_names else ""
 
     async def event_stream():
-        worker = question_gen_manager.get_worker(user_id)
-        if not worker.is_ready:
-            yield f"data: {json.dumps({'event': 'error', 'content': 'Agent 不可用'}, ensure_ascii=False)}\n\n"
-            return
+        from app.agents.question_gen_agent import submit_concurrent_stream
 
-        async for chunk in worker.submit_stream(
+        async for chunk in submit_concurrent_stream(
+            user_id=user_id,
+            document_id=document_id,
             pages=pages,
-            questions_per_page=payload.questions_per_page,
+            questions_per_page=payload.questions_per_page or 1,
             tag_hint=tag_hint or "（暂无已有 tag）",
-            collection_id=document_id,
         ):
-            if chunk.get("event") == "result" and chunk.get("questions"):
-                # 持久化题目到数据库
+            # 收集完成的页题目
+            if chunk.get("event") == "page_done":
+                # 前端不需要知道具体题目，只需进度
+                pass
+            elif chunk.get("event") == "result" and chunk.get("questions"):
+                # 全部完成，持久化到数据库
                 doc = kb_crud.get_document_by_id_or_dify(db, user_id, document_id)
+                created_count = 0
+                total = 0
                 if doc:
-                    submitted = chunk["questions"]
-                    created_count = 0
-                    total = 0
-                    # 将题目与页面配对（与 sync 路径保持一致）
-                    q_per_page = max(1, len(submitted) // len(pages))
-                    q_idx = 0
-                    for p in pages:
-                        for _ in range(q_per_page):
-                            if q_idx >= len(submitted):
-                                break
-                            c, _ = _persist_question_from_page(
-                                db, user_id=user_id, document=doc, page=p, qdata=submitted[q_idx]
-                            )
-                            if c:
-                                created_count += 1
-                            total += 1
-                            q_idx += 1
-                    while q_idx < len(submitted):
+                    for page, qdata in chunk["questions"]:
                         c, _ = _persist_question_from_page(
-                            db, user_id=user_id, document=doc, page=pages[-1], qdata=submitted[q_idx]
+                            db, user_id=user_id, document=doc, page=page, qdata=qdata
                         )
                         if c:
                             created_count += 1
-                        q_idx += 1
+                        total += 1
 
                     db.commit()
-                    logger.info("流式出题持久化: user_id=%s, document_id=%s, created=%d, total=%d",
+                    logger.info("并发流式出题持久化: user_id=%s, document_id=%s, created=%d, total=%d",
                                 user_id, document_id, created_count, total)
 
-                    # 更新 chunk 数量信息
                     chunk["questions_created"] = created_count
+                    chunk["questions"] = None  # 不向前端发具体题目数据
 
             yield f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n"
 

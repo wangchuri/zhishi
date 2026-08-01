@@ -158,6 +158,7 @@ async def _grade_by_ai(
             "fill_blank": "填空题",
             "short_answer": "简答题",
             "application": "应用题",
+            "custom": "自定义题",
         }.get(qtype, "主观题")
         correct_display = question.answer
         if qtype == "fill_blank":
@@ -209,6 +210,10 @@ async def _grade_answer(
         ai_status, ai_reason = await _grade_by_ai(question, user_answer, qtype=qtype)
         return ai_status, "ai", None, ai_reason or None
 
+    if qtype == "custom":
+        ai_status, ai_reason = await _grade_by_ai(question, user_answer, qtype="custom")
+        return ai_status, "ai", None, ai_reason or None
+
     if not user_answer or not user_answer.strip():
         return "wrong", "string", None, None
 
@@ -225,6 +230,7 @@ def _resolve_question_ids(
     document_id: Optional[str],
     collection_id: Optional[str],
     question_ids: Optional[List[str]],
+    filter_mode: str = "all",
 ) -> Tuple[List[str], Optional[str], Optional[str]]:
     resolved_doc_id = document_id
     resolved_coll_id = collection_id
@@ -267,6 +273,17 @@ def _resolve_question_ids(
         collection_id=collection_id,
     )
     ids = [q.id for _, q in rows]
+
+    # 按 filter 模式过滤
+    if filter_mode != "all" and ids:
+        stats = quiz_crud.get_user_answer_stats_for_questions(db, user_id, ids)
+        if filter_mode == "undone":
+            ids = [qid for qid in ids if qid not in stats or stats[qid][0] is None]
+        elif filter_mode == "wrong":
+            ids = [qid for qid in ids if qid in stats and stats[qid][0] == "wrong"]
+        elif filter_mode == "unknown":
+            ids = [qid for qid in ids if qid in stats and stats[qid][0] == "unknown"]
+
     random.shuffle(ids)
     return ids, resolved_doc_id, resolved_coll_id
 
@@ -278,6 +295,7 @@ def _to_session_question_out(
     options = (
         [QuestionOption(**o) for o in options_raw] if options_raw else None
     )
+    answer_params_json = question.answer_params
     return QuizSessionQuestionOut(
         question_id=question.id,
         order_index=sq.order_index,
@@ -285,6 +303,8 @@ def _to_session_question_out(
         question_type=question.question_type,
         options=options,
         source_type=question.source_type,
+        html_content=question.html_content,
+        answer_params=answer_params_json,
     )
 
 
@@ -315,6 +335,7 @@ def create_quiz_session(
         document_id=payload.document_id,
         collection_id=payload.collection_id,
         question_ids=payload.question_ids,
+        filter_mode=payload.filter or "all",
     )
 
     if not question_ids:

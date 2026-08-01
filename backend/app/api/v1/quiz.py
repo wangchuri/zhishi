@@ -79,3 +79,21 @@ def get_results(
     return quiz_service.get_session_results(
         db=db, user_id=current_user["user_id"], session_id=session_id
     )
+
+
+@router.get("/sessions/recent/by-document/{document_id}")
+def get_recent_active_session(
+    document_id: str,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_active_user),
+):
+    """返回指定文档下最近一条未完成的刷题会话（如有）。"""
+    from app.crud.quiz import get_latest_active_session_for_document
+    session = get_latest_active_session_for_document(
+        db, current_user["user_id"], document_id
+    )
+    if not session:
+        return None
+    return quiz_service.get_quiz_session(
+        db=db, user_id=current_user["user_id"], session_id=session.id
+    )

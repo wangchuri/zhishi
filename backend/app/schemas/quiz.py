@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import List, Optional
+from typing import List, Optional, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -20,6 +20,7 @@ class QuizSessionCreate(BaseModel):
     collection_id: Optional[str] = None
     question_ids: Optional[List[str]] = Field(None, min_length=1)
     title: Optional[str] = None
+    filter: Optional[Literal["all", "undone", "wrong", "unknown"]] = "all"
 
     @model_validator(mode="after")
     def require_target(self):
@@ -35,6 +36,8 @@ class QuizSessionQuestionOut(BaseModel):
     question_type: str
     options: Optional[List[QuestionOption]] = None
     source_type: Optional[str] = None
+    html_content: Optional[str] = None
+    answer_params: Optional[str] = None
 
 
 class QuizSessionOut(BaseModel):

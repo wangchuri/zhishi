@@ -42,6 +42,7 @@ export function QuestionGenDocPage() {
   const [loadingDetail, setLoadingDetail] = useState(false)
   const [working, setWorking] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [questionsPerPage, setQuestionsPerPage] = useState(1)
   const [result, setResult] = useState<PageQuestionResult | null>(null)
   const [streamContent, setStreamContent] = useState<string>("")
   const streamEndRef = useRef<HTMLDivElement>(null)
@@ -173,26 +174,31 @@ export function QuestionGenDocPage() {
         {
           document_id: documentId,
           page_numbers: pageNumbers,
-          questions_per_page: 1,
+          questions_per_page: questionsPerPage,
         },
-        (chunk) => {
-          if (chunk.event === "chunk" && chunk.content) {
-            setStreamContent((prev) => prev + chunk.content)
-          } else if (chunk.event === "result") {
-            // 流式出题完成，刷新文档状态
+        (raw: any) => {
+          const c: Record<string, any> = raw
+          if (c.event === "page_done") {
+            const count = c.count ?? 0
+            setStreamContent((prev) => prev + `📄 第 ${c.page} 页完成（${count} 题）\n`)
+          } else if (c.event === "page_error") {
+            setStreamContent((prev) => prev + `❌ 第 ${c.page} 页出题失败\n`)
+          } else if (c.event === "result") {
             updateDocument(documentId, { question_gen_status: "completed" })
+            const created = c.questions_created ?? 0
             setResult({
               document_id: documentId,
               page_numbers: pageNumbers,
               mode: "generate",
               question_gen_status: "completed",
-              questions_created: chunk.questions?.length || 0,
+              questions_created: created,
               questions_reused: 0,
-              total_questions: chunk.questions?.length || 0,
+              total_questions: created,
             })
+            setStreamContent((prev) => prev + `✅ 出题完成，共 ${created} 题\n`)
             setWorking(false)
-          } else if (chunk.event === "error") {
-            setError(chunk.content || "出题失败")
+          } else if (c.event === "error") {
+            setError(c.content || "出题失败")
             setWorking(false)
           }
         }
@@ -372,6 +378,19 @@ export function QuestionGenDocPage() {
                 <div className="text-caption text-ink-disabled space-y-1">
                   {hasKeySelected && <p>· 选中页含重点内容</p>}
                   <p>· 单次最多选择 10 页</p>
+                  <div className="flex items-center gap-2 pt-2">
+                    <label className="text-caption text-ink-soft shrink-0">每页出题：</label>
+                    <select
+                      value={questionsPerPage}
+                      onChange={(e) => setQuestionsPerPage(Number(e.target.value))}
+                      className="flex-1 rounded-[4px] border border-line-light bg-paper px-2 py-1 text-small text-ink outline-none focus:border-sea"
+                      disabled={working}
+                    >
+                      {[1, 2, 3, 4, 5].map((n) => (
+                        <option key={n} value={n}>{n} 道</option>
+                      ))}
+                    </select>
+                  </div>
                 </div>
               )}
 

@@ -8,7 +8,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import threading
-from typing import Callable, Coroutine, TypeVar
+from typing import Callable, Coroutine, List, TypeVar
 
 from app.core.database import SessionLocal
 
@@ -55,3 +55,20 @@ def run_db_worker_safe(
 def run_async_coro(coro: Coroutine[object, object, T]) -> T:
     """在线程中运行 async 协程（每次新建事件循环）。"""
     return asyncio.run(coro)
+
+
+def run_async_coro_parallel(
+    *coros: Coroutine[object, object, T],
+    max_concurrent: int = 5,
+) -> List[T]:
+    """并发执行多个协程，受 Semaphore 限制。"""
+    async def _run_bounded() -> List[T]:
+        sem = asyncio.Semaphore(max_concurrent)
+
+        async def _bounded(c: Coroutine[object, object, T]) -> T:
+            async with sem:
+                return await c
+
+        return await asyncio.gather(*[_bounded(c) for c in coros])
+
+    return asyncio.run(_run_bounded())

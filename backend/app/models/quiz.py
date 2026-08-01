@@ -20,6 +20,8 @@ class GlobalQuestion(Base):
     tags = Column(Text, nullable=True)
     source_type = Column(String(20), nullable=False)
     difficulty = Column(Integer, nullable=True)
+    html_content = Column(Text, nullable=True)
+    answer_params = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     provenance = relationship("QuestionProvenance", back_populates="question")

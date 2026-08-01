@@ -15,6 +15,8 @@ import { ProfilePage } from "@/features/profile/ProfilePage"
 import { SettingsPage } from "@/features/settings/SettingsPage"
 import { DiagnosticsPage } from "@/features/settings/DiagnosticsPage"
 import { LoginPage } from "@/features/auth/LoginPage"
+import { QuizBookListPage } from "@/features/quiz/QuizBookListPage"
+import { QuizDocDetailPage } from "@/features/quiz/QuizDocDetailPage"
 import { QuizPage } from "@/features/quiz/QuizPage"
 import { QuestionGenPage } from "@/features/question-gen/QuestionGenPage"
 import { QuestionGenDocPage } from "@/features/question-gen/QuestionGenDocPage"
@@ -54,7 +56,9 @@ export function AppRoutes() {
       <Route path="/reminders" element={<RequireAuth><RemindersPage /></RequireAuth>} />
       <Route path="/profile" element={<RequireAuth><ProfilePage /></RequireAuth>} />
       <Route path="/settings" element={<RequireAuth><SettingsPage /></RequireAuth>} />
-      <Route path="/quiz" element={<RequireAuth><QuizPage /></RequireAuth>} />
+      <Route path="/quiz" element={<RequireAuth><QuizBookListPage /></RequireAuth>} />
+      <Route path="/quiz/doc/:docId" element={<RequireAuth><QuizDocDetailPage /></RequireAuth>} />
+      <Route path="/quiz/session" element={<RequireAuth><QuizPage /></RequireAuth>} />
       <Route path="/question-gen" element={<RequireAuth><QuestionGenPage /></RequireAuth>} />
       <Route path="/question-gen/doc/:documentId" element={<RequireAuth><QuestionGenDocPage /></RequireAuth>} />
       <Route path="/settings/diagnostics" element={<RequireAuth><DiagnosticsPage /></RequireAuth>} />

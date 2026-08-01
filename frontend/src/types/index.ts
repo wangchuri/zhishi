@@ -168,6 +168,12 @@ export interface QuestionListResult {
   wrong_count?: number
   unknown_count?: number
 }
+export interface AnswerParam {
+  key: string
+  label: string
+  type: "text" | "number" | "textarea"
+}
+
 export interface QuizSessionQuestion {
   question_id: string
   order_index: number
@@ -175,6 +181,8 @@ export interface QuizSessionQuestion {
   question_type: string
   options?: QuestionOption[]
   source_type?: string
+  html_content?: string | null
+  answer_params?: string | null
 }
 
 /** 刷题会话 */

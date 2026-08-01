@@ -19,6 +19,10 @@ export function getApiBase(): string {
   return API_BASE
 }
 
+export function getThumbnailUrl(docId: string): string {
+  return `${API_BASE}/api/v1/kb/documents/${docId}/thumbnail`
+}
+
 export function setToken(token: string | null) {
   _token = token
   if (token) {
@@ -410,12 +414,17 @@ export const quizApi = {
     collection_id?: string
     question_ids?: string[]
     title?: string
+    filter?: "all" | "undone" | "wrong" | "unknown"
   }) {
     return request<any>("POST", "/api/v1/quiz/sessions", data)
   },
 
   getSession(sessionId: string) {
     return request<any>("GET", `/api/v1/quiz/sessions/${sessionId}`)
+  },
+
+  getRecentActiveSession(documentId: string) {
+    return request<any>("GET", `/api/v1/quiz/sessions/recent/by-document/${documentId}`)
   },
 
   submitAnswer(
@@ -496,8 +505,9 @@ export const analyticsApi = {
     return request<import("@/types").LearningStats>("GET", "/api/v1/analytics/stats")
   },
 
-  getTagStats() {
-    return request<import("@/types").TagStatsResult>("GET", "/api/v1/analytics/tag-stats")
+  getTagStats(documentId?: string) {
+    const qs = documentId ? `?document_id=${documentId}` : ""
+    return request<import("@/types").TagStatsResult>("GET", `/api/v1/analytics/tag-stats${qs}`)
   },
 
   generateLearningReport() {
