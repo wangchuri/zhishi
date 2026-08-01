@@ -12,7 +12,27 @@ import type {
 } from "@/types"
 
 const API_BASE_STORAGE_KEY = "zhishi_api_base"
+const NICKNAME_STORAGE_KEY = "zhishi_nickname"
 const DEFAULT_API_BASE = import.meta.env.VITE_API_BASE ?? ""
+
+// ─── 本地昵称（每台设备各自取名，无名称时填写） ─────────────
+
+export function getStoredNickname(): string {
+  return (localStorage.getItem(NICKNAME_STORAGE_KEY) || "").trim()
+}
+
+export function setStoredNickname(name: string) {
+  const normalized = (name || "").trim()
+  if (normalized) {
+    localStorage.setItem(NICKNAME_STORAGE_KEY, normalized)
+  } else {
+    localStorage.removeItem(NICKNAME_STORAGE_KEY)
+  }
+}
+
+export function hasNickname(): boolean {
+  return !!getStoredNickname()
+}
 
 // ─── 动态服务器地址配置（去登录模式） ─────────────────────
 // 用户输入服务器的 IP/域名，保存在 localStorage；

@@ -1,5 +1,17 @@
-import { createContext, useContext, useState, useCallback, type ReactNode } from "react"
-import { isServerConfigured, checkServerHealth, clearApiBase } from "@/lib/api"
+import {
+  createContext,
+  useContext,
+  useState,
+  useCallback,
+  type ReactNode,
+} from "react"
+import {
+  isServerConfigured,
+  checkServerHealth,
+  clearApiBase,
+  getStoredNickname,
+  setStoredNickname,
+} from "@/lib/api"
 
 interface User {
   id: number
@@ -23,17 +35,13 @@ interface AuthState {
   checkServer: () => Promise<boolean>
   /** 重新配置服务器地址（跳回设置页） */
   resetServer: () => void
+  /** 设置本地昵称（有无名称时调用） */
+  setNickname: (name: string) => void
 }
 
 const AuthContext = createContext<AuthState | null>(null)
 
-const LOCAL_USER: User = {
-  id: 1,
-  email: "local@zhishi.local",
-  nickname: "学习者",
-  username: "local",
-  is_active: true,
-}
+const LOCAL_EMAIL = "local@zhishi.local"
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [serverConfigured] = useState<boolean>(() => isServerConfigured())
@@ -42,6 +50,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     ok: false,
     message: "",
   })
+  const [nickname, setNicknameState] = useState<string>(() => getStoredNickname())
 
   const checkServer = useCallback(async (): Promise<boolean> => {
     const result = await checkServerHealth()
@@ -58,14 +67,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     window.location.href = "/setup"
   }, [])
 
+  const setNickname = useCallback((name: string) => {
+    setStoredNickname(name)
+    setNicknameState(getStoredNickname())
+  }, [])
+
+  const user: User = {
+    id: 1,
+    email: LOCAL_EMAIL,
+    nickname: nickname || "学习者",
+    username: "local",
+    is_active: true,
+  }
+
   return (
     <AuthContext.Provider
       value={{
-        user: LOCAL_USER,
+        user,
         serverConfigured,
         server,
         checkServer,
         resetServer,
+        setNickname,
       }}
     >
       {children}

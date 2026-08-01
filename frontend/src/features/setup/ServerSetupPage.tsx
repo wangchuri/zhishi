@@ -1,22 +1,28 @@
 import { useState, useEffect } from "react"
 import { useNavigate } from "react-router-dom"
-import { Server, CheckCircle2, XCircle, Loader2, ArrowRight, RefreshCw } from "lucide-react"
+import { Server, CheckCircle2, XCircle, Loader2, ArrowRight, RefreshCw, User } from "lucide-react"
 import { cn } from "@/lib/utils"
 import {
   getStoredApiBase,
   setApiBase,
   checkServerHealth,
+  getStoredNickname,
+  setStoredNickname,
+  hasNickname,
 } from "@/lib/api"
+import { useAuth } from "@/context/AuthContext"
 
 type HealthState = "idle" | "checking" | "ok" | "error"
 
 export function ServerSetupPage() {
   const navigate = useNavigate()
+  const { setNickname } = useAuth()
   const [input, setInput] = useState(getStoredApiBase())
+  const [nickname, setNicknameInput] = useState(getStoredNickname())
   const [healthState, setHealthState] = useState<HealthState>("idle")
   const [healthMessage, setHealthMessage] = useState("")
-  const [healthDetail, setHealthDetail] = useState<any>(null)
   const [saved, setSaved] = useState(false)
+  const [nicknameSet, setNicknameSet] = useState(hasNickname())
 
   useEffect(() => {
     const stored = getStoredApiBase()
@@ -36,16 +42,20 @@ export function ServerSetupPage() {
     const result = await checkServerHealth(input)
     if (result.ok) {
       setHealthState("ok")
-      setHealthDetail(result.detail)
     } else {
       setHealthState("error")
-      setHealthDetail(null)
     }
     setHealthMessage(result.message)
   }
 
   const handleConnect = () => {
     setApiBase(input)
+    // 没有昵称时先保存昵称
+    if (!hasNickname() && nickname.trim()) {
+      setStoredNickname(nickname)
+    }
+    setNickname(nickname.trim() || getStoredNickname())
+    setNicknameSet(true)
     setSaved(true)
     setTimeout(() => navigate("/"), 600)
   }
@@ -89,6 +99,27 @@ export function ServerSetupPage() {
               )}
             />
 
+            {/* 昵称：服务器无名字时才让用户填写 */}
+            {!nicknameSet && (
+              <div>
+                <div className="flex items-center gap-1.5 mb-1 text-caption text-ink-soft">
+                  <User className="w-3.5 h-3.5" strokeWidth={2} />
+                  给自己取一个名字（可选）
+                </div>
+                <input
+                  type="text"
+                  value={nickname}
+                  onChange={(e) => setNicknameInput(e.target.value)}
+                  placeholder="例如：小明"
+                  maxLength={20}
+                  className={cn(
+                    "w-full h-10 px-3 rounded-[4px] border bg-paper-2 text-body text-ink",
+                    "placeholder:text-ink-disabled focus:border-sea focus:ring-1 focus:ring-sea-subtle outline-none transition-all border-line"
+                  )}
+                />
+              </div>
+            )}
+
             {healthState !== "idle" && (
               <div className={cn(
                 "text-small px-3 py-2.5 rounded-[4px] border flex items-start gap-2",
@@ -103,15 +134,7 @@ export function ServerSetupPage() {
                 ) : (
                   <XCircle className="w-4 h-4 shrink-0 mt-0.5" strokeWidth={2} />
                 )}
-                <div>
-                  <div>{healthMessage}</div>
-                  {healthState === "ok" && healthDetail && (
-                    <div className="mt-1 opacity-80">
-                      模型加载：{healthDetail.model_loaded ? "已就绪" : "未加载"}
-                      {healthDetail.skills_count != null && ` · 技能数：${healthDetail.skills_count}`}
-                    </div>
-                  )}
-                </div>
+                <div>{healthMessage}</div>
               </div>
             )}
 
