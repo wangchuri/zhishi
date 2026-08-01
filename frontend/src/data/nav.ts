@@ -4,9 +4,7 @@ import {
   MessageSquare,
   NotebookPen,
   Library,
-  Network,
   BarChart3,
-  Route,
   Bell,
   Brain,
   PenLine,
@@ -36,10 +34,8 @@ export const navGroups: NavGroup[] = [
   {
     title: "学习",
     items: [
-      { label: "知识图谱", to: "/graph", icon: Network },
       { label: "学习分析", to: "/analytics", icon: BarChart3 },
       { label: "针对训练", to: "/training/targeted", icon: Target },
-      { label: "学习路径", to: "/path", icon: Route },
       { label: "智能提醒", to: "/reminders", icon: Bell },
     ],
   },

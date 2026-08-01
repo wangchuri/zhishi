@@ -8,10 +8,8 @@ import { NotesPage } from "@/features/notes/NotesPage"
 import { KnowledgeBasePage } from "@/features/knowledge-base/KnowledgeBasePage"
 import { DocumentViewPage } from "@/features/knowledge-base/DocumentViewPage"
 import { UploadPage } from "@/features/knowledge-base/UploadPage"
-import { KnowledgeGraphPage } from "@/features/knowledge-graph/KnowledgeGraphPage"
 import { LearningAnalyticsPage } from "@/features/learning/LearningAnalyticsPage"
 import { TargetedTrainingPage } from "@/features/learning/TargetedTrainingPage"
-import { LearningPathPage } from "@/features/learning/LearningPathPage"
 import { RemindersPage } from "@/features/learning/RemindersPage"
 import { ProfilePage } from "@/features/profile/ProfilePage"
 import { SettingsPage } from "@/features/settings/SettingsPage"
@@ -65,10 +63,8 @@ export function AppRoutes() {
       <Route path="/knowledge" element={<RequireServer><KnowledgeBasePage /></RequireServer>} />
       <Route path="/knowledge/doc/:docId" element={<RequireServer><DocumentViewPage /></RequireServer>} />
       <Route path="/knowledge/upload" element={<RequireServer><UploadPage /></RequireServer>} />
-      <Route path="/graph" element={<RequireServer><KnowledgeGraphPage /></RequireServer>} />
       <Route path="/analytics" element={<RequireServer><LearningAnalyticsPage /></RequireServer>} />
       <Route path="/training/targeted/*" element={<RequireServer><TargetedTrainingPage /></RequireServer>} />
-      <Route path="/path" element={<RequireServer><LearningPathPage /></RequireServer>} />
       <Route path="/reminders" element={<RequireServer><RemindersPage /></RequireServer>} />
       <Route path="/profile" element={<RequireServer><ProfilePage /></RequireServer>} />
       <Route path="/settings" element={<RequireServer><SettingsPage /></RequireServer>} />

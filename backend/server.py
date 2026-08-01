@@ -22,21 +22,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 import logging
 
-from lekt_service import LEKTService
-
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
-# 技能名称映射
-SKILL_NAMES = {
-    0: "加法",
-    1: "减法",
-    2: "乘法",
-    3: "除法",
-    4: "一元一次方程",
-    5: "函数基础",
-    6: "微积分入门",
-}
 
 
 @asynccontextmanager
@@ -58,17 +45,7 @@ async def lifespan(app: FastAPI):
             logger.info(f"本地默认用户就绪: id={default_user['user_id']} email={default_user['email']}")
     except Exception as e:
         logger.error(f"默认用户初始化失败: {e}")
-
-    # 2. 加载 LEKT 推理模型
-    print("[Server] 正在加载 LEKT 服务...")
-    lekt = LEKTService(str(_BACKEND_ROOT / "logic_matrix.npy"), skill_names=SKILL_NAMES)
-    app.state.lekt = lekt
-    if lekt.is_loaded:
-        print(f"[Server] LEKT 服务就绪，{lekt.num_skills} 个技能")
-    else:
-        print("[Server] 警告: LEKT 服务未加载（.pyd 文件缺失 or 矩阵不存在）")
-
-    # 3. 初始化 AgentManager（按用户维度管理 ZhishiAgent 实例）
+    # 2. 初始化 AgentManager（按用户维度管理 ZhishiAgent 实例）
     try:
         from app.core.agent_manager import AgentManager
 
@@ -106,19 +83,13 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
     )
 
 
-def _get_lekt() -> LEKTService:
-    return app.state.lekt
-
-
 # ─── 健康检查 ───
 
 @app.get("/health")
 async def health():
-    lekt = _get_lekt()
     return {
-        "status": "ok" if lekt.is_loaded else "degraded",
-        "skills_count": lekt.num_skills,
-        "model_loaded": lekt.is_loaded,
+        "status": "ok",
+        "service": "zhishi",
     }
 
 
