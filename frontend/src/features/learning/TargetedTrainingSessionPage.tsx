@@ -45,6 +45,7 @@ export function TargetedTrainingSessionPage() {
   const [selectedOption, setSelectedOption] = useState<string | null>(null)
   const [textAnswer, setTextAnswer] = useState("")
   const [blankAnswers, setBlankAnswers] = useState<string[]>([])
+  const [customAnswers, setCustomAnswers] = useState<Record<string, string>>({})
   const [submitting, setSubmitting] = useState(false)
   const [lastResult, setLastResult] = useState<QuizAnswerResult | null>(null)
   const [questionStartTime, setQuestionStartTime] = useState(Date.now())
@@ -62,6 +63,7 @@ export function TargetedTrainingSessionPage() {
     }
     setTextAnswer("")
     setSelectedOption(null)
+    setCustomAnswers({})
   }, [currentQuestion?.question_id])
 
   const exitToReport = useCallback(() => {
@@ -133,8 +135,8 @@ export function TargetedTrainingSessionPage() {
   const submitAnswerCore = async (opts?: { requestAiGrade?: boolean }) => {
     if (!session || !currentQuestion) return
     const qtype = currentQuestion.question_type || "single_choice"
-    const payload = buildUserAnswerPayload(qtype, selectedOption, textAnswer, blankAnswers)
-    if (!opts?.requestAiGrade && !canSubmitAnswer(qtype, selectedOption, textAnswer, blankAnswers)) {
+    const payload = buildUserAnswerPayload(qtype, selectedOption, textAnswer, blankAnswers, customAnswers)
+    if (!opts?.requestAiGrade && !canSubmitAnswer(qtype, selectedOption, textAnswer, blankAnswers, customAnswers)) {
       return
     }
 
@@ -347,11 +349,13 @@ export function TargetedTrainingSessionPage() {
                   selectedOption={selectedOption}
                   textAnswer={textAnswer}
                   blankAnswers={blankAnswers}
+                  customAnswers={customAnswers}
                   lastResult={lastResult}
                   submitting={submitting}
                   onSelectOption={setSelectedOption}
                   onTextAnswerChange={setTextAnswer}
                   onBlankAnswersChange={setBlankAnswers}
+                  onCustomAnswersChange={setCustomAnswers}
                 />
 
                 {!lastResult ? (
@@ -365,7 +369,8 @@ export function TargetedTrainingSessionPage() {
                           currentQuestion.question_type,
                           selectedOption,
                           textAnswer,
-                          blankAnswers
+                          blankAnswers,
+                          customAnswers
                         )
                       }
                     >

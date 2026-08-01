@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react"
-import { Search, PanelRight, LogOut, Menu } from "lucide-react"
+import { Search, PanelRight, Server, Menu, Wifi, WifiOff } from "lucide-react"
 import { useLocation, useNavigate } from "react-router-dom"
 import { useUI } from "@/context/UIContext"
 import { useAuth } from "@/context/AuthContext"
@@ -24,7 +24,7 @@ export function Topbar() {
   const location = useLocation()
   const navigate = useNavigate()
   const { rightPanelOpen, toggleRightPanel, toggleMobileMenu } = useUI()
-  const { user, logout } = useAuth()
+  const { user, server } = useAuth()
   const [menuOpen, setMenuOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
   const title = titleMap[location.pathname] ?? "知拾"
@@ -40,11 +40,6 @@ export function Topbar() {
       return () => document.removeEventListener("mousedown", handleClickOutside)
     }
   }, [menuOpen])
-
-  const handleLogout = () => {
-    logout()
-    navigate("/login")
-  }
 
   return (
     <header className="h-16 shrink-0 border-b border-line bg-header-glass flex items-center gap-3 px-4 md:px-6">
@@ -95,22 +90,34 @@ export function Topbar() {
         <div ref={menuRef} className="relative">
           <button
             onClick={() => setMenuOpen(!menuOpen)}
-            className="w-9 h-9 rounded-full bg-sea-subtle text-sea flex items-center justify-center text-small font-semibold cursor-pointer hover:ring-2 hover:ring-sea-subtle transition-all"
+            className="flex items-center gap-1.5 h-9 px-2 rounded-full bg-sea-subtle text-sea text-small font-semibold cursor-pointer hover:ring-2 hover:ring-sea-subtle transition-all"
+            title="服务器连接状态"
           >
-            {user?.nickname?.charAt(0) || "?"}
+            {server.ok ? <Wifi className="w-4 h-4" strokeWidth={2} /> : <WifiOff className="w-4 h-4" strokeWidth={2} />}
+            <span className="hidden sm:block">{user?.nickname?.charAt(0) || "?"}</span>
           </button>
           {menuOpen && (
-            <div className="absolute right-0 top-11 w-48 bg-paper border border-line rounded-[4px] shadow-sm py-1 z-50">
+            <div className="absolute right-0 top-11 w-52 bg-paper border border-line rounded-[4px] shadow-sm py-1 z-50">
               <div className="px-3 py-2 border-b border-line-light">
-                <div className="text-small font-medium text-ink">{user?.nickname || "用户"}</div>
+                <div className="text-small font-medium text-ink">{user?.nickname || "学习者"}</div>
                 <div className="text-caption text-ink-disabled truncate">{user?.email || ""}</div>
               </div>
+              <div className="px-3 py-2 border-b border-line-light">
+                <div className="flex items-center gap-1.5 text-caption text-ink-soft">
+                  {server.ok ? (
+                    <><Wifi className="w-3.5 h-3.5 text-success" strokeWidth={2} />服务器已连接</>
+                  ) : (
+                    <><WifiOff className="w-3.5 h-3.5 text-danger" strokeWidth={2} />未连接 / 检测中</>
+                  )}
+                </div>
+                {server.message && <div className="text-caption text-ink-disabled mt-0.5">{server.message}</div>}
+              </div>
               <button
-                onClick={handleLogout}
-                className="w-full flex items-center gap-2.5 px-3 py-2.5 text-small text-ink-soft hover:text-danger hover:bg-danger-soft transition-colors"
+                onClick={() => { setMenuOpen(false); navigate("/settings") }}
+                className="w-full flex items-center gap-2.5 px-3 py-2.5 text-small text-ink-soft hover:text-sea hover:bg-sea-subtle transition-colors"
               >
-                <LogOut className="w-4 h-4" strokeWidth={2} />
-                退出登录
+                <Server className="w-4 h-4" strokeWidth={2} />
+                服务器设置
               </button>
             </div>
           )}

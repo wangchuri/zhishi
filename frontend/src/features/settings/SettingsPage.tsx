@@ -1,4 +1,5 @@
 import { useState } from "react"
+import { useNavigate } from "react-router-dom"
 import {
   Moon,
   BarChart3,
@@ -13,21 +14,59 @@ import {
   ChevronRight,
   Wrench,
   Plug,
+  Server,
+  Wifi,
+  WifiOff,
 } from "lucide-react"
 import { AppShell } from "@/components/layout/AppShell"
 import { PageHeader } from "@/components/blocks/PageHeader"
 import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { cn } from "@/lib/utils"
+import { useAuth } from "@/context/AuthContext"
+import { getStoredApiBase } from "@/lib/api"
 
 export function SettingsPage() {
+  const navigate = useNavigate()
+  const { server } = useAuth()
   const [advancedOpen, setAdvancedOpen] = useState(false)
+  const apiBase = getStoredApiBase()
 
   return (
     <AppShell maxWidth={860}>
       <PageHeader title="设置中心" subtitle="管理画像、AI 助手、知识库、提醒和高级连接" />
 
       <div className="space-y-5">
+        <SettingsGroup
+          icon={Server}
+          title="服务器连接"
+          items={[
+            {
+              icon: server.ok ? Wifi : WifiOff,
+              title: "后端服务器",
+              desc: apiBase || "未配置，点击重新配置",
+              control: (
+                <button
+                  onClick={() => navigate("/setup")}
+                  className="rounded-full border border-line px-3 h-8 text-small text-ink-soft hover:border-sea hover:text-sea transition-colors"
+                >
+                  重新配置
+                </button>
+              ),
+            },
+            {
+              icon: server.ok ? Wifi : WifiOff,
+              title: "连接状态",
+              desc: server.message || "运行检测中...",
+              control: server.ok ? (
+                <Badge variant="success">正常</Badge>
+              ) : (
+                <Badge variant="neutral">检测</Badge>
+              ),
+            },
+          ]}
+        />
+
         <SettingsGroup
           icon={Moon}
           title="账号与画像"

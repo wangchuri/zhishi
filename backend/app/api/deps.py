@@ -1,10 +1,6 @@
-from fastapi import Depends, HTTPException, status, Header
-from fastapi.security import OAuth2PasswordBearer
+from fastapi import Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.core.database import SessionLocal
-from app.core.redis import cache
-
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
 # --- Dependency Injection ---
 def get_db():
@@ -14,13 +10,14 @@ def get_db():
     finally:
         db.close()
 
-async def get_current_user(token: str = Depends(oauth2_scheme)):
-    user_info = cache.get_session(token)
-      
-    if not user_info:
-        raise HTTPException(status_code=401, detail="Session expired")
-      
-    return user_info  # 返回字典包含 id, email, level
+def get_current_user():
+    """
+    去鉴权改造：不再校验 token / Redis 会话。
+    始终返回本地默认用户（由 init_db 保证存在）。
+    """
+    from app.services.bootstrap_service import get_or_create_default_user
+    with SessionLocal() as db:
+        return get_or_create_default_user(db)
 
 def get_current_active_user(current_user: dict = Depends(get_current_user)):
     if not current_user.get("is_active", True): # Default to True if missing, or handle strictly

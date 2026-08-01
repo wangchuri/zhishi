@@ -1,13 +1,12 @@
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { useNavigate } from "react-router-dom"
-import { Brain, FileText, Loader2, Library } from "lucide-react"
+import { Brain, Loader2, Library } from "lucide-react"
 import { AppShell } from "@/components/layout/AppShell"
 import { PageHeader } from "@/components/blocks/PageHeader"
 import { EmptyState } from "@/components/ui/empty-state"
 import { useKbDocuments } from "@/hooks/useKbDocuments"
 import { questionsApi } from "@/lib/api"
 import { QuizBookCard, type BookCardStats } from "./QuizBookCard"
-import type { KnowledgeDoc } from "@/types"
 
 export function QuizBookListPage() {
   const navigate = useNavigate()
@@ -18,7 +17,6 @@ export function QuizBookListPage() {
     selectedCollection,
     documents,
     loadingCollections,
-    loadingDocuments,
   } = useKbDocuments({ preferZone: "study" })
 
   const [statsMap, setStatsMap] = useState<Record<string, BookCardStats>>({})

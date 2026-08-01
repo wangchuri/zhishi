@@ -121,7 +121,6 @@ export function QuizPage() {
   } | null>(null)
   const [questionListData, setQuestionListData] = useState<QuestionListResult | null>(null)
   const [loadingQuestions, setLoadingQuestions] = useState(false)
-  const [loadingSession, setLoadingSession] = useState(false)
   const [questionStartTime, setQuestionStartTime] = useState(Date.now())
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [deletingQuestions, setDeletingQuestions] = useState(false)
@@ -130,7 +129,6 @@ export function QuizPage() {
   const sessionIdFromUrl = searchParams.get("session_id")
   useEffect(() => {
     if (!sessionIdFromUrl) return
-    setLoadingSession(true)
     quizApi
       .getSession(sessionIdFromUrl)
       .then((res) => {
@@ -142,7 +140,6 @@ export function QuizPage() {
       .catch(() => {
         setSetupAlert("会话加载失败，请重新选择资料开始练习")
       })
-      .finally(() => setLoadingSession(false))
   }, [sessionIdFromUrl])
 
   const selectedDocument = documents.find((d) => d.id === selectedDocumentId)

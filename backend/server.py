@@ -49,6 +49,16 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error(f"数据库初始化失败: {e}")
 
+    # 1.5 去鉴权模式：确保默认本地用户与分区存在
+    try:
+        from app.core.database import SessionLocal
+        from app.services.bootstrap_service import bootstrap_default_user
+        with SessionLocal() as _db:
+            default_user = bootstrap_default_user(_db)
+            logger.info(f"本地默认用户就绪: id={default_user['user_id']} email={default_user['email']}")
+    except Exception as e:
+        logger.error(f"默认用户初始化失败: {e}")
+
     # 2. 加载 LEKT 推理模型
     print("[Server] 正在加载 LEKT 服务...")
     lekt = LEKTService(str(_BACKEND_ROOT / "logic_matrix.npy"), skill_names=SKILL_NAMES)

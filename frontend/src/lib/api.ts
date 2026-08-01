@@ -1,6 +1,6 @@
 /**
  * 知拾 Web 端 — API 客户端
- * 基址由 VITE_API_BASE 环境变量配置
+ * 去登录模式：后端地址由用户在设置页输入服务器 IP，保存在 localStorage
  */
 
 import type {
@@ -11,32 +11,84 @@ import type {
   PageQuestionResult,
 } from "@/types"
 
-const API_BASE = import.meta.env.VITE_API_BASE ?? "http://127.0.0.1:8765"
+const API_BASE_STORAGE_KEY = "zhishi_api_base"
+const DEFAULT_API_BASE = import.meta.env.VITE_API_BASE ?? ""
 
-let _token: string | null = null
+// ─── 动态服务器地址配置（去登录模式） ─────────────────────
+// 用户输入服务器的 IP/域名，保存在 localStorage；
+// 所有 API 请求都基于该地址发起，每次运行/连接时先做健康检测。
+
+export function normalizeApiBase(input: string): string {
+  let base = (input || "").trim()
+  if (!base) return ""
+  base = base.replace(/\/+$/, "")
+  if (!/^https?:\/\//i.test(base)) {
+    base = `http://${base}`
+  }
+  return base
+}
+
+export function getStoredApiBase(): string {
+  const stored = localStorage.getItem(API_BASE_STORAGE_KEY)
+  return stored ? normalizeApiBase(stored) : ""
+}
+
+export function setApiBase(input: string) {
+  const normalized = normalizeApiBase(input)
+  if (normalized) {
+    localStorage.setItem(API_BASE_STORAGE_KEY, normalized)
+  } else {
+    localStorage.removeItem(API_BASE_STORAGE_KEY)
+  }
+}
+
+export function clearApiBase() {
+  localStorage.removeItem(API_BASE_STORAGE_KEY)
+}
 
 export function getApiBase(): string {
-  return API_BASE
+  const stored = getStoredApiBase()
+  if (stored) return stored
+  return DEFAULT_API_BASE || "http://127.0.0.1:8765"
+}
+
+export function isServerConfigured(): boolean {
+  return !!getStoredApiBase() || !!DEFAULT_API_BASE
+}
+
+/** 健康检测：探测服务器 /health 端点，返回是否正常 */
+export async function checkServerHealth(
+  input?: string
+): Promise<{ ok: boolean; status: string; message: string; detail?: any }> {
+  const base = input ? normalizeApiBase(input) : getApiBase()
+  if (!base) {
+    return { ok: false, status: "error", message: "请输入服务器地址" }
+  }
+  try {
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), 8000)
+    const res = await fetch(`${base}/health`, { signal: controller.signal })
+    clearTimeout(timeout)
+    if (res.ok) {
+      const data = await res.json().catch(() => null)
+      return {
+        ok: true,
+        status: data?.status ?? "ok",
+        message: data?.status === "ok" ? "服务器运行正常" : "服务器可用（部分组件未就绪）",
+        detail: data,
+      }
+    }
+    return { ok: false, status: "error", message: `服务器返回异常状态码 ${res.status}` }
+  } catch (e: any) {
+    if (e?.name === "AbortError") {
+      return { ok: false, status: "error", message: "连接超时，请检查地址与网络" }
+    }
+    return { ok: false, status: "error", message: `无法连接服务器：${e?.message || "未知错误"}` }
+  }
 }
 
 export function getThumbnailUrl(docId: string): string {
-  return `${API_BASE}/api/v1/kb/documents/${docId}/thumbnail`
-}
-
-export function setToken(token: string | null) {
-  _token = token
-  if (token) {
-    localStorage.setItem("zhishi_token", token)
-  } else {
-    localStorage.removeItem("zhishi_token")
-  }
-}
-
-export function getToken(): string | null {
-  if (!_token) {
-    _token = localStorage.getItem("zhishi_token")
-  }
-  return _token
+  return `${getApiBase()}/api/v1/kb/documents/${docId}/thumbnail`
 }
 
 async function request<T = any>(
@@ -45,15 +97,11 @@ async function request<T = any>(
   body?: any,
   isFormData?: boolean
 ): Promise<T> {
-  const url = `${API_BASE}${path}`
+  const url = `${getApiBase()}${path}`
   const headers: Record<string, string> = {}
-  const token = getToken()
 
   if (!isFormData) {
     headers["Content-Type"] = "application/json"
-  }
-  if (token) {
-    headers["Authorization"] = `Bearer ${token}`
   }
 
   const res = await fetch(url, {
@@ -61,11 +109,6 @@ async function request<T = any>(
     headers,
     body: isFormData ? (body as BodyInit) : body ? JSON.stringify(body) : undefined,
   })
-
-  if (res.status === 401) {
-    setToken(null)
-    throw new Error("登录已过期，请重新登录")
-  }
 
   if (!res.ok) {
     const errText = await res.text()
@@ -87,19 +130,8 @@ async function request<T = any>(
 }
 
 async function requestBlob(path: string): Promise<Blob> {
-  const url = `${API_BASE}${path}`
-  const headers: Record<string, string> = {}
-  const token = getToken()
-  if (token) {
-    headers["Authorization"] = `Bearer ${token}`
-  }
-
-  const res = await fetch(url, { method: "GET", headers })
-
-  if (res.status === 401) {
-    setToken(null)
-    throw new Error("登录已过期，请重新登录")
-  }
+  const url = `${getApiBase()}${path}`
+  const res = await fetch(url, { method: "GET" })
 
   if (!res.ok) {
     const errText = await res.text()
@@ -154,39 +186,6 @@ export async function readSseStream(
   return fullContent
 }
 
-// ─── Auth ──────────────────────────────────────────────
-
-export const authApi = {
-  register(email: string, password: string, nickname: string) {
-    return request<any>("POST", "/api/v1/auth/register", {
-      email,
-      password,
-      nickname,
-    })
-  },
-
-  login(email: string, password: string) {
-    const formData = new URLSearchParams()
-    formData.append("username", email)
-    formData.append("password", password)
-    return fetch(`${API_BASE}/api/v1/auth/token`, {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: formData.toString(),
-    }).then((res) => {
-      if (!res.ok)
-        return res.json().then((e) => {
-          throw new Error(e.detail || "登录失败")
-        })
-      return res.json()
-    })
-  },
-
-  getMe() {
-    return request<any>("GET", "/api/v1/auth/users/me")
-  },
-}
-
 // ─── Chat ──────────────────────────────────────────────
 
 export interface ChatStreamOptions {
@@ -208,12 +207,10 @@ export const chatApi = {
 
   async sendStream(options: ChatStreamOptions): Promise<string> {
     const { content, session_id, collection_id, onChunk } = options
-    const token = getToken()
-    const res = await fetch(`${API_BASE}/api/v1/chat`, {
+    const res = await fetch(`${getApiBase()}/api/v1/chat`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
       },
       body: JSON.stringify({
         content,
@@ -346,12 +343,10 @@ export const questionsApi = {
     page_numbers: number[]
     questions_per_page?: number
   }, onChunk: (chunk: { event: string; content?: string; questions?: any[] }) => void): Promise<void> {
-    const token = getToken()
-    return fetch(`${API_BASE}/api/v1/questions/generate-stream`, {
+    return fetch(`${getApiBase()}/api/v1/questions/generate-stream`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
       },
       body: JSON.stringify(data),
     }).then(async (res) => {
@@ -462,12 +457,10 @@ export const tutorApi = {
 
   sendMessage(sessionId: string, content: string, stream = false) {
     if (stream) {
-      const token = getToken()
-      return fetch(`${API_BASE}/api/v1/tutor/sessions/${sessionId}/messages`, {
+      return fetch(`${getApiBase()}/api/v1/tutor/sessions/${sessionId}/messages`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({ content, stream: true }),
       })
@@ -568,12 +561,10 @@ export const trainingApi = {
 
   sendTutorMessage(agentSessionId: string, content: string, stream = false) {
     if (stream) {
-      const token = getToken()
-      return fetch(`${API_BASE}/api/v1/training/targeted/tutor/${agentSessionId}`, {
+      return fetch(`${getApiBase()}/api/v1/training/targeted/tutor/${agentSessionId}`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({ content, stream: true }),
       })
@@ -629,17 +620,9 @@ export const ktApi = {
 
   /** LEKT 未加载时返回 null，不抛错 */
   async getSkillGraph() {
-    const url = `${API_BASE}/api/v1/kt/skill-graph`
-    const headers: Record<string, string> = {}
-    const token = getToken()
-    if (token) headers["Authorization"] = `Bearer ${token}`
-
-    const res = await fetch(url, { method: "GET", headers })
+    const url = `${getApiBase()}/api/v1/kt/skill-graph`
+    const res = await fetch(url, { method: "GET" })
     if (res.status === 503) return null
-    if (res.status === 401) {
-      setToken(null)
-      throw new Error("登录已过期，请重新登录")
-    }
     if (!res.ok) {
       const errText = await res.text()
       let detail = errText

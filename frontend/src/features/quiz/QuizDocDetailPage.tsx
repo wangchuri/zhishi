@@ -19,10 +19,9 @@ import { StatCard } from "@/components/ui/stat-card"
 import { Card } from "@/components/ui/card"
 import { EmptyState } from "@/components/ui/empty-state"
 import { SectionHeader } from "@/components/blocks/SectionHeader"
-import { ProgressMeter } from "@/components/blocks/ProgressMeter"
 import { questionsApi, quizApi, analyticsApi, getThumbnailUrl } from "@/lib/api"
 import { useKbDocuments } from "@/hooks/useKbDocuments"
-import type { KnowledgeDoc, QuestionListResult, QuizSession, TagStatsResult } from "@/types"
+import type { QuestionListResult, QuizSession, TagStatsResult } from "@/types"
 
 type FilterMode = "all" | "undone" | "wrong" | "unknown"
 
@@ -33,17 +32,10 @@ const FILTER_OPTIONS: { value: FilterMode; label: string; desc: string }[] = [
   { value: "unknown", label: "只做不会题", desc: "过滤标记为不会的题目" },
 ]
 
-function answerBadge(status: string) {
-  if (status === "correct") return { label: "正确", variant: "success" as const }
-  if (status === "wrong") return { label: "错误", variant: "danger" as const }
-  if (status === "unknown") return { label: "不会", variant: "warning" as const }
-  return { label: status, variant: "neutral" as const }
-}
-
 export function QuizDocDetailPage() {
   const { docId } = useParams<{ docId: string }>()
   const navigate = useNavigate()
-  const { documents, loadingDocuments, updateDocument } = useKbDocuments({ preferZone: "study" })
+  const { documents, loadingDocuments } = useKbDocuments({ preferZone: "study" })
 
   const [questionData, setQuestionData] = useState<QuestionListResult | null>(null)
   const [loadingQuestions, setLoadingQuestions] = useState(false)

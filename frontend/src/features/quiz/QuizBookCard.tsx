@@ -1,8 +1,7 @@
 import { useState } from "react"
-import { FileText, HelpCircle, Loader2 } from "lucide-react"
+import { FileText } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { getThumbnailUrl } from "@/lib/api"
-import { cn } from "@/lib/utils"
 import type { KnowledgeDoc } from "@/types"
 
 export interface BookCardStats {
