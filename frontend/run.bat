@@ -18,7 +18,10 @@ if not exist "node_modules" (
     echo.
 )
 
-echo [启动] 前端: http://127.0.0.1:5173
+echo [启动] 本机:  http://127.0.0.1:5173
+echo [局域网] 其他设备请访问:  http://<本机IP>:5173
+echo [Electron] 另开终端运行 npm run electron:dev 可启动桌面版
+echo [打包] 生成安装包:  npm run electron:build
 echo [退出] 按 Ctrl+C 停止
 echo ================================================
 echo.

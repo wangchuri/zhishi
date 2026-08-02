@@ -28,7 +28,7 @@ coverage.xml
 
 # Python 打包产物（勿与 frontend/dist 混淆时用 frontend/dist/ 已单独列出）
 build/
-dist/
+/dist/
 
 # 虚拟环境
 env/
@@ -60,6 +60,9 @@ backend/tina.env
 backend/.env
 assets/config/llm_config.json
 assets/config/dify_config.json
+
+# ─── 局域网自签 HTTPS 证书（make_cert.py 生成）──────────
+backend/certs/
 
 # ─── 日志 ──────────────────────────────────
 *.log
