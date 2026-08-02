@@ -19,12 +19,18 @@ if not exist "..\.venv\Scripts\python.exe" (
 
 call "..\.venv\Scripts\activate.bat"
 
-echo [启动] 后端: http://127.0.0.1:8765
-echo [文档] API:  http://127.0.0.1:8765/docs
-echo [退出] 按 Ctrl+C 停止
+set "LAN_IP="
+for /f "delims=" %%i in ('python -c "import make_cert;print(make_cert.detect_lan_ip())"') do set "LAN_IP=%%i"
+if "%LAN_IP%"=="" set "LAN_IP=<本机IP>"
+
+echo [本机]   http://127.0.0.1:8765  （前端网页 + API）
+echo [局域网] http://%LAN_IP%:8765
+echo [文档]   http://127.0.0.1:8765/docs
+echo [提示]   Windows 桌面版可用 Electron 打包（frontend\npm run electron:build）
+echo [退出]   Ctrl+C 停止
 echo ================================================
 echo.
 
-uvicorn server:app --host 127.0.0.1 --port 8765 --reload
+python server.py
 
 pause

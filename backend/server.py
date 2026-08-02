@@ -1,7 +1,7 @@
 """
 知拾 KT 后端服务 — FastAPI
 启动方式（任选其一）:
-    cd backend && uvicorn server:app --host 127.0.0.1 --port 8765
+    cd backend && uvicorn server:app --host 0.0.0.0 --port 8765
     cd backend && python server.py
     项目根目录: dev.bat 或 backend\\run.bat
 """
@@ -19,7 +19,8 @@ from app.core import paddle_env  # noqa: F401
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 import logging
 
 logging.basicConfig(level=logging.INFO)
@@ -99,6 +100,51 @@ from app.api.v1.router import api_router
 app.include_router(api_router, prefix="/api/v1")
 
 
+# ─── 前端静态托管（PWA/网页版：访问 8765 直接打开前端，平板可安装） ───
+
+_FRONTEND_DIST = _BACKEND_ROOT.parent / "frontend" / "dist"
+if _FRONTEND_DIST.is_dir():
+    app.mount(
+        "/assets",
+        StaticFiles(directory=_FRONTEND_DIST / "assets"),
+        name="assets",
+    )
+
+    @app.get("/", include_in_schema=False)
+    @app.get("/{full_path:path}", include_in_schema=False)
+    async def spa_fallback(request: Request, full_path: str = ""):
+        """API 前缀交给业务路由；其余路径回退到前端 index.html（SPA）。"""
+        # API 未匹配的路径返回 JSON 404，而不是 index.html
+        if full_path.startswith("api/"):
+            return JSONResponse(status_code=404, content={"detail": "Not Found"})
+        # PWA / 静态资源存在时直接返回文件，避免 index.html 误吞
+        candidate = _FRONTEND_DIST / full_path
+        if full_path and candidate.is_file():
+            return FileResponse(candidate)
+        return FileResponse(_FRONTEND_DIST / "index.html")
+
+    logger.info(f"前端静态托管已启用: {_FRONTEND_DIST}")
+else:
+    logger.warning(
+        f"未找到前端构建产物: {_FRONTEND_DIST}（请先在 frontend 执行 npm run build）"
+    )
+
+
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="127.0.0.1", port=8765)
+
+    # 仅用于显示局域网 IP（不涉及证书）
+    lan_ip = "127.0.0.1"
+    try:
+        from make_cert import detect_lan_ip
+        lan_ip = detect_lan_ip()
+    except Exception:  # noqa: BLE001
+        pass
+
+    # 启动横幅：本机 + 局域网两个访问地址
+    print("\n=============== 知拾 访问地址 ===============", flush=True)
+    print("  本机访问:   http://127.0.0.1:8765", flush=True)
+    print(f"  局域网访问: http://{lan_ip}:8765", flush=True)
+    print("=============================================", flush=True)
+
+    uvicorn.run("server:app", host="0.0.0.0", port=8765, reload=True)
