@@ -428,7 +428,7 @@ export function QuestionGenDocPage() {
               ref={streamContainerRef}
               onScroll={handleStreamScroll}
               className="flex-1 min-h-0 overflow-y-auto scroll-thin bg-paper-2 p-4"
-              style={{ maxHeight: "calc(100vh - 280px)" }}
+              style={{ maxHeight: "calc(100dvh - 280px)" }}
             >
               {working && streamContent && (
                 <>

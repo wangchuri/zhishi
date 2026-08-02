@@ -69,7 +69,8 @@ export function clearApiBase() {
 export function getApiBase(): string {
   const stored = getStoredApiBase()
   if (stored) return stored
-  return DEFAULT_API_BASE || "http://127.0.0.1:8765"
+  // 后端托管前端时默认同源（相对路径）；Electron/独立部署可在设置页配置服务器地址
+  return DEFAULT_API_BASE || ""
 }
 
 export function isServerConfigured(): boolean {

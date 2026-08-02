@@ -102,7 +102,7 @@ export function DocRow({ doc, className, onDelete, onView }: DocRowProps) {
           <button
             type="button"
             onClick={onView}
-            className="w-8 h-8 rounded-md flex items-center justify-center text-ink-tertiary opacity-100 sm:opacity-0 sm:group-hover:opacity-100 hover:bg-primary-soft hover:text-primary transition-all"
+            className="w-9 h-9 rounded-md flex items-center justify-center text-ink-tertiary opacity-100 can-hover:sm:opacity-0 can-hover:sm:group-hover:opacity-100 hover:bg-primary-soft hover:text-primary transition-all"
             title="查看文档"
             aria-label={`查看 ${doc.name}`}
           >
@@ -113,7 +113,7 @@ export function DocRow({ doc, className, onDelete, onView }: DocRowProps) {
           <button
             type="button"
             onClick={onDelete}
-            className="w-8 h-8 rounded-md flex items-center justify-center text-ink-tertiary opacity-100 sm:opacity-0 sm:group-hover:opacity-100 hover:bg-danger-soft hover:text-danger transition-all"
+            className="w-9 h-9 rounded-md flex items-center justify-center text-ink-tertiary opacity-100 can-hover:sm:opacity-0 can-hover:sm:group-hover:opacity-100 hover:bg-danger-soft hover:text-danger transition-all"
             title="删除文档"
             aria-label={`删除 ${doc.name}`}
           >

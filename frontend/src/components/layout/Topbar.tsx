@@ -42,7 +42,10 @@ export function Topbar() {
   }, [menuOpen])
 
   return (
-    <header className="h-16 shrink-0 border-b border-line bg-header-glass flex items-center gap-3 px-4 md:px-6">
+    <header
+      className="h-16 shrink-0 border-b border-line bg-header-glass flex items-center gap-3 px-4 md:px-6"
+      style={{ height: "calc(4rem + env(safe-area-inset-top))", paddingTop: "env(safe-area-inset-top)" }}
+    >
       {/* 平板端：汉堡菜单 */}
       <button
         onClick={toggleMobileMenu}
@@ -77,7 +80,7 @@ export function Topbar() {
         <button
           onClick={toggleRightPanel}
           className={cn(
-            "inline-flex items-center justify-center w-9 h-9 rounded-[4px] transition-colors",
+            "inline-flex items-center justify-center w-10 h-10 rounded-[4px] transition-colors",
             rightPanelOpen ? "text-sea bg-sea-subtle" : "text-ink-soft hover:bg-sea-subtle hover:text-sea",
           )}
           aria-label="切换右侧面板"

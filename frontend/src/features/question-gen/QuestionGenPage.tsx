@@ -54,7 +54,7 @@ export function QuestionGenPage() {
           primaryAction={{ label: "去知识库", onClick: () => navigate("/knowledge") }}
         />
       ) : (
-        <div className="bg-surface border border-line-soft rounded-lg shadow-xs min-h-[480px] lg:h-[calc(100vh-12rem)]">
+        <div className="bg-surface border border-line-soft rounded-lg shadow-xs min-h-[480px] lg:h-[calc(100dvh-12rem)]">
           <KbDocBrowser
             className="h-full min-h-0"
             collections={collections}

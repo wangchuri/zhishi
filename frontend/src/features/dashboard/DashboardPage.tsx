@@ -116,7 +116,7 @@ export function DashboardPage() {
 
   return (
     <AppShell maxWidth={1180}>
-      <div className="flex items-end justify-between gap-6 mb-6">
+      <div className="flex items-end justify-between gap-6 mb-6 short:mb-4">
         <div className="min-w-0">
           <h1 className="font-display text-display-l text-ink mb-1.5">{getTimeGreeting()}，{greetingName || "朋友"}</h1>
           <p className="text-body text-ink-soft">持续学习，成就更好的自己。</p>
@@ -126,7 +126,7 @@ export function DashboardPage() {
       {/* 搜索框 - 纸本风格 */}
       <form
         onSubmit={(e) => { e.preventDefault(); handleSearch() }}
-        className="relative group mb-10"
+        className="relative group mb-10 short:mb-6"
       >
         <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-ink-disabled group-focus-within:text-sea transition-colors" strokeWidth={2} />
         <input
@@ -146,7 +146,7 @@ export function DashboardPage() {
       </form>
 
       {/* 快捷操作卡片 */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-10">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-10 short:mb-6">
         {quickActions.map((action, i) => (
           <QuickActionCard
             key={action.id}

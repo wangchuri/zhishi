@@ -42,7 +42,7 @@ import type {
 } from "@/types"
 import { QuizReviewPanel } from "./QuizReviewPanel"
 import { QuizQuestionInput } from "./QuizQuestionInput"
-import { QuizAnswerFeedback, getSubmitButtonLabel } from "./QuizAnswerFeedback"
+import { QuizAnswerFeedback, QuizAnswerFeedbackActions, getSubmitButtonLabel } from "./QuizAnswerFeedback"
 import {
   QUESTION_TYPE_LABEL,
   buildUserAnswerPayload,
@@ -726,10 +726,11 @@ export function QuizPage() {
       )}
 
       {phase === "quiz" && session && currentQuestion && (
-        <div className="grid grid-cols-1 lg:grid-cols-[1fr_340px] gap-6 lg:h-[calc(100vh-12rem)] min-h-0">
-          <div className="bg-surface border border-line-soft rounded-lg shadow-xs p-6 overflow-y-auto scroll-thin min-h-0">
-            <div className="flex items-center justify-between mb-6">
-              <div className="flex items-center gap-2">
+        <div className="grid grid-cols-1 lg:grid-cols-[1fr_340px] gap-6 lg:h-[calc(100dvh-12rem)] min-h-0">
+          <div className="bg-surface border border-line-soft rounded-lg shadow-xs flex flex-col min-h-0 overflow-hidden">
+            {/* 题目状态头 */}
+            <div className="flex items-center justify-between gap-3 px-6 py-4 border-b border-line-soft shrink-0">
+              <div className="flex items-center gap-2 flex-wrap">
                 <Badge variant="neutral">
                   第 {currentIndex + 1} / {session.total_questions} 题
                 </Badge>
@@ -747,58 +748,73 @@ export function QuizPage() {
                   </Badge>
                 )}
               </div>
-              <span className="text-small text-ink-tertiary truncate max-w-[50%]">
+              <span className="text-small text-ink-tertiary truncate max-w-[40%]">
                 {selectedDocument?.name || session.title}
               </span>
             </div>
 
-            <QuizQuestionInput
-              question={currentQuestion}
-              selectedOption={selectedOption}
-              textAnswer={textAnswer}
-              blankAnswers={blankAnswers}
-              customAnswers={customAnswers}
-              lastResult={lastResult}
-              submitting={submitting}
-              onSelectOption={setSelectedOption}
-              onTextAnswerChange={setTextAnswer}
-              onBlankAnswersChange={setBlankAnswers}
-              onCustomAnswersChange={setCustomAnswers}
-            />
-
-            {!lastResult ? (
-              <div className="flex flex-wrap items-center gap-3">
-                <Button
-                  variant="primary"
-                  size="md"
-                  onClick={handleSubmitAnswer}
-                  disabled={
-                    submitting ||
-                    !canSubmitAnswer(
-                      currentQuestion.question_type,
-                      selectedOption,
-                      textAnswer,
-                      blankAnswers
-                    )
-                  }
-                >
-                  {getSubmitButtonLabel(submitting, currentQuestion.question_type)}
-                </Button>
-                <Button variant="secondary" size="md" onClick={handleUnknown} disabled={submitting}>
-                  <HelpCircle className="w-4 h-4" strokeWidth={2} />
-                  我不会
-                </Button>
-              </div>
-            ) : (
-              <QuizAnswerFeedback
+            {/* 题干滚动区：只滚动题目/反馈内容 */}
+            <div className="flex-1 min-h-0 overflow-y-auto scroll-thin p-6">
+              <QuizQuestionInput
                 question={currentQuestion}
+                selectedOption={selectedOption}
+                textAnswer={textAnswer}
+                blankAnswers={blankAnswers}
+                customAnswers={customAnswers}
                 lastResult={lastResult}
                 submitting={submitting}
-                onNext={handleNextAfterReview}
-                onAiReview={handleAiReview}
-                onMarkUnknown={handleMarkAsUnknown}
+                onSelectOption={setSelectedOption}
+                onTextAnswerChange={setTextAnswer}
+                onBlankAnswersChange={setBlankAnswers}
+                onCustomAnswersChange={setCustomAnswers}
               />
-            )}
+
+              {lastResult && (
+                <div className="mt-6">
+                  <QuizAnswerFeedback
+                    question={currentQuestion}
+                    lastResult={lastResult}
+                  />
+                </div>
+              )}
+            </div>
+
+            {/* 操作栏常驻：提交/下一题 不随内容滚出视口 */}
+            <div className="shrink-0 border-t border-line-soft px-6 py-4">
+              {!lastResult ? (
+                <div className="flex flex-wrap items-center gap-3">
+                  <Button
+                    variant="primary"
+                    size="md"
+                    onClick={handleSubmitAnswer}
+                    disabled={
+                      submitting ||
+                      !canSubmitAnswer(
+                        currentQuestion.question_type,
+                        selectedOption,
+                        textAnswer,
+                        blankAnswers
+                      )
+                    }
+                  >
+                    {getSubmitButtonLabel(submitting, currentQuestion.question_type)}
+                  </Button>
+                  <Button variant="secondary" size="md" onClick={handleUnknown} disabled={submitting}>
+                    <HelpCircle className="w-4 h-4" strokeWidth={2} />
+                    我不会
+                  </Button>
+                </div>
+              ) : (
+                <QuizAnswerFeedbackActions
+                  question={currentQuestion}
+                  lastResult={lastResult}
+                  submitting={submitting}
+                  onNext={handleNextAfterReview}
+                  onAiReview={handleAiReview}
+                  onMarkUnknown={handleMarkAsUnknown}
+                />
+              )}
+            </div>
           </div>
 
           <div className="flex flex-col min-h-0 h-[420px] lg:h-full overflow-hidden">

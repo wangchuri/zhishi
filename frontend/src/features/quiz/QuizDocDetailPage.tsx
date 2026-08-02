@@ -146,7 +146,7 @@ export function QuizDocDetailPage() {
   return (
     <AppShell maxWidth={960}>
       {/* 顶部导航 */}
-      <div className="flex items-center gap-3 mb-6">
+      <div className="flex items-center gap-3 mb-6 short:mb-4">
         <Button variant="ghost" size="md" onClick={() => navigate("/quiz")}>
           <ArrowLeft className="w-4 h-4" />返回
         </Button>
@@ -156,11 +156,11 @@ export function QuizDocDetailPage() {
         <div className="mb-4 rounded-lg border border-danger/30 bg-danger-soft px-4 py-3 text-body text-danger">{error}</div>
       )}
 
-      {/* ── 上部分：封面 + 统计 + 刷题入口 ── */}
-      <div className="grid grid-cols-1 md:grid-cols-[320px_1fr] gap-8 mb-10">
+      {/* ── 上部分：封面 + 统计 + 刷题入口（一屏适配，选择器与按钮同屏可见） ── */}
+      <div className="grid grid-cols-1 md:grid-cols-[minmax(0,240px)_minmax(0,1fr)] gap-6 md:gap-8 mb-8 short:mb-6">
         {/* 左侧：封面 */}
-        <div className="space-y-4">
-          <div className="aspect-[3/4] rounded-xl overflow-hidden border border-line-soft bg-gradient-to-br from-primary-soft/30 to-surface-soft shadow-xs">
+        <div className="space-y-3">
+          <div className="aspect-[3/4] max-h-[340px] short:max-h-[300px] rounded-xl overflow-hidden border border-line-soft bg-gradient-to-br from-primary-soft/30 to-surface-soft shadow-xs">
             <img src={getThumbnailUrl(doc.id)} alt={doc.name} className="w-full h-full object-cover"
               onError={(e) => {
                 const el = e.currentTarget; el.style.display = "none"
@@ -195,7 +195,7 @@ export function QuizDocDetailPage() {
         </div>
 
         {/* 右侧：统计 + 操作 */}
-        <div className="space-y-6">
+        <div className="space-y-4">
           {loadingQuestions ? (
             <div className="flex items-center gap-2 text-ink-tertiary py-4">
               <Loader2 className="w-4 h-4 animate-spin" /><span className="text-small">加载统计数据...</span>
@@ -222,15 +222,15 @@ export function QuizDocDetailPage() {
           )}
 
           {hasQuestions && doc.question_gen_status === "completed" ? (
-            <div className="bg-surface border border-line-soft rounded-lg p-5 space-y-4">
+            <div className="bg-surface border border-line-soft rounded-lg p-4 space-y-3">
               <div className="text-card-title font-semibold text-ink-primary">开始刷题</div>
-              <div className="space-y-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 {FILTER_OPTIONS.map((opt) => (
                   <label key={opt.value}
-                    className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${filterMode === opt.value ? "border-primary bg-primary/5 text-ink-primary" : "border-line-soft hover:border-line text-ink-secondary"}`}>
+                    className={`flex items-center gap-2.5 p-3 rounded-lg border cursor-pointer transition-colors ${filterMode === opt.value ? "border-primary bg-primary/5 text-ink-primary" : "border-line-soft hover:border-line text-ink-secondary"}`}>
                     <input type="radio" name="filter" value={opt.value} checked={filterMode === opt.value}
-                      onChange={() => setFilterMode(opt.value)} className="accent-primary" />
-                    <div><div className="text-small font-medium">{opt.label}</div><div className="text-caption text-ink-tertiary">{opt.desc}</div></div>
+                      onChange={() => setFilterMode(opt.value)} className="accent-primary shrink-0" />
+                    <div className="min-w-0"><div className="text-small font-medium">{opt.label}</div><div className="text-caption text-ink-tertiary truncate">{opt.desc}</div></div>
                   </label>
                 ))}
               </div>

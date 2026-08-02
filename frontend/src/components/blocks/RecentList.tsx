@@ -49,7 +49,7 @@ export function RecentList({ items, className }: RecentListProps) {
                   e.stopPropagation()
                   item.secondaryAction?.onClick()
                 }}
-                className="shrink-0 text-small text-sea hover:underline opacity-0 group-hover:opacity-100 transition-opacity"
+                className="shrink-0 text-small text-sea hover:underline opacity-100 can-hover:opacity-0 can-hover:group-hover:opacity-100 transition-opacity"
               >
                 {item.secondaryAction.label}
               </button>

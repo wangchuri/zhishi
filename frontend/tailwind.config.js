@@ -173,5 +173,13 @@ module.exports = {
       },
     },
   },
-  plugins: [require("tailwindcss-animate")],
+  plugins: [
+    require("tailwindcss-animate"),
+    ({ addVariant }) => {
+      // 触屏/平板：无 hover 能力，依赖 hover 显隐的控件改为常显
+      addVariant("can-hover", "@media (hover: hover) and (pointer: fine)")
+      // 短屏（如 800px 高平板）：收紧页面间距
+      addVariant("short", "@media (max-height: 820px)")
+    },
+  ],
 }

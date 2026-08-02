@@ -6,6 +6,10 @@ import { defineConfig } from "vite"
 // https://vite.dev/config/
 export default defineConfig({
   base: './',
+  server: {
+    host: true, // 监听 0.0.0.0，暴露到局域网
+    port: 5173,
+  },
   plugins: [
     react(),
     VitePWA({

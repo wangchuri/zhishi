@@ -21,7 +21,7 @@ export function AppShell({ children, maxWidth = 1180, noPadding = false }: AppSh
   const { mobileMenuOpen, setMobileMenuOpen } = useUI()
 
   return (
-    <div className="relative flex h-screen overflow-hidden bg-paper bg-paper-gradient">
+    <div className="relative flex h-dvh overflow-hidden bg-paper bg-paper-gradient">
       {/* 平板端：侧边栏抽屉遮罩 */}
       {mobileMenuOpen && (
         <div
@@ -42,7 +42,7 @@ export function AppShell({ children, maxWidth = 1180, noPadding = false }: AppSh
         <main
           className={cn(
             "flex-1",
-            noPadding ? "overflow-hidden" : "overflow-y-auto scroll-thin p-4 md:p-6 lg:p-8",
+            noPadding ? "overflow-hidden" : "overflow-y-auto scroll-thin p-4 md:p-6 lg:p-8 short:md:p-4 short:lg:p-6",
           )}
         >
           <div

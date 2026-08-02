@@ -14,8 +14,8 @@ import {
 type QuizAnswerFeedbackProps = {
   question: QuizSessionQuestion
   lastResult: QuizAnswerResult
-  submitting: boolean
-  onNext: () => void
+  submitting?: boolean
+  onNext?: () => void
   onAiReview?: () => void
   onMarkUnknown?: () => void
 }
@@ -52,20 +52,11 @@ function statusLabel(status: string): { text: string; className: string; icon: R
 export function QuizAnswerFeedback({
   question,
   lastResult,
-  submitting,
-  onNext,
-  onAiReview,
-  onMarkUnknown,
 }: QuizAnswerFeedbackProps) {
   const qtype = question.question_type || "single_choice"
   const info = statusLabel(lastResult.status)
   const correctDisplay = formatCorrectAnswerDisplay(lastResult.correct_answer, qtype)
   const isUnknown = lastResult.status === "unknown"
-  const showAiReview =
-    isFillBlankQuestion(qtype) &&
-    lastResult.status === "wrong" &&
-    lastResult.grade_method !== "ai" &&
-    onAiReview
 
   return (
     <div className="space-y-3">
@@ -105,34 +96,57 @@ export function QuizAnswerFeedback({
       {!isUnknown && lastResult.status !== "correct" && lastResult.citation && (
         <CitationCard citation={lastResult.citation} />
       )}
+    </div>
+  )
+}
 
-      <div className="flex flex-wrap gap-3 pt-1">
-        {showAiReview && (
-          <Button variant="secondary" size="md" onClick={onAiReview} disabled={submitting}>
-            {submitting ? (
-              <>
-                <Sparkles className="w-4 h-4 animate-pulse" />
-                AI 判题中…
-              </>
-            ) : (
-              <>
-                <Sparkles className="w-4 h-4" />
-                让 AI 判断
-              </>
-            )}
-          </Button>
-        )}
-        {!isUnknown && lastResult.status !== "correct" && onMarkUnknown && (
-          <Button variant="secondary" size="md" onClick={onMarkUnknown} disabled={submitting}>
-            <HelpCircle className="w-4 h-4" strokeWidth={2} />
-            标记为不会
-          </Button>
-        )}
-        <Button variant="primary" size="md" onClick={onNext}>
-          下一题
-          <ChevronRight className="w-4 h-4" strokeWidth={2} />
+/**
+ * 答题反馈的操作条（下一题 / AI 判题 / 标记不会）。
+ * 独立出来以便放在常驻操作栏（不随内容滚动出视口）。
+ */
+export function QuizAnswerFeedbackActions({
+  question,
+  lastResult,
+  submitting,
+  onNext,
+  onAiReview,
+  onMarkUnknown,
+}: QuizAnswerFeedbackProps) {
+  const qtype = question.question_type || "single_choice"
+  const isUnknown = lastResult.status === "unknown"
+  const showAiReview =
+    isFillBlankQuestion(qtype) &&
+    lastResult.status === "wrong" &&
+    lastResult.grade_method !== "ai" &&
+    onAiReview
+
+  return (
+    <div className="flex flex-wrap gap-3">
+      {showAiReview && (
+        <Button variant="secondary" size="md" onClick={onAiReview} disabled={submitting}>
+          {submitting ? (
+            <>
+              <Sparkles className="w-4 h-4 animate-pulse" />
+              AI 判题中…
+            </>
+          ) : (
+            <>
+              <Sparkles className="w-4 h-4" />
+              让 AI 判断
+            </>
+          )}
         </Button>
-      </div>
+      )}
+      {!isUnknown && lastResult.status !== "correct" && onMarkUnknown && (
+        <Button variant="secondary" size="md" onClick={onMarkUnknown} disabled={submitting}>
+          <HelpCircle className="w-4 h-4" strokeWidth={2} />
+          标记为不会
+        </Button>
+      )}
+      <Button variant="primary" size="md" onClick={onNext}>
+        下一题
+        <ChevronRight className="w-4 h-4" strokeWidth={2} />
+      </Button>
     </div>
   )
 }

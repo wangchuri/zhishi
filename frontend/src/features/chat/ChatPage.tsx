@@ -286,7 +286,7 @@ export function ChatPage() {
                 <span className="text-card-title font-semibold text-ink-primary flex-1">历史会话</span>
                 <button
                   onClick={handleNewSession}
-                  className="w-7 h-7 rounded-md flex items-center justify-center text-ink-tertiary hover:text-primary hover:bg-primary-soft transition-colors"
+                  className="w-8 h-8 rounded-md flex items-center justify-center text-ink-tertiary hover:text-primary hover:bg-primary-soft transition-colors"
                   title="新建会话"
                 >
                   <Plus className="w-4 h-4" strokeWidth={2} />
@@ -295,7 +295,7 @@ export function ChatPage() {
             )}
             <button
               onClick={toggleHistorySidebar}
-              className="w-7 h-7 rounded-md flex items-center justify-center text-ink-tertiary hover:text-ink-primary hover:bg-surface-soft transition-colors shrink-0"
+              className="w-8 h-8 rounded-md flex items-center justify-center text-ink-tertiary hover:text-ink-primary hover:bg-surface-soft transition-colors shrink-0"
               title={sidebarOpen ? "折叠历史" : "展开历史"}
             >
               {sidebarOpen
@@ -333,7 +333,7 @@ export function ChatPage() {
                       </span>
                       <button
                         onClick={(e) => handleDeleteSession(s, e)}
-                        className="w-5 h-5 rounded flex items-center justify-center opacity-0 group-hover:opacity-100 hover:bg-danger-soft hover:text-danger transition-all"
+                        className="w-8 h-8 rounded flex items-center justify-center opacity-100 can-hover:opacity-0 can-hover:group-hover:opacity-100 hover:bg-danger-soft hover:text-danger transition-all"
                         title="删除会话"
                       >
                         <Trash2 className="w-3 h-3" strokeWidth={2} />
@@ -393,7 +393,7 @@ export function ChatPage() {
             </div>
           </div>
 
-          <div className="border-t border-line-soft bg-surface px-8 py-4">
+          <div className="border-t border-line-soft bg-surface px-8 py-4" style={{ paddingBottom: "calc(1rem + env(safe-area-inset-bottom))" }}>
             <div className="max-w-[860px] mx-auto">
               <div className="flex flex-wrap items-center gap-2 mb-3">
                 <span className="text-small text-ink-tertiary">检索分区</span>
