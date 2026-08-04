@@ -45,6 +45,8 @@ export function QuestionGenDocPage() {
   const [questionsPerPage, setQuestionsPerPage] = useState(1)
   const [result, setResult] = useState<PageQuestionResult | null>(null)
   const [streamContent, setStreamContent] = useState<string>("")
+  const [maxQuestionsPerDoc, setMaxQuestionsPerDoc] = useState(100)
+  const [maxPagesPerGen, setMaxPagesPerGen] = useState(10)
   const streamEndRef = useRef<HTMLDivElement>(null)
 
   // 仅当用户已滚动到底部时才自动跟随（仅滚动右侧 AI 日志容器，不影响整页）
@@ -71,6 +73,37 @@ export function QuestionGenDocPage() {
   )
 
   const hasKeySelected = selectedPageList.some((p) => p.is_key_page)
+
+  // 每页出题上限：受单文档题目总数限制（由后端 config 下发）
+  const perPageMax = selectedPages.size > 0
+    ? Math.max(1, Math.floor(maxQuestionsPerDoc / selectedPages.size))
+    : 5
+
+  // 读取后端出题限制配置
+  useEffect(() => {
+    let cancelled = false
+    kbApi
+      .getConfig()
+      .then((cfg: any) => {
+        if (cancelled) return
+        if (typeof cfg.max_questions_per_document === "number" && cfg.max_questions_per_document > 0) {
+          setMaxQuestionsPerDoc(cfg.max_questions_per_document)
+        }
+        if (typeof cfg.max_pages_per_gen === "number" && cfg.max_pages_per_gen > 0) {
+          setMaxPagesPerGen(cfg.max_pages_per_gen)
+        }
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  const handleQuestionsPerPageChange = (value: string) => {
+    const n = Number(value)
+    if (!Number.isFinite(n)) return
+    setQuestionsPerPage(Math.min(Math.max(Math.round(n), 1), perPageMax))
+  }
 
   const loadPages = useCallback(async (docId: string) => {
     setLoadingPages(true)
@@ -377,20 +410,27 @@ export function QuestionGenDocPage() {
               {selectedPages.size > 0 && (
                 <div className="text-caption text-ink-disabled space-y-1">
                   {hasKeySelected && <p>· 选中页含重点内容</p>}
-                  <p>· 单次最多选择 10 页</p>
+                  <p>· 单次最多选择 {maxPagesPerGen} 页</p>
                   <div className="flex items-center gap-2 pt-2">
                     <label className="text-caption text-ink-soft shrink-0">每页出题：</label>
-                    <select
+                    <input
+                      type="number"
+                      min={1}
+                      max={perPageMax}
                       value={questionsPerPage}
-                      onChange={(e) => setQuestionsPerPage(Number(e.target.value))}
-                      className="flex-1 rounded-[4px] border border-line-light bg-paper px-2 py-1 text-small text-ink outline-none focus:border-sea"
+                      onChange={(e) => handleQuestionsPerPageChange(e.target.value)}
                       disabled={working}
-                    >
-                      {[1, 2, 3, 4, 5].map((n) => (
-                        <option key={n} value={n}>{n} 道</option>
-                      ))}
-                    </select>
+                      className="flex-1 rounded-[4px] border border-line-light bg-paper px-2 py-1 text-small text-ink outline-none focus:border-sea"
+                    />
+                    <span className="text-caption text-ink-disabled shrink-0">道/页</span>
                   </div>
+                  <p>
+                    共 {selectedPages.size} 页 × {questionsPerPage} 道 ={" "}
+                    <span className="font-medium text-ink">
+                      {selectedPages.size * questionsPerPage}
+                    </span>{" "}
+                    题（单文档上限 {maxQuestionsPerDoc} 题，每页最多 {perPageMax} 道）
+                  </p>
                 </div>
               )}
 

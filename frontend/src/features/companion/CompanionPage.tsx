@@ -5,8 +5,8 @@ import { AppShell } from "@/components/layout/AppShell"
 import { PageHeader } from "@/components/blocks/PageHeader"
 import { EmptyState } from "@/components/ui/empty-state"
 import { useKbDocuments } from "@/hooks/useKbDocuments"
-import { kbApi } from "@/lib/api"
-import { getMarkedPages, getProgress, getTipCount } from "@/lib/companionStore"
+import { kbApi, notesApi } from "@/lib/api"
+import { getMarkedPages, getProgress } from "@/lib/companionStore"
 import { CompanionBookCard } from "./CompanionBookCard"
 
 export function CompanionPage() {
@@ -22,26 +22,37 @@ export function CompanionPage() {
   } = useKbDocuments({ preferZone: "study" })
 
   const [totalPagesMap, setTotalPagesMap] = useState<Record<string, number>>({})
+  const [tipCountMap, setTipCountMap] = useState<Record<string, number>>({})
 
   const studyDocs = useMemo(() => {
     return documents.filter((d) => d.zone !== "life" || !selectedCollection?.zone)
   }, [documents, selectedCollection])
 
-  // 预取每个文档的总页数（用于显示阅读进度 X/Y）
+  // 预取每个文档的总页数 + tip 数（用于显示进度 / 计数）
   useEffect(() => {
     let cancelled = false
     const load = async () => {
-      const map: Record<string, number> = {}
+      const pages: Record<string, number> = {}
+      const tips: Record<string, number> = {}
       for (const doc of studyDocs) {
         if (cancelled) continue
         try {
           const res = await kbApi.getDocumentPages(doc.id)
-          map[doc.id] = res.total_pages ?? 0
+          pages[doc.id] = res.total_pages ?? 0
+        } catch {
+          /* ignore */
+        }
+        try {
+          const tipRes = await notesApi.listTips(doc.id)
+          tips[doc.id] = tipRes.total ?? 0
         } catch {
           /* ignore */
         }
       }
-      if (!cancelled) setTotalPagesMap(map)
+      if (!cancelled) {
+        setTotalPagesMap(pages)
+        setTipCountMap(tips)
+      }
     }
     void load()
     return () => {
@@ -110,7 +121,7 @@ export function CompanionPage() {
                 doc={doc}
                 totalPages={totalPagesMap[doc.id] ?? doc.pdf_page_count ?? null}
                 progress={getProgress(doc.id)}
-                tipCount={getTipCount(doc.id)}
+                tipCount={tipCountMap[doc.id] ?? 0}
                 markedCount={getMarkedPages(doc.id).length}
                 onClick={() => navigate(`/companion/doc/${doc.id}`)}
               />

@@ -1,19 +1,10 @@
 /**
- * 伴学本地存储（预览阶段）
- * 阅读进度 / tip（划选笔记）/ 重点页标记 先存在 localStorage，
- * 后续接入后端（UserNote + 文档/页关联 + 用户标记）时替换为 API 调用。
+ * 伴学本地存储
+ * 阅读进度 / 重点页标记 存在 localStorage。
+ * tip 已升级为后端笔记（user_notes），见 notesApi。
  */
 
-export interface CompanionTip {
-  id: string
-  page_number: number
-  title: string
-  content: string
-  created_at: string
-}
-
 const PROGRESS_KEY = "zhishi_comp_progress"
-const TIPS_KEY = "zhishi_comp_tips"
 const MARKS_KEY = "zhishi_comp_marks"
 
 function safeGet<T>(key: string, fallback: T): T {
@@ -44,32 +35,6 @@ export function setProgress(docId: string, page: number) {
   const map = safeGet<Record<string, number>>(PROGRESS_KEY, {})
   map[docId] = page
   safeSet(PROGRESS_KEY, map)
-}
-
-// ─── tip（笔记） ──────────────────────────────────
-
-export function getTips(docId: string): CompanionTip[] {
-  const map = safeGet<Record<string, CompanionTip[]>>(TIPS_KEY, {})
-  return map[docId] ?? []
-}
-
-export function getTipCount(docId: string): number {
-  return getTips(docId).length
-}
-
-export function addTip(
-  docId: string,
-  tip: Omit<CompanionTip, "id" | "created_at">
-): CompanionTip {
-  const full: CompanionTip = {
-    ...tip,
-    id: `tip-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-    created_at: new Date().toISOString(),
-  }
-  const map = safeGet<Record<string, CompanionTip[]>>(TIPS_KEY, {})
-  map[docId] = [full, ...(map[docId] ?? [])]
-  safeSet(TIPS_KEY, map)
-  return full
 }
 
 // ─── 重点页标记 ────────────────────────────────────

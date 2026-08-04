@@ -2,6 +2,8 @@ from typing import List, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.core.config import MAX_QUESTIONS_PER_DOCUMENT
+
 
 class DocumentPageOut(BaseModel):
     page_number: int
@@ -37,7 +39,8 @@ class DocumentPageDetailOut(DocumentPageOut):
 class PageGenerateRequest(BaseModel):
     document_id: str
     page_numbers: List[int] = Field(..., min_length=1)
-    questions_per_page: int = Field(default=1, ge=1, le=3)
+    # 每页出题数可手动输入，上限与单文档题目总数限制一致（服务端还会再兜底）
+    questions_per_page: int = Field(default=1, ge=1, le=MAX_QUESTIONS_PER_DOCUMENT)
 
 
 class PageExtractRequest(BaseModel):

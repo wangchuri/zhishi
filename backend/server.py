@@ -46,6 +46,15 @@ async def lifespan(app: FastAPI):
             logger.info(f"本地默认用户就绪: id={default_user['user_id']} email={default_user['email']}")
     except Exception as e:
         logger.error(f"默认用户初始化失败: {e}")
+    # 1.6 重启恢复：重新调度上次进程关闭时未完成的文档 pipeline（OCR/解析/分段/索引）
+    try:
+        from app.core.job_runner import run_in_background
+        from app.services.kb_service import run_startup_recovery
+
+        run_in_background(run_startup_recovery, name="startup-recovery")
+        logger.info("已启动文档任务恢复（后台执行）")
+    except Exception as e:
+        logger.error(f"文档任务恢复初始化失败: {e}")
     # 2. 初始化 AgentManager（按用户维度管理 ZhishiAgent 实例）
     try:
         from app.core.agent_manager import AgentManager

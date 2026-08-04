@@ -9,6 +9,9 @@ from tina.agent.core.tools import Tools
 
 logger = logging.getLogger(__name__)
 
+# get_near_page 相邻页内容上限（字符）。相邻页为补充上下文，取合理上限避免过度膨胀。
+NEAR_PAGE_MAX_CHARS = 12000
+
 
 class QuestionGenTools:
     """按题型拆分的出题提交工具包。每个工具提交一道题。"""
@@ -64,7 +67,7 @@ class QuestionGenTools:
             offset: 偏移量。-1 = 上一页，1 = 下一页，2 = 下下页。
 
         Returns:
-            该页面的标题和内容片段（最多 2000 字），或说明信息。
+            该页面的标题和内容片段（最多 12000 字），或说明信息。
         """
         # 需要知道当前页码：从已提交题目的 page_number 取最新一条
         current_page = 1
@@ -81,7 +84,7 @@ class QuestionGenTools:
         for p in self._pages_context:
             if p.get("page_number") == target:
                 title = p.get("title") or f"第 {target} 页"
-                content = (p.get("content") or "")[:2000]
+                content = (p.get("content") or "")[:NEAR_PAGE_MAX_CHARS]
                 return f"## {title}\n\n{content}"
 
         return f"页码 {target} 不在当前选中页范围内"

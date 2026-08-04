@@ -1,8 +1,10 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { useNavigate, useParams } from "react-router-dom"
 import {
   ArrowLeft,
   Bookmark,
+  Bot,
+  FileText,
   Loader2,
   Maximize,
   Minimize2,
@@ -15,9 +17,8 @@ import {
 import { AppShell } from "@/components/layout/AppShell"
 import { MarkdownWithMath } from "@/components/blocks/MarkdownWithMath"
 import { Badge } from "@/components/ui/badge"
-import { kbApi } from "@/lib/api"
+import { kbApi, notesApi } from "@/lib/api"
 import {
-  addTip,
   getMarkedPages,
   getProgress,
   isPageMarked,
@@ -26,7 +27,8 @@ import {
 } from "@/lib/companionStore"
 import { cn } from "@/lib/utils"
 import type { DocumentPage, DocumentPageDetail } from "@/types"
-import { AiFloatingBall, BALL_SIZE } from "./AiFloatingBall"
+import { CompanionChatSidebar } from "./CompanionChatSidebar"
+import { TipPanel } from "./TipPanel"
 import { PdfContinuousViewer } from "./PdfContinuousViewer"
 import { SelectionTipButton } from "./SelectionTipButton"
 import { toast } from "sonner"
@@ -56,6 +58,8 @@ export function CompanionReadPage() {
   const [ocrOpen, setOcrOpen] = useState(true)
   const [fsOcrOpen, setFsOcrOpen] = useState(false)
   const [fullscreen, setFullscreen] = useState(false)
+  const [chatOpen, setChatOpen] = useState(false)
+  const [tipOpen, setTipOpen] = useState(false)
   const [, setRevision] = useState(0)
   const markedPages = getMarkedPages(docId)
 
@@ -63,7 +67,6 @@ export function CompanionReadPage() {
   const selectionRootRef = useRef<HTMLDivElement>(null)
   const activePageRef = useRef<number | null>(null)
   const resumedRef = useRef(false)
-  const [ballPos, setBallPos] = useState<{ x: number; y: number } | null>(null)
 
   // 加载页列表 + 全文（md/txt 用于连续切片展示）
   useEffect(() => {
@@ -136,15 +139,6 @@ export function CompanionReadPage() {
     document.addEventListener("fullscreenchange", onFs)
     return () => document.removeEventListener("fullscreenchange", onFs)
   }, [])
-
-  // 悬浮球默认位置：阅读区右下靠内（普通模式测量一次）
-  useLayoutEffect(() => {
-    if (fullscreen || ballPos) return
-    const el = scrollRef.current
-    if (!el) return
-    const r = el.getBoundingClientRect()
-    setBallPos({ x: r.right - BALL_SIZE - 20, y: r.bottom - BALL_SIZE - 56 })
-  }, [fullscreen, ballPos, railOpen, ocrOpen])
 
   const previewMode = pageDetail?.preview_mode || meta?.preview_mode || "markdown"
   const isPdf = previewMode === "pdf"
@@ -219,14 +213,19 @@ export function CompanionReadPage() {
   }, [docId, activePage])
 
   const handleSaveTip = useCallback(
-    (content: string, title?: string) => {
+    async (content: string, title?: string) => {
       if (!docId || activePage == null) return
-      addTip(docId, {
-        page_number: activePage,
-        title: title?.trim() || `第 ${activePage} 页摘录`,
-        content,
-      })
-      toast.success(`已 tip 到《${docName}》第 ${activePage} 页的笔记`)
+      try {
+        await notesApi.saveTip({
+          document_id: docId,
+          page_number: activePage,
+          title: title?.trim() || `第 ${activePage} 页摘录`,
+          content,
+        })
+        toast.success(`已 tip 到《${docName}》第 ${activePage} 页的笔记`)
+      } catch {
+        toast.error("保存笔记失败，请检查服务器连接")
+      }
     },
     [docId, activePage, docName]
   )
@@ -292,8 +291,9 @@ export function CompanionReadPage() {
   return (
     <>
       {fullscreen ? (
-        /* ────── 全屏阅读：连续滚动正文 + 悬浮球 + 迷你指示条 ────── */
-        <div className="h-dvh bg-paper flex flex-col relative">
+        /* ────── 全屏阅读：连续滚动正文 + 推入式伴学侧边栏 + 迷你指示条 ────── */
+        <div className="h-dvh bg-paper flex relative">
+          <div className="flex flex-col flex-1 min-w-0 relative">
           <div
             ref={scrollRef}
             onScroll={handleScroll}
@@ -337,6 +337,30 @@ export function CompanionReadPage() {
             </button>
             <button
               type="button"
+              onClick={() => setChatOpen((v) => !v)}
+              className={cn(
+                "inline-flex items-center gap-1 h-8 px-2.5 rounded-full text-caption font-medium transition-colors",
+                chatOpen ? "bg-sea-subtle text-sea" : "text-ink-soft hover:text-sea"
+              )}
+              aria-label="打开 AI 伴学对话"
+            >
+              <Bot className="w-3.5 h-3.5" strokeWidth={2} />
+              AI
+            </button>
+            <button
+              type="button"
+              onClick={() => setTipOpen((v) => !v)}
+              className={cn(
+                "inline-flex items-center gap-1 h-8 px-2.5 rounded-full text-caption font-medium transition-colors",
+                tipOpen ? "bg-sea-subtle text-sea" : "text-ink-soft hover:text-sea"
+              )}
+              aria-label="打开本书笔记"
+            >
+              <FileText className="w-3.5 h-3.5" strokeWidth={2} />
+              笔记
+            </button>
+            <button
+              type="button"
               onClick={exitFullscreen}
               className="inline-flex items-center gap-1 h-8 px-2.5 rounded-full text-caption text-ink-soft hover:text-ink transition-colors"
               aria-label="退出全屏"
@@ -371,6 +395,18 @@ export function CompanionReadPage() {
               </div>
             </div>
           )}
+          </div>{/* 全屏正文 wrapper 结束 */}
+
+          {/* 伴学侧边栏（推入式，普通/全屏共用） */}
+          <CompanionChatSidebar
+            docId={docId}
+            docName={docName}
+            pageNumber={activePage}
+            pageContent={pageDetail?.content || ""}
+            open={chatOpen}
+            onOpenChange={setChatOpen}
+            onSaveTip={handleSaveTip}
+          />
         </div>
       ) : (
         /* ────── 普通阅读：目录 | 连续滚动主区 | OCR 文本栏 ────── */
@@ -475,6 +511,32 @@ export function CompanionReadPage() {
 
                   <button
                     type="button"
+                    onClick={() => setChatOpen((v) => !v)}
+                    className={cn(
+                      "w-9 h-9 rounded-md flex items-center justify-center transition-colors shrink-0",
+                      chatOpen ? "text-sea bg-sea-subtle" : "text-ink-disabled hover:bg-paper-2 hover:text-ink"
+                    )}
+                    aria-label="打开 AI 伴学对话"
+                    title="AI 伴学对话"
+                  >
+                    <Bot className="w-4 h-4" strokeWidth={2} />
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setTipOpen((v) => !v)}
+                    className={cn(
+                      "w-9 h-9 rounded-md flex items-center justify-center transition-colors shrink-0",
+                      tipOpen ? "text-sea bg-sea-subtle" : "text-ink-disabled hover:bg-paper-2 hover:text-ink"
+                    )}
+                    aria-label="打开本书笔记"
+                    title="本书笔记"
+                  >
+                    <FileText className="w-4 h-4" strokeWidth={2} />
+                  </button>
+
+                  <button
+                    type="button"
                     onClick={enterFullscreen}
                     className="w-9 h-9 rounded-md flex items-center justify-center text-ink-disabled hover:text-ink hover:bg-paper-2 transition-colors shrink-0"
                     aria-label="全屏阅读"
@@ -530,17 +592,27 @@ export function CompanionReadPage() {
                   </button>
                 ))}
             </div>
+
+            {/* 伴学侧边栏（推入式，挤压主内容区） */}
+            <CompanionChatSidebar
+              docId={docId}
+              docName={docName}
+              pageNumber={activePage}
+              pageContent={pageDetail?.content || ""}
+              open={chatOpen}
+              onOpenChange={setChatOpen}
+              onSaveTip={handleSaveTip}
+            />
           </div>
         </AppShell>
       )}
 
-      {/* 悬浮球 + 划选（fixed 定位，普通/全屏共用，保持对话状态） */}
-      <AiFloatingBall
-        docName={docName}
-        pageNumber={activePage}
-        pageContent={pageDetail?.content || ""}
-        onSaveTip={handleSaveTip}
-        initialPos={ballPos ?? undefined}
+      {/* 划选（普通/全屏共用） */}
+      <TipPanel
+        docId={docId}
+        open={tipOpen}
+        onOpenChange={setTipOpen}
+        onJumpToPage={scrollToPage}
       />
       <SelectionTipButton
         containerRef={selectionRootRef}

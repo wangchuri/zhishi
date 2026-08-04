@@ -12,6 +12,7 @@ def create_note(
     title: str,
     content_md: str,
     collection_id: Optional[str] = None,
+    document_id: Optional[str] = None,
     note_type: str = "manual",
 ) -> UserNote:
     row = UserNote(
@@ -19,6 +20,7 @@ def create_note(
         title=title,
         content_md=content_md,
         collection_id=collection_id,
+        document_id=document_id,
         note_type=note_type,
     )
     db.add(row)
@@ -31,12 +33,32 @@ def list_notes(
     user_id: int,
     *,
     note_type: Optional[str] = None,
+    document_id: Optional[str] = None,
     limit: int = 50,
 ) -> List[UserNote]:
     query = db.query(UserNote).filter(UserNote.user_id == user_id)
     if note_type:
         query = query.filter(UserNote.note_type == note_type)
+    if document_id:
+        query = query.filter(UserNote.document_id == document_id)
     return query.order_by(UserNote.created_at.desc()).limit(limit).all()
+
+
+def list_notes_by_document(
+    db: Session,
+    user_id: int,
+    document_id: str,
+    *,
+    note_type: Optional[str] = None,
+    limit: int = 200,
+) -> List[UserNote]:
+    return list_notes(
+        db,
+        user_id,
+        note_type=note_type,
+        document_id=document_id,
+        limit=limit,
+    )
 
 
 def get_latest_note(

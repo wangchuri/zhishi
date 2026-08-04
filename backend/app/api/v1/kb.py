@@ -3,13 +3,20 @@
 所有接口需要登录鉴权，用户隔离
 """
 import logging
+from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_active_user, get_db
-from app.core.config import DEBUG_MAX_UPLOAD_SIZE, USE_OSS, is_local_rag
+from app.core.config import (
+    DEBUG_MAX_UPLOAD_SIZE,
+    MAX_PAGES_PER_GEN,
+    MAX_QUESTIONS_PER_DOCUMENT,
+    USE_OSS,
+    is_local_rag,
+)
 from app.schemas.kb import CollectionCreate, CollectionUpdate
 from app.services import kb_service
 from app.services import page_service
@@ -283,8 +290,8 @@ def get_document_thumbnail(
         if raw_path:
             file_bytes = storage_service.read_file_at_path(raw_path)
         if file_bytes:
-            suffix = (Path(doc.name).suffix if doc.name else ".bin").lower()
-            generate_thumbnail(doc.content_hash, file_bytes, suffix.lstrip("."), filename_hint=doc.display_name or doc.name)
+            suffix = (Path(doc.display_name).suffix if doc.display_name else ".bin").lower()
+            generate_thumbnail(doc.content_hash, file_bytes, suffix.lstrip("."), filename_hint=doc.display_name)
             thumb_path = get_thumbnail_path(doc.content_hash)
 
     if not thumb_path:
@@ -308,5 +315,7 @@ def get_kb_config(
         "max_upload_size_display": (
             _format_size(DEBUG_MAX_UPLOAD_SIZE) if DEBUG_MAX_UPLOAD_SIZE else None
         ),
+        "max_questions_per_document": MAX_QUESTIONS_PER_DOCUMENT,
+        "max_pages_per_gen": MAX_PAGES_PER_GEN,
         "supported_extensions": list(SUPPORTED_EXTENSIONS.keys()),
     }

@@ -12,6 +12,7 @@ class UserNote(Base):
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
     collection_id = Column(String(36), ForeignKey("kb_collections.id"), nullable=True)
+    document_id = Column(String(36), ForeignKey("documents.id"), nullable=True, index=True)
     title = Column(String(255), nullable=False)
     content_md = Column(Text, nullable=False)
     note_type = Column(String(20), nullable=False, default="manual")

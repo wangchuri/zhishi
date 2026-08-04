@@ -18,12 +18,12 @@ type QuizBookCardProps = {
   onClick?: () => void
 }
 
-function genStatusBadge(doc: KnowledgeDoc) {
+function genStatusBadge(doc: KnowledgeDoc, hasQuestions?: boolean) {
+  if (hasQuestions) {
+    return <Badge variant="success" size="sm">可刷题</Badge>
+  }
   if (doc.question_gen_status === "processing") {
     return <Badge variant="warning" size="sm">出题中</Badge>
-  }
-  if (doc.question_gen_status === "completed") {
-    return <Badge variant="success" size="sm">可刷题</Badge>
   }
   return <Badge variant="neutral" size="sm">未出题</Badge>
 }
@@ -95,7 +95,7 @@ export function QuizBookCard({ doc, stats, onClick }: QuizBookCardProps) {
           {doc.name}
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          {genStatusBadge(doc)}
+          {genStatusBadge(doc, (stats?.total ?? 0) > 0)}
           {stats && stats.wrong > 0 && (
             <span className="text-caption text-danger">{stats.wrong} 错</span>
           )}

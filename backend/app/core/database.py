@@ -45,6 +45,7 @@ def init_db():
 
     Base.metadata.create_all(bind=engine)
     _migrate_quiz_answer_columns(engine)
+    _migrate_note_document_column(engine)
 
 
 def _migrate_quiz_answer_columns(engine) -> None:
@@ -66,3 +67,18 @@ def _migrate_quiz_answer_columns(engine) -> None:
         for col, col_type in additions:
             if col not in existing:
                 conn.execute(text(f"ALTER TABLE quiz_answers ADD COLUMN {col} {col_type}"))
+
+
+def _migrate_note_document_column(engine) -> None:
+    """为已有 SQLite 库补齐 user_notes.document_id（tip 按书关联）。"""
+    if not str(engine.url).startswith("sqlite"):
+        return
+    from sqlalchemy import inspect, text
+
+    insp = inspect(engine)
+    if "user_notes" not in insp.get_table_names():
+        return
+    existing = {c["name"] for c in insp.get_columns("user_notes")}
+    if "document_id" not in existing:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE user_notes ADD COLUMN document_id VARCHAR(36)"))

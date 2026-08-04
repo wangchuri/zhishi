@@ -11,16 +11,11 @@ from app.crud import kb as kb_crud
 from app.crud import note as note_crud
 from app.schemas.report import LearningReportGenerateOut, ReportOut
 from app.services import analytics_service
+from app.services.prompt_service import load_prompt, render_prompt
 
 logger = logging.getLogger(__name__)
 
-REPORT_SYSTEM_PROMPT = """你是知拾学习分析助手。根据用户的学习统计数据，生成一份清晰、可执行的 Markdown 学习报告。
-报告结构建议：
-1. ## 学习概览
-2. ## 薄弱知识点（按 tag）
-3. ## 题型表现
-4. ## 建议与下一步
-使用中文，语气鼓励但具体；列出优先复习的 tag 名称，便于后续针对训练。"""
+REPORT_SYSTEM_PROMPT = load_prompt("report/report_system.md.j2")
 
 _llm_instance = None
 
@@ -102,8 +97,12 @@ async def generate_learning_report(
 
     if llm:
         try:
+            input_text = render_prompt(
+                "report/report_input.md.j2",
+                variables={"stats_text": stats_text},
+            )
             resp = await llm.apredict_no_stream(
-                input_text=f"请根据以下学习数据生成 Markdown 学习报告：\n\n{stats_text}",
+                input_text=input_text,
                 sys_prompt=REPORT_SYSTEM_PROMPT,
                 temperature=0.4,
             )

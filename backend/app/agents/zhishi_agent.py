@@ -5,6 +5,7 @@ import logging
 from typing import AsyncGenerator, List, Optional, TYPE_CHECKING
 
 from app.core.config import is_local_rag
+from app.services.prompt_service import load_prompt, render_prompt
 from app.utils.tina_loader import tina_env_path
 from tina import Agent
 from tina.llm import BaseAPI
@@ -17,21 +18,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-SYSTEM_PROMPT = """你是知拾（Zhishi）的知识管理助手 Tina。你帮助用户管理知识、解答问题。
-
-## 核心能力
-- 基于用户知识库中的文档内容回答问题
-- 需要检索知识库时请调用 `zhishi_search_knowledge_base` 工具
-- 如果知识库中有相关内容，优先基于知识库回答，并引用来源
-- 如果知识库中没有相关内容，基于你自身的知识诚实回答
-- 帮助用户整理笔记、生成学习路径、解释复杂概念
-
-## 回答风格
-- 清晰、有条理，适当使用 Markdown 格式
-- 对于复杂问题，先给出概述再展开细节
-- 如果引用了知识库内容，可以标明"根据你的知识库..."
-- 使用中文回答，专业术语保留英文原文
-"""
+SYSTEM_PROMPT = load_prompt("chat/zhishi_agent.md.j2")
 
 
 class ZhishiAgent:
@@ -76,6 +63,12 @@ class ZhishiAgent:
         """Agent 是否可用"""
         return self.agent is not None
 
+    def set_system_prompt(self, prompt: str) -> None:
+        """动态更新 Agent 的系统提示词（伴学等场景按上下文注入）。"""
+        if self.agent is not None:
+            self.agent.set_system_prompt(prompt)
+            logger.debug("ZhishiAgent system_prompt updated: user_id=%s", self.user_id)
+
     async def predict_stream(
         self,
         message: str,
@@ -115,10 +108,12 @@ class ZhishiAgent:
             logger.warning(f"ZhishiAgent 知识库检索失败: {e}")
 
         if knowledge_context:
-            enhanced_message = (
-                f"请基于以下知识库内容回答用户问题。\n\n"
-                f"## 知识库相关内容\n{knowledge_context}\n\n"
-                f"## 用户问题\n{message}"
+            enhanced_message = render_prompt(
+                "chat/zhishi_rag_context.md.j2",
+                variables={
+                    "knowledge_context": knowledge_context,
+                    "user_message": message,
+                },
             )
 
         try:

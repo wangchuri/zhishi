@@ -310,7 +310,6 @@ export function QuizPage() {
 
   const docReadyForQuiz =
     selectedDocument &&
-    selectedDocument.question_gen_status === "completed" &&
     (selectedDocument.questionCount ?? 0) > 0
 
   const canStartQuiz =

@@ -22,19 +22,14 @@ from app.schemas.tutor import (
     TutorSessionCreate,
     TutorSessionOut,
 )
+from app.services.prompt_service import load_prompt, render_prompt
 from app.utils.tina_loader import tina_env_path
 
 logger = logging.getLogger(__name__)
 
 SEGMENT_MAX_CHARS = 4000
 
-SOCRATIC_RULES = """## 辅导规则
-- 你是苏格拉底式辅导老师，通过提问引导学习者思考
-- **禁止直接给出题目的最终答案**
-- 优先围绕下方「教材分段」内容讲解，不要跑题到无关知识
-- 结合学习者的困惑，用简短、清晰的中文回复
-- 适当使用 Markdown 列表或加粗突出重点
-"""
+SOCRATIC_RULES = load_prompt("tutor/socratic_rules.md.j2")
 
 _in_memory_history: dict[str, List[dict]] = {}
 
@@ -112,16 +107,16 @@ def _build_system_prompt(
     else:
         user_part = ""
 
-    return (
-        "你是知拾（Zhishi）的苏格拉底式辅导老师 Tina。\n\n"
-        f"{SOCRATIC_RULES}\n"
-        f"## 当前辅导题目\n{_format_question_block(question)}\n"
-        f"{user_part}"
-        f"## 内部参考（仅供你判断，禁止直接告诉学习者）\n"
-        f"**正确答案**：{question.answer or '（未知）'}\n\n"
-        f"## 教材分段（辅导依据）\n"
-        f"**章节**：{title}\n\n"
-        f"{segment_text}\n"
+    return render_prompt(
+        "tutor/socratic_prompt.md.j2",
+        variables={
+            "socratic_rules": SOCRATIC_RULES,
+            "question_block": _format_question_block(question),
+            "user_part": user_part,
+            "correct_answer": question.answer or "（未知）",
+            "segment_title": title,
+            "segment_text": segment_text,
+        },
     )
 
 

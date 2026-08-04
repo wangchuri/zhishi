@@ -342,10 +342,6 @@ export const kbApi = {
 // ─── Questions ─────────────────────────────────────────
 
 export const questionsApi = {
-  generate(data: { document_id?: string; segment_ids?: string[] }) {
-    return request<any>("POST", "/api/v1/questions/generate", data)
-  },
-
   list(params: { document_id?: string }) {
     const qs = params.document_id ? `?document_id=${params.document_id}` : ""
     return request<any>("GET", `/api/v1/questions${qs}`)
@@ -399,10 +395,6 @@ export const questionsApi = {
 
   get(questionId: string) {
     return request<any>("GET", `/api/v1/questions/${questionId}`)
-  },
-
-  extractFromPages(data: { document_id: string; page_numbers: number[] }) {
-    return request<PageQuestionResult>("POST", "/api/v1/questions/extract-from-pages", data)
   },
 
   deleteByDocument(documentId: string) {
@@ -626,4 +618,92 @@ export const trainingApi = {
   },
 }
 
+// ─── Companion (伴学对话，按书持久化) ───────────────────────
+
+export interface CompanionMessage {
+  role: string
+  content: string
+  created_at?: string
+  citations?: Citation[]
+}
+
+export const companionApi = {
+  /** 伴学 SSE 流式对话，自动附带当前页码/页内容 */
+  async sendStream(options: {
+    document_id: string
+    content: string
+    page_number?: number | null
+    page_content?: string
+    onChunk?: (data: Record<string, unknown>) => void
+  }): Promise<string> {
+    const { document_id, content, page_number, page_content, onChunk } = options
+    const res = await fetch(`${getApiBase()}/api/v1/companion/chat`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        document_id,
+        content,
+        page_number: page_number ?? null,
+        page_content: page_content ?? "",
+      }),
+    })
+
+    if (!res.ok) {
+      const err = await res.text()
+      throw new Error(err)
+    }
+
+    return readSseStream(res, onChunk)
+  },
+
+  /** 获取某本书的伴学对话历史 */
+  getHistory(documentId: string) {
+    return request<{ document_id: string; document_name: string; updated_at?: string; messages: CompanionMessage[] }>(
+      "GET",
+      `/api/v1/companion/sessions/${documentId}`
+    )
+  },
+}
+
 export type { Citation }
+
+// ─── Notes (笔记 / tip) ─────────────────────────────────
+
+export interface NoteItem {
+  id: string
+  title: string
+  content_md: string
+  collection_id?: string | null
+  document_id?: string | null
+  note_type: string
+  created_at?: string
+}
+
+export interface NoteListResult {
+  notes: NoteItem[]
+  total: number
+}
+
+export const notesApi = {
+  /** 保存一条伴学 tip 到后端笔记 */
+  saveTip(data: { document_id: string; page_number: number; title: string; content: string }) {
+    return request<NoteItem>("POST", "/api/v1/notes/tips", data)
+  },
+
+  /** 列出笔记（可按文档 / 类型过滤） */
+  list(params?: { document_id?: string; note_type?: string; limit?: number }) {
+    const qs = new URLSearchParams()
+    if (params?.document_id) qs.set("document_id", params.document_id)
+    if (params?.note_type) qs.set("note_type", params.note_type)
+    if (params?.limit != null) qs.set("limit", String(params.limit))
+    const suffix = qs.toString() ? `?${qs.toString()}` : ""
+    return request<NoteListResult>("GET", `/api/v1/notes${suffix}`)
+  },
+
+  /** 列出某本书的全部 tip（用于阅读页面板 / 卡片计数） */
+  listTips(documentId: string) {
+    return request<NoteListResult>("GET", `/api/v1/notes/tips/${documentId}`)
+  },
+}

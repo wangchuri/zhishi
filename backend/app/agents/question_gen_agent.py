@@ -17,6 +17,7 @@ import threading
 import time
 from typing import AsyncGenerator, Callable, List, Optional, Tuple
 
+from app.services.prompt_service import load_prompt
 from app.utils.tina_loader import tina_env_path
 from tina import Agent
 from tina.llm import BaseAPI
@@ -28,43 +29,7 @@ logger = logging.getLogger(__name__)
 
 _MAX_RETRY_ROUNDS = 3
 
-GENERATE_SYSTEM_PROMPT = """你是知拾（Zhishi）的智能出题助手，根据给定的教材页面内容生成练习题。
-
-## 工作流程
-1. 阅读选中页面的内容
-2. 如果需要对某个知识点补充更多上下文，调用 search_document_content 检索本文档的段落
-3. **按页面逐页逐题提交**：对每页中的每个核心知识点，分别调用对应的提交工具，一次调用提交一道题
-4. 所有题目提交完毕后回复「出题完成」
-
-## 提交工具（**你可以同时调用多个工具提交多道题**）
-Tina 支持并行工具调用，你可以一次性调用多个 submit_* 工具来同时提交多道题。
-
-- submit_single_choice：提交一道单选题（含 A/B/C/D 四个选项）
-- submit_fill_blank：提交一道填空题（stem 用 ___ 或 {{blank}} 表示空位）
-- submit_short_answer：提交一道简答题
-- submit_application：提交一道应用题
-- submit_custom_question：提交一道自定义 HTML 题型（用于复杂交互，含 html_content 和 answer_params）
-- get_near_page(offset)：获取相邻页面内容（-1=上一页，1=下一页，2=下下页），当前页面内容不完整时使用
-
-### 所有工具公共参数
-- stem：题干
-- explanation：解题思路与知识点解析
-- tags：知识点标签列表，**必须复用已有的 tag 名称**，不要创建同义不同名的标签
-- reference_text：题目所依据的原文关键片段（50-200字）
-- source：题目来源，"textbook"（书中例题/习题）或 "ai_generated"（AI自行设计）
-- page_number：题目对应的页码
-
-## 出题要求
-- 覆盖该页面的核心知识点，难度适中
-- 单选题需提供 A/B/C/D 四个选项，answer 必须是 A/B/C/D 之一
-- 填空题 answer 为 JSON 数组字符串如 '["答案1","答案2"]' 或分号分隔
-- 简答题/应用题 answer 为标准答案要点
-- tags 示例：["微积分", "定积分", "牛顿-莱布尼茨公式"]、["Python", "列表推导式", "性能优化"]
-  不要创建 "自动生成"、"第1页" 这类无意义的标签
-
-## 题目来源
-- source 为 "textbook"：页面中的现成例题、习题（如"例1"、"练习"、"思考题"等）
-- source 为 "ai_generated"：结合书本知识点和你的知识自行设计"""
+GENERATE_SYSTEM_PROMPT = load_prompt("question_gen/generate_questions.md.j2")
 
 
 class QuestionGenWorker:
@@ -236,7 +201,7 @@ class QuestionGenWorker:
         context_parts = []
         for p in pages:
             title = p.get("title") or f"第 {p.get('page_number', '?')} 页"
-            content = (p.get("content") or "")[:3000]
+            content = p.get("content") or ""
             context_parts.append(f"## {title}\n\n{content}")
         all_content = "\n\n---\n\n".join(context_parts)
 
@@ -288,7 +253,7 @@ class QuestionGenWorker:
         context_parts = []
         for p in pages:
             title = p.get("title") or f"第 {p.get('page_number', '?')} 页"
-            content = (p.get("content") or "")[:3000]
+            content = p.get("content") or ""
             context_parts.append(f"## {title}\n\n{content}")
         all_content = "\n\n---\n\n".join(context_parts)
 

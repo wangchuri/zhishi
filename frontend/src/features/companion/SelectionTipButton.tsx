@@ -99,7 +99,7 @@ export function SelectionTipButton({
           <DialogHeader>
             <DialogTitle>tip 到笔记</DialogTitle>
             <DialogDescription>
-              将自动归档到《{docName}》第 {pageNumber ?? "—"} 页的笔记（预览为本地保存）
+              将保存到《{docName}》第 {pageNumber ?? "—"} 页的笔记（同步到笔记页）
             </DialogDescription>
           </DialogHeader>
 

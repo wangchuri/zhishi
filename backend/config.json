@@ -8,7 +8,7 @@
   "pdf_ocr_max_pages": 1500,
   "pdf_max_pages": 0,
   "pdf_ocr_render_dpi": 150,
-  "max_questions_per_document": 20,
+  "max_questions_per_document": 100,
   "document_pipeline_async": true,
   "question_gen_async": true,
   "llm_async": true,

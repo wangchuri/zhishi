@@ -219,3 +219,25 @@ class ChatSession(BaseModel):
 class ChatSessionList(BaseModel):
     sessions: List[ChatSession]
 
+
+# ─── 伴学对话（按书持久化的阅读助手） ──────────────────────
+
+class CompanionChatRequest(BaseModel):
+    document_id: str
+    content: str
+    page_number: Optional[int] = None
+    page_content: Optional[str] = None
+
+
+class CompanionHistoryItem(BaseModel):
+    role: str
+    content: str
+    created_at: datetime
+
+
+class CompanionSessionOut(BaseModel):
+    document_id: str
+    document_name: str
+    updated_at: datetime
+    messages: List[CompanionHistoryItem]
+

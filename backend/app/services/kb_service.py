@@ -147,6 +147,110 @@ def _finish_indexing_status(db: Session, doc: Document) -> None:
         db.commit()
 
 
+# ─── 重启恢复 ────────────────────────────────────────────
+# 文档 pipeline 在后台线程执行，进程被强制关闭后文档会卡在
+# indexing_status="processing"。启动时调用下面的逻辑把中断任务重新调度。
+
+def _recover_document_task(db: Session, doc: Document) -> None:
+    """按中断阶段恢复单个文档：解析已完成→重跑分段/索引；否则重新调度 pipeline。"""
+    global_doc = doc.global_document
+    has_parsed = bool(
+        doc.parsed_cache_key
+        or (global_doc and global_doc.parsed_text_path)
+    )
+
+    if has_parsed:
+        logger.info(
+            "恢复分段/索引（解析已完成）: document_id=%s", doc.id
+        )
+        _maybe_trigger_segment(db, doc)
+        db.refresh(doc)
+        _finish_indexing_status(db, doc)
+        return
+
+    if not global_doc or not global_doc.storage_path:
+        logger.warning(
+            "恢复失败：文档无存储文件，标记 failed: document_id=%s", doc.id
+        )
+        doc.indexing_status = "failed"
+        if doc.zone == "study":
+            doc.segment_status = "failed"
+        return
+
+    storage_path = global_doc.storage_path
+    suffix = Path(doc.display_name).suffix.lower()
+
+    if suffix in IMAGE_EXTENSIONS:
+        logger.info("恢复图片 OCR: document_id=%s", doc.id)
+        _start_async_image_ocr(doc, storage_path)
+        return
+
+    defer, pages = _should_defer_pdf_ocr(
+        storage_path, suffix, has_parsed_text=False
+    )
+    if defer:
+        logger.info(
+            "恢复扫描 PDF OCR: document_id=%s, pages=%d", doc.id, pages
+        )
+        _start_async_pdf_ocr(doc, storage_path, doc.display_name, pages)
+        return
+
+    logger.info("恢复文档 pipeline: document_id=%s", doc.id)
+    _start_document_pipeline(doc)
+
+
+def recover_interrupted_documents(db: Session) -> int:
+    """重新调度所有卡在 processing/pending 的文档任务。返回恢复数量。"""
+    docs = (
+        db.query(Document)
+        .filter(Document.indexing_status.in_(["processing", "pending"]))
+        .all()
+    )
+    recovered = 0
+    for doc in docs:
+        try:
+            _recover_document_task(db, doc)
+            recovered += 1
+        except Exception:
+            logger.exception("recover document failed: document_id=%s", doc.id)
+    db.commit()
+    return recovered
+
+
+def reset_interrupted_question_gen(db: Session) -> int:
+    """出题 agent 上下文仅存内存，中断后把卡住的 processing 重置回 not_started。"""
+    docs = (
+        db.query(Document)
+        .filter(Document.question_gen_status == "processing")
+        .all()
+    )
+    for d in docs:
+        d.question_gen_status = "not_started"
+    if docs:
+        db.commit()
+        logger.info(
+            "重置 %d 个中断的出题状态为 not_started", len(docs)
+        )
+    return len(docs)
+
+
+def run_startup_recovery() -> None:
+    """启动时恢复（后台线程执行，避免阻塞服务启动）。"""
+    db = SessionLocal()
+    try:
+        recovered = recover_interrupted_documents(db)
+        reset = reset_interrupted_question_gen(db)
+        logger.info(
+            "启动恢复完成: 重新调度 %d 个文档, 重置 %d 个出题状态",
+            recovered,
+            reset,
+        )
+    except Exception:
+        logger.exception("启动恢复失败")
+    finally:
+        db.close()
+
+
 def _ensure_document_parsed(db: Session, doc: Document) -> bool:
     """解析文档文本并写入 global 缓存。成功返回 True。"""
     if doc.parsed_cache_key:

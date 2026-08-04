@@ -375,6 +375,37 @@ class LocalStorage:
                 })
         return sessions
 
+    # ─── 伴学对话记录文件（按文档独立保存） ─────────────────
+
+    def save_companion_history(self, user_id: int, document_id: str, data: dict) -> str:
+        """保存伴学对话的完整消息历史（每本书记录一个文件）"""
+        import json as _json
+        d = self._user_dir(user_id, "companion")
+        path = d / f"{document_id}.json"
+        path.write_text(_json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+        return str(path)
+
+    def load_companion_history(self, user_id: int, document_id: str) -> Optional[dict]:
+        """读取伴学对话的完整消息历史"""
+        import json as _json
+        d = self._user_dir(user_id, "companion")
+        path = d / f"{document_id}.json"
+        if not path.exists():
+            return None
+        try:
+            return _json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            return None
+
+    def delete_companion_history(self, user_id: int, document_id: str) -> bool:
+        """删除某本书的伴学对话记录"""
+        d = self._user_dir(user_id, "companion")
+        path = d / f"{document_id}.json"
+        if path.exists():
+            path.unlink()
+            return True
+        return False
+
 
 class FileStorageService:
     """
@@ -429,6 +460,17 @@ class FileStorageService:
 
     def list_chat_sessions(self, user_id: int) -> List[dict]:
         return self._backend.list_chat_sessions(user_id)
+
+    # ─── 伴学对话记录 ────────────────────────────────────
+
+    def save_companion_history(self, user_id: int, document_id: str, data: dict) -> str:
+        return self._backend.save_companion_history(user_id, document_id, data)
+
+    def load_companion_history(self, user_id: int, document_id: str) -> Optional[dict]:
+        return self._backend.load_companion_history(user_id, document_id)
+
+    def delete_companion_history(self, user_id: int, document_id: str) -> bool:
+        return self._backend.delete_companion_history(user_id, document_id)
 
     # ─── 全局去重存储 ─────────────────────────────────────
 

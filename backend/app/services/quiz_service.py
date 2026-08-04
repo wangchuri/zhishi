@@ -14,6 +14,7 @@ from app.crud import question as question_crud
 from app.crud import quiz as quiz_crud
 from app.models import DocumentSegment, GlobalQuestion, UserQuestionRef
 from app.schemas.question import QuestionOption
+from app.services.prompt_service import load_prompt, render_prompt
 from app.schemas.quiz import (
     AnswerResult,
     CitationOut,
@@ -63,11 +64,7 @@ def _build_citation(
 
 _BLANK_PATTERN = re.compile(r"_{3,}|\{\{blank\}\}", re.IGNORECASE)
 
-GRADE_AI_SYS_PROMPT = """你是考研辅导场景的判题助手。根据题干、标准答案和学生答案，判断答题情况。
-只输出一行 JSON，格式：{"status":"correct"|"partial"|"wrong","reason":"简短中文理由"}
-- correct: 答案正确或语义等价（如「3」与「三」、同义表述）
-- partial: 部分正确、要点不全
-- wrong: 错误或未答到要点"""
+GRADE_AI_SYS_PROMPT = load_prompt("quiz/grade_system.md.j2")
 
 
 def _normalize_blank_text(text: str) -> str:
@@ -164,12 +161,14 @@ async def _grade_by_ai(
         if qtype == "fill_blank":
             parts = _parse_multi_blank_values(question.answer)
             correct_display = "；".join(parts)
-        prompt = (
-            f"题型：{type_label}\n"
-            f"题干：{question.stem}\n"
-            f"标准答案：{correct_display}\n"
-            f"学生答案：{user_answer}\n"
-            "请输出 JSON。"
+        prompt = render_prompt(
+            "quiz/grade_prompt.md.j2",
+            variables={
+                "type_label": type_label,
+                "stem": question.stem,
+                "correct_display": correct_display,
+                "user_answer": user_answer,
+            },
         )
         resp = await llm.apredict_no_stream(
             input_text=prompt,
@@ -255,11 +254,6 @@ def _resolve_question_ids(
         if not doc:
             raise HTTPException(status_code=404, detail="文档不存在")
         resolved_doc_id = doc.id
-        if doc.question_gen_status != "completed":
-            raise HTTPException(
-                status_code=409,
-                detail="文档尚未出题完成，请先生成题目",
-            )
 
     if collection_id:
         coll = kb_crud.get_collection(db, user_id, collection_id)
@@ -273,6 +267,14 @@ def _resolve_question_ids(
         collection_id=collection_id,
     )
     ids = [q.id for _, q in rows]
+
+    # 文档/分区下确实没有任何题时给出明确提示
+    # （不依赖 question_gen_status 标记：可能因中断/恢复导致标记非 completed 但已有题目）
+    if not ids and (document_id or collection_id):
+        raise HTTPException(
+            status_code=409,
+            detail="该文档暂无可用题目，请先生成题目",
+        )
 
     # 按 filter 模式过滤
     if filter_mode != "all" and ids:

@@ -171,8 +171,8 @@ export function QuizDocDetailPage() {
           <div>
             <h1 className="text-card-title font-semibold text-ink-primary mb-1">{doc.name}</h1>
             <div className="flex flex-wrap gap-2">
-              <Badge variant={doc.question_gen_status === "completed" ? "success" : "neutral"} size="sm">
-                {doc.question_gen_status === "completed" ? "可刷题" : doc.question_gen_status === "processing" ? "出题中" : "未出题"}
+              <Badge variant={hasQuestions ? "success" : "neutral"} size="sm">
+                {hasQuestions ? "可刷题" : doc.question_gen_status === "processing" ? "出题中" : "未出题"}
               </Badge>
               {doc.type && <Badge variant="primary" size="sm">{doc.type.toUpperCase()}</Badge>}
             </div>
@@ -221,7 +221,7 @@ export function QuizDocDetailPage() {
             </div>
           )}
 
-          {hasQuestions && doc.question_gen_status === "completed" ? (
+          {hasQuestions ? (
             <div className="bg-surface border border-line-soft rounded-lg p-4 space-y-3">
               <div className="text-card-title font-semibold text-ink-primary">开始刷题</div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">

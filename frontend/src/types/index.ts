@@ -28,6 +28,12 @@ export interface Note {
   hasAISummary: boolean
   organized: boolean
   category?: string
+  /** 后端 note 字段（tip 等来源） */
+  content_md?: string
+  document_id?: string | null
+  note_type?: string
+  created_at?: string
+  page_number?: number
 }
 
 /** 知识库文档 */
