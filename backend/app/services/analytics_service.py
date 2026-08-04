@@ -230,3 +230,77 @@ def get_tag_stats(
 
     return TagStatsListOut(by_tag=tag_out, by_question_type=type_out)
 
+
+# ─── 学习时长（活跃心跳 + 刷题时长） ───────────────────────
+
+def add_active_seconds(db: Session, user_id: int, seconds: int) -> dict:
+    """累加用户今日活跃秒数，并返回汇总。"""
+    from datetime import datetime as _dt
+
+    from sqlalchemy import func as _func
+
+    from app.models.activity import DailyActivity
+    from app.models.quiz_session import QuizAnswer
+
+    seconds = max(0, min(seconds, 90))
+    if seconds <= 0:
+        return get_activity_stats(db, user_id)
+
+    today = _dt.utcnow().date()
+    row = (
+        db.query(DailyActivity)
+        .filter(DailyActivity.user_id == user_id, DailyActivity.activity_date == today)
+        .first()
+    )
+    if row is None:
+        row = DailyActivity(user_id=user_id, activity_date=today, active_seconds=0)
+        db.add(row)
+    row.active_seconds = (row.active_seconds or 0) + seconds
+    db.commit()
+    return get_activity_stats(db, user_id)
+
+
+def get_activity_stats(db: Session, user_id: int) -> dict:
+    """返回活跃时长与刷题时长（今日 + 累计）。"""
+    from datetime import datetime as _dt
+
+    from sqlalchemy import func as _func
+
+    from app.models.activity import DailyActivity
+    from app.models.quiz_session import QuizAnswer
+
+    today = _dt.utcnow().date()
+    active_rows = (
+        db.query(
+            DailyActivity.activity_date,
+            _func.coalesce(_func.sum(DailyActivity.active_seconds), 0),
+        )
+        .filter(DailyActivity.user_id == user_id)
+        .group_by(DailyActivity.activity_date)
+        .all()
+    )
+    today_active = 0
+    total_active = 0
+    for d, s in active_rows:
+        total_active += int(s or 0)
+        if d == today:
+            today_active = int(s or 0)
+
+    def _sum_quiz(since: Optional[_dt] = None) -> int:
+        q = db.query(_func.coalesce(_func.sum(QuizAnswer.time_spent_seconds), 0)).filter(
+            QuizAnswer.user_id == user_id
+        )
+        if since is not None:
+            q = q.filter(QuizAnswer.answered_at >= since)
+        return int(q.scalar() or 0)
+
+    start_of_today = _dt(today.year, today.month, today.day)
+    today_quiz = _sum_quiz(start_of_today)
+    total_quiz = _sum_quiz()
+
+    return {
+        "today_active_seconds": today_active,
+        "total_active_seconds": total_active,
+        "today_quiz_seconds": today_quiz,
+        "total_quiz_seconds": total_quiz,
+    }

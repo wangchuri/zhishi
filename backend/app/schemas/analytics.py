@@ -74,4 +74,13 @@ class TagStatsOut(BaseModel):
 class TagStatsListOut(BaseModel):
     by_tag: List[TagStatsOut] = []
     by_question_type: List[TagStatsOut] = []
-
+
+class ActivityReportIn(BaseModel):
+    seconds: int = 30
+
+
+class ActivityStatsOut(BaseModel):
+    today_active_seconds: int = 0
+    total_active_seconds: int = 0
+    today_quiz_seconds: int = 0
+    total_quiz_seconds: int = 0

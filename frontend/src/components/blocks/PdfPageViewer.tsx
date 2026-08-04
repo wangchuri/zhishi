@@ -21,14 +21,14 @@ function isRenderCancelled(err: unknown): boolean {
   return err instanceof Error && err.name === "RenderingCancelledException"
 }
 
-interface PdfPageCanvasProps {
+export interface PdfPageCanvasProps {
   pdf: PDFDocumentProxy
   pageNumber: number
   className?: string
   lazy?: boolean
 }
 
-function PdfPageCanvas({ pdf, pageNumber, className, lazy = false }: PdfPageCanvasProps) {
+export function PdfPageCanvas({ pdf, pageNumber, className, lazy = false }: PdfPageCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const renderTaskRef = useRef<RenderTask | null>(null)

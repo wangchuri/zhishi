@@ -1,8 +1,9 @@
 import { useState, useRef, useEffect } from "react"
-import { Search, PanelRight, Server, Menu, Wifi, WifiOff } from "lucide-react"
+import { Search, PanelRight, Server, Menu, Wifi, WifiOff, Maximize, Minimize2 } from "lucide-react"
 import { useLocation, useNavigate } from "react-router-dom"
 import { useUI } from "@/context/UIContext"
 import { useAuth } from "@/context/AuthContext"
+import { useFullscreen } from "@/hooks/useFullscreen"
 import { cn } from "@/lib/utils"
 
 const titleMap: Record<string, string> = {
@@ -18,6 +19,13 @@ const titleMap: Record<string, string> = {
   "/profile": "个人学习画像",
   "/settings": "设置",
   "/settings/diagnostics": "诊断与修复",
+  "/companion": "伴学",
+}
+
+function resolveTitle(pathname: string): string {
+  if (titleMap[pathname]) return titleMap[pathname]
+  if (pathname.startsWith("/companion/doc/")) return "伴学阅读"
+  return "知拾"
 }
 
 export function Topbar() {
@@ -25,9 +33,10 @@ export function Topbar() {
   const navigate = useNavigate()
   const { rightPanelOpen, toggleRightPanel, toggleMobileMenu } = useUI()
   const { user, server } = useAuth()
+  const { isFs, toggle } = useFullscreen()
   const [menuOpen, setMenuOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
-  const title = titleMap[location.pathname] ?? "知拾"
+  const title = resolveTitle(location.pathname)
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -77,6 +86,23 @@ export function Topbar() {
 
       {/* 右侧：操作 */}
       <div className="flex items-center gap-2 shrink-0">
+        {/* 全屏切换 */}
+        <button
+          onClick={toggle}
+          className={cn(
+            "inline-flex items-center justify-center w-10 h-10 rounded-[4px] transition-colors",
+            isFs ? "text-sea bg-sea-subtle" : "text-ink-soft hover:bg-sea-subtle hover:text-sea",
+          )}
+          aria-label={isFs ? "退出全屏" : "进入全屏"}
+          title={isFs ? "退出全屏" : "进入全屏"}
+        >
+          {isFs ? (
+            <Minimize2 className="w-[18px] h-[18px]" strokeWidth={2} />
+          ) : (
+            <Maximize className="w-[18px] h-[18px]" strokeWidth={2} />
+          )}
+        </button>
+
         <button
           onClick={toggleRightPanel}
           className={cn(

@@ -278,7 +278,7 @@ def get_document_thumbnail(
     if not thumb_path and doc.content_hash:
         # 动态生成
         from app.services.storage_service import storage_service
-        raw_path = doc.raw_storage_path
+        raw_path = doc.global_document.storage_path if doc.global_document else None
         file_bytes = None
         if raw_path:
             file_bytes = storage_service.read_file_at_path(raw_path)

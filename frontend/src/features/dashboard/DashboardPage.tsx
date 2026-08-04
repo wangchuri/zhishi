@@ -21,7 +21,8 @@ import { RecommendCard } from "@/components/blocks/RecommendCard"
 import { RecentList } from "@/components/blocks/RecentList"
 import { Button } from "@/components/ui/button"
 import { useAuth } from "@/context/AuthContext"
-import { chatApi, kbApi, dashboardApi } from "@/lib/api"
+import { chatApi, kbApi, dashboardApi, analyticsApi } from "@/lib/api"
+import type { ActivityStats } from "@/types"
 
 const quickActions = [
   { id: "quiz", title: "题库页", description: "基于学习资料检验掌握", to: "/quiz" },
@@ -60,6 +61,7 @@ export function DashboardPage() {
   }>>([])
   const [suggestions, setSuggestions] = useState<string[]>(["上传文档，开启智能学习", "完善学习画像，获得精准推荐"])
   const [searchInput, setSearchInput] = useState("")
+  const [activity, setActivity] = useState<ActivityStats | null>(null)
 
   const handleSearch = () => {
     const q = searchInput.trim()
@@ -107,6 +109,10 @@ export function DashboardPage() {
           setSuggestions(res.suggestions)
         }
       })
+      .catch(() => {})
+
+    analyticsApi.getActivity()
+      .then(setActivity)
       .catch(() => {})
   }, [])
 
@@ -195,20 +201,40 @@ export function DashboardPage() {
         )}
       </div>
 
-      <RightPanelSlot suggestions={suggestions} />
+      <RightPanelSlot suggestions={suggestions} activity={activity} />
     </AppShell>
   )
 }
 
-function RightPanelSlot({ suggestions }: { suggestions: string[] }) {
+function formatDuration(seconds: number): string {
+  if (seconds < 60) return "<1 分钟"
+  const m = Math.round(seconds / 60)
+  if (m < 60) return `${m} 分钟`
+  const h = Math.floor(m / 60)
+  const mm = m % 60
+  return mm ? `${h} 小时 ${mm} 分` : `${h} 小时`
+}
+
+function RightPanelSlot({
+  suggestions,
+  activity,
+}: {
+  suggestions: string[]
+  activity: ActivityStats | null
+}) {
   const navigate = useNavigate()
+  const learnValue = activity ? formatDuration(activity.today_active_seconds) : "—"
+  const quizNote =
+    activity && activity.today_quiz_seconds > 0
+      ? ` · 刷题 ${formatDuration(activity.today_quiz_seconds)}`
+      : ""
   return (
     <RightPanel title="今日状态">
       <div className="space-y-6">
         <section>
           <h3 className="font-display text-title-s text-ink mb-3">今日学习</h3>
           <div className="space-y-2.5">
-            <StatusRow icon={Clock} label="学习时长" value="—" />
+            <StatusRow icon={Clock} label="学习时长" value={learnValue + quizNote} />
             <StatusRow icon={FileStack} label="待复习" value="—" />
             <StatusRow icon={FileText} label="待整理" value="—" />
           </div>

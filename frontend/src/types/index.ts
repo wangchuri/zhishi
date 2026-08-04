@@ -310,6 +310,14 @@ export interface TagStatsResult {
   by_question_type: TagStats[]
 }
 
+/** 学习时长（活跃心跳 + 刷题时长，今日 + 累计） */
+export interface ActivityStats {
+  today_active_seconds: number
+  total_active_seconds: number
+  today_quiz_seconds: number
+  total_quiz_seconds: number
+}
+
 /** 学习报告 */
 export interface LearningReport {
   id: string

@@ -234,3 +234,14 @@ class QuestionGenTools:
             "answer_params": answer_params,
         })
         return json.dumps({"status": "ok", "count": len(self._submitted_questions)}, ensure_ascii=False)
+if __name__ == "__main__":
+    qt = QuestionGenTools()
+    from tina import Agent
+    from tina.llm import BaseAPI
+
+    agent = Agent(
+        llm=BaseAPI(env_path=r"D:\development\projects\zhishi\backend\tina.env"),
+        tools=qt.get_tools()
+    )
+    from tina.utils.run_agent_in_cli import run_agent_in_cli
+    run_agent_in_cli(agent)

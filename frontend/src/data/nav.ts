@@ -13,6 +13,7 @@ import {
   Settings,
   Stethoscope,
   Target,
+  BookOpen,
 } from "lucide-react"
 
 export const navGroups: NavGroup[] = [
@@ -34,6 +35,7 @@ export const navGroups: NavGroup[] = [
   {
     title: "学习",
     items: [
+      { label: "伴学", to: "/companion", icon: BookOpen },
       { label: "学习分析", to: "/analytics", icon: BarChart3 },
       { label: "针对训练", to: "/training/targeted", icon: Target },
       { label: "智能提醒", to: "/reminders", icon: Bell },

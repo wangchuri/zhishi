@@ -530,6 +530,20 @@ export const analyticsApi = {
       "/api/v1/analytics/learning-report"
     )
   },
+
+  /** 学习时长：活跃 + 刷题（今日 + 累计） */
+  getActivity() {
+    return request<import("@/types").ActivityStats>("GET", "/api/v1/analytics/activity")
+  },
+
+  /** 心跳上报活跃秒数（前端计时，单次上限 90s） */
+  reportActivity(seconds: number) {
+    return request<import("@/types").ActivityStats>(
+      "POST",
+      "/api/v1/analytics/activity",
+      { seconds }
+    )
+  },
 }
 
 // ─── Reports (学习报告) ─────────────────────────────────

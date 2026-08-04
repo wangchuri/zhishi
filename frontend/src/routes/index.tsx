@@ -20,6 +20,8 @@ import { QuizDocDetailPage } from "@/features/quiz/QuizDocDetailPage"
 import { QuizPage } from "@/features/quiz/QuizPage"
 import { QuestionGenPage } from "@/features/question-gen/QuestionGenPage"
 import { QuestionGenDocPage } from "@/features/question-gen/QuestionGenDocPage"
+import { CompanionPage } from "@/features/companion/CompanionPage"
+import { CompanionReadPage } from "@/features/companion/CompanionReadPage"
 
 function RequireServer({ children }: { children: React.ReactElement }) {
   const { checkServer } = useAuth()
@@ -73,6 +75,8 @@ export function AppRoutes() {
       <Route path="/quiz/session" element={<RequireServer><QuizPage /></RequireServer>} />
       <Route path="/question-gen" element={<RequireServer><QuestionGenPage /></RequireServer>} />
       <Route path="/question-gen/doc/:documentId" element={<RequireServer><QuestionGenDocPage /></RequireServer>} />
+      <Route path="/companion" element={<RequireServer><CompanionPage /></RequireServer>} />
+      <Route path="/companion/doc/:docId" element={<RequireServer><CompanionReadPage /></RequireServer>} />
       <Route path="/settings/diagnostics" element={<RequireServer><DiagnosticsPage /></RequireServer>} />
       <Route path="*" element={<Navigate to={isServerConfigured() ? "/" : "/setup"} replace />} />
     </Routes>

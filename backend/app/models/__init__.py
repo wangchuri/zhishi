@@ -6,6 +6,7 @@ from .tutor import TutorSession
 from .tag import QuestionTag
 from .note import UserNote
 from .training_plan import TrainingPlan
+from .activity import DailyActivity
 
 __all__ = [
     "User",
@@ -24,4 +25,5 @@ __all__ = [
     "QuestionTag",
     "UserNote",
     "TrainingPlan",
+    "DailyActivity",
 ]

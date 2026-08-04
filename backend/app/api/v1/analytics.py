@@ -3,11 +3,35 @@ from typing import Optional
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_active_user, get_db
-from app.schemas.analytics import LearningStatsOut, TagStatsListOut
+from app.schemas.analytics import (
+    ActivityReportIn,
+    ActivityStatsOut,
+    LearningStatsOut,
+    TagStatsListOut,
+)
 from app.schemas.report import LearningReportGenerateOut
 from app.services import analytics_service, report_service
 
 router = APIRouter(tags=["学习分析"])
+
+
+@router.post("/activity", response_model=ActivityStatsOut)
+def report_activity(
+    payload: ActivityReportIn,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_active_user),
+):
+    """前端心跳上报：累计用户今日活跃秒数。"""
+    return analytics_service.add_active_seconds(db, current_user["user_id"], payload.seconds)
+
+
+@router.get("/activity", response_model=ActivityStatsOut)
+def get_activity(
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_active_user),
+):
+    """返回活跃时长与刷题时长（今日 + 累计）。"""
+    return analytics_service.get_activity_stats(db, current_user["user_id"])
 
 
 @router.get("/stats", response_model=LearningStatsOut)
