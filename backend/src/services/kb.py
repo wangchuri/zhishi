@@ -90,6 +90,74 @@ def _resolve_collection(db: Session, collection_id: Optional[str]) -> KBCollecti
     return col
 
 
+def ingest_md_text(
+    db: Session,
+    *,
+    filename: str,
+    md_text: str,
+    images_map: dict[str, bytes] | None = None,
+    collection_id: Optional[str] = None,
+) -> Document:
+    """导入 markdown 文本（含图片）：落图床 + 改写引用 + 注册 + 入库 + 分段 + 向量化。
+
+    用于 doc-parse 工坊（MinerU 解析结果导入）与 md.zip 导入。
+    """
+    content = md_text.encode("utf-8")
+    content_hash = sha256_hex(content)
+    col = _resolve_collection(db, collection_id)
+
+    existing_doc = db.query(Document).filter(Document.content_hash == content_hash).first()
+    if existing_doc:
+        raise AppError("该文件已上传过，请勿重复上传", status_code=409)
+
+    doc = Document(
+        collection_id=col.id,
+        display_name=filename,
+        zone=col.zone,
+        content_hash=content_hash,
+        file_type="md",
+        indexing_status="pending",
+    )
+    db.add(doc)
+    db.commit()
+    db.refresh(doc)
+
+    # 保存 md 文本 + 原始文件
+    storage.save_parsed(doc.id, md_text)
+    storage.save_original(doc.id, filename, content)
+
+    # 图片落图床 + 改写引用 + 注册
+    md_final = md_text
+    for idx, (name, data) in enumerate((images_map or {}).items(), 1):
+        ext = Path(name).suffix or ".png"
+        new_name = image_file_name(Path(filename).stem, 0, idx, ext.lstrip("."))
+        storage.save_image(doc.id, new_name, data)
+        db.add(DocumentImage(
+            document_id=doc.id, page_num=0, image_index=idx,
+            file_name=new_name, relative_path=f"images/{new_name}",
+        ))
+        md_final = md_final.replace(name, f"images/{new_name}")
+        md_final = md_final.replace(f"images/images/{new_name}", f"images/{new_name}")
+    db.commit()
+    storage.save_parsed(doc.id, md_final)
+
+    # 分段 + 向量化
+    try:
+        segment_document(db, doc)
+        doc.segment_status = "completed"
+    except Exception as e:
+        logger.warning("分段失败 doc=%s: %s", doc.id, e)
+    try:
+        if md_final.strip():
+            index_document(doc.id, md_final)
+    except Exception as e:
+        logger.warning("向量化失败 doc=%s: %s", doc.id, e)
+
+    doc.indexing_status = "completed"
+    db.commit()
+    return doc
+
+
 def ingest_upload(
     db: Session,
     *,

@@ -17,6 +17,7 @@ from ..models import Document, DocumentImage, DocumentSegment
 from ..schemas import kb as kb_schemas
 from ..services import kb as kb_service
 from ..services import thumbnail as thumb_service
+from ..services.export import export_document, import_package
 from ..agents.learning_path_agent import schedule_learning_path
 
 logger = logging.getLogger(__name__)
@@ -216,6 +217,29 @@ def document_page(doc_id: str, page_number: int, db: Session = Depends(get_db)):
         content=content,
         content_length=len(content),
     )
+
+
+@router.get("/documents/{doc_id}/export")
+def export_doc(doc_id: str, db: Session = Depends(get_db)):
+    data, filename = export_document(db, doc_id)
+    from fastapi.responses import StreamingResponse
+    import io as _io
+    return StreamingResponse(
+        _io.BytesIO(data),
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.post("/import", response_model=kb_schemas.ImportPackageResult)
+async def import_doc(
+    file: UploadFile = File(...),
+    collection_id: Optional[str] = Form(None),
+    db: Session = Depends(get_db),
+):
+    content = await file.read()
+    result = await import_package(db, content, file.filename or "package.zip", collection_id)
+    return kb_schemas.ImportPackageResult(**result)
 
 
 @router.get("/config", response_model=kb_schemas.KbConfig)
