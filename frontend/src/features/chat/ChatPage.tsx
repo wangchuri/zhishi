@@ -134,6 +134,7 @@ export function ChatPage() {
         content: String(m.content || ""),
         time: String(m.time || m.created_at || "—"),
         citations: (m.citations as Citation[]) || undefined,
+        reasoning_content: m.reasoning_content ? String(m.reasoning_content) : undefined,
       }))
       if (msgs.length === 0) {
         setMessages([welcomeMessage])
@@ -205,7 +206,11 @@ export function ChatPage() {
           if (typeof chunk.content === "string") {
             setMessages((prev) =>
               prev.map((m) =>
-                m.id === assistantId ? { ...m, content: m.content + chunk.content } : m
+                m.id === assistantId
+                  ? chunk.reasoning_content === true
+                    ? { ...m, reasoning_content: (m.reasoning_content || "") + chunk.content }
+                    : { ...m, content: m.content + chunk.content }
+                  : m
               )
             )
           }

@@ -528,6 +528,7 @@ export interface ChatMessage {
   time: string
   refs?: string[]
   citations?: Citation[]
+  reasoning_content?: string
 }
 
 /** 页面布局配置 */

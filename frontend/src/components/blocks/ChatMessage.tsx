@@ -1,3 +1,5 @@
+import { useState } from "react"
+import { ChevronDown, ChevronRight } from "lucide-react"
 import type { ChatMessage as ChatMessageType, Citation } from "@/types"
 import { CitationCard } from "@/components/blocks/CitationCard"
 import { MarkdownWithMath } from "@/components/blocks/MarkdownWithMath"
@@ -7,6 +9,28 @@ interface ChatMessageProps {
   message: ChatMessageType
   className?: string
   onCitationClick?: (citation: Citation) => void
+}
+
+function ReasoningBlock({ content }: { content: string }) {
+  const [open, setOpen] = useState(false)
+
+  return (
+    <div className="mb-2">
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        className="flex items-center gap-1 text-caption text-ink-tertiary hover:text-ink-secondary transition-colors"
+      >
+        {open ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+        <span className="font-mono">Thinking...</span>
+      </button>
+      {open && (
+        <div className="mt-1 p-2 rounded bg-ink-tertiary/5 border border-line-soft text-small text-ink-soft leading-relaxed whitespace-pre-wrap">
+          {content}
+        </div>
+      )}
+    </div>
+  )
 }
 
 export function ChatMessage({ message, className, onCitationClick }: ChatMessageProps) {
@@ -25,6 +49,9 @@ export function ChatMessage({ message, className, onCitationClick }: ChatMessage
   return (
     <div className={cn("animate-msg-in", className)}>
       <div className="text-body text-ink leading-relaxed">
+        {message.reasoning_content && (
+          <ReasoningBlock content={message.reasoning_content} />
+        )}
         <MarkdownWithMath>{message.content}</MarkdownWithMath>
         {message.citations && message.citations.length > 0 && (
           <div className="mt-4 pt-3 border-t border-line-soft space-y-2">
