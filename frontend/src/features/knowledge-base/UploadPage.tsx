@@ -69,7 +69,6 @@ export function UploadPage() {
   const [tasks, setTasks] = useState<UploadTask[]>([])
   const [uploading, setUploading] = useState(false)
   const [maxUploadSize, setMaxUploadSize] = useState("")
-  const [showDemoWarning, setShowDemoWarning] = useState(false)
   const [collections, setCollections] = useState<KbCollection[]>([])
   const [selectedCollectionId, setSelectedCollectionId] = useState("")
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -87,7 +86,6 @@ export function UploadPage() {
     kbApi.getConfig()
       .then((res) => {
         setMaxUploadSize(res.max_upload_size_display || "")
-        setShowDemoWarning(!res.use_oss && (res.max_upload_size ?? 0) > 0)
       })
       .catch(() => {})
     kbApi
@@ -593,16 +591,8 @@ export function UploadPage() {
             </div>
             <div className="text-caption text-ink-tertiary">
               支持 {SUPPORTED_LABEL}
+              {maxUploadSize && ` · 单文件最大 ${maxUploadSize}`}
             </div>
-            {showDemoWarning && (
-              <div className="mt-3 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-warning-soft text-warning text-caption">
-                <svg className="w-3.5 h-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-                  <path d="M12 9v4M12 17h.01" />
-                  <circle cx="12" cy="12" r="10" />
-                </svg>
-                演示环境限制：单个文件不超过 {maxUploadSize}
-              </div>
-            )}
           </>
         )}
       </div>
