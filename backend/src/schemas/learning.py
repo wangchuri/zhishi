@@ -1,6 +1,7 @@
 """学习域 schemas：分析 / 提醒 / 计划 / 成就 / 报告 / 训练 / dashboard。"""
 
 from __future__ import annotations
+from datetime import datetime
 
 from typing import Optional
 
@@ -45,8 +46,8 @@ class RecentSession(BaseModel):
     status: str = "active"
     total_questions: int = 0
     answered_count: int = 0
-    started_at: Optional[str] = None
-    finished_at: Optional[str] = None
+    started_at: Optional[datetime] = None
+    finished_at: Optional[datetime] = None
 
 
 class RecentAnswer(BaseModel):
@@ -55,7 +56,7 @@ class RecentAnswer(BaseModel):
     status: str = ""
     document_id: Optional[str] = None
     document_name: Optional[str] = None
-    answered_at: Optional[str] = None
+    answered_at: Optional[datetime] = None
 
 
 class LearningStats(BaseModel):
@@ -113,7 +114,7 @@ class Reminder(BaseModel):
     title: str
     remind_date: str
     done: bool = False
-    created_at: Optional[str] = None
+    created_at: Optional[datetime] = None
 
 
 class ReminderCreate(BaseModel):
@@ -145,7 +146,7 @@ class StudyPlan(BaseModel):
     goal: Optional[str] = None
     task_count: int = 0
     done_count: int = 0
-    created_at: Optional[str] = None
+    created_at: Optional[datetime] = None
 
 
 class StudyPlanCreate(BaseModel):
@@ -160,8 +161,8 @@ class PlanTask(BaseModel):
     due_date: Optional[str] = None
     done: bool = False
     position: int = 0
-    completed_at: Optional[str] = None
-    created_at: Optional[str] = None
+    completed_at: Optional[datetime] = None
+    created_at: Optional[datetime] = None
 
 
 class PlanTaskCreate(BaseModel):
@@ -193,7 +194,7 @@ class Achievement(BaseModel):
     target: int = 0
     progress: int = 0
     unlocked: bool = False
-    unlocked_at: Optional[str] = None
+    unlocked_at: Optional[datetime] = None
 
 
 class AchievementList(BaseModel):
@@ -209,7 +210,7 @@ class LearningReport(BaseModel):
     content_md: str
     collection_id: Optional[str] = None
     note_type: Optional[str] = "report"
-    created_at: Optional[str] = None
+    created_at: Optional[datetime] = None
 
 
 class ReportGenerateResult(BaseModel):

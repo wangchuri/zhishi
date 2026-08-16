@@ -17,8 +17,10 @@ if str(_BACKEND_DIR) not in sys.path:
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from .api.kb import router as kb_router
 from .core.config import config
-from .core.database import init_db
+from .core.database import SessionLocal, init_db
+from .services.kb import ensure_default_collections
 
 app = FastAPI(title="知拾", version="0.1.0")
 
@@ -28,6 +30,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.include_router(kb_router)
 
 _START_TIME = time.time()
 
@@ -45,6 +49,11 @@ def health() -> dict:
 def _on_startup() -> None:
     config.ensure_dirs()
     init_db()
+    db = SessionLocal()
+    try:
+        ensure_default_collections(db)
+    finally:
+        db.close()
 
 
 def main() -> None:

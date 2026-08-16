@@ -1,0 +1,364 @@
+"""知识库服务：上传入库、解析分发、图片落图床、分段、查询。"""
+
+from __future__ import annotations
+
+import json
+import logging
+import re
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Optional
+
+from sqlalchemy.orm import Session
+
+from ..core.database import SessionLocal
+from ..core.errors import AppError, NotFoundError
+from ..core.storage import storage
+from ..models import (
+    Document,
+    DocumentImage,
+    DocumentSegment,
+    GlobalDocument,
+    KBCollection,
+)
+from ..utils import image_file_name, sha256_hex
+from . import parser
+from .mineru import parse_pdf
+from .rag import delete_document_index, index_document
+
+logger = logging.getLogger(__name__)
+
+_IMAGE_RE = re.compile(r"!\[[^\]]*\]\(([^)]+)\)")
+
+
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+# ---- 集合 ----
+
+def ensure_default_collections(db: Session) -> None:
+    """确保默认学习区/生活区存在。"""
+    if db.query(KBCollection).first() is None:
+        study = KBCollection(name="学习区", zone="study", is_default=True)
+        life = KBCollection(name="生活区", zone="life")
+        db.add_all([study, life])
+        db.commit()
+
+
+def list_collections(db: Session) -> list[KBCollection]:
+    return db.query(KBCollection).order_by(KBCollection.created_at).all()
+
+
+def create_collection(db: Session, name: str, zone: str = "study", description: Optional[str] = None) -> KBCollection:
+    col = KBCollection(name=name, zone=zone, description=description)
+    db.add(col)
+    db.commit()
+    db.refresh(col)
+    return col
+
+
+def update_collection(db: Session, collection_id: str, name: Optional[str], description: Optional[str]) -> KBCollection:
+    col = db.get(KBCollection, collection_id)
+    if not col:
+        raise NotFoundError("集合不存在")
+    if name is not None:
+        col.name = name
+    if description is not None:
+        col.description = description
+    db.commit()
+    db.refresh(col)
+    return col
+
+
+# ---- 文档上传 ----
+
+def _resolve_collection(db: Session, collection_id: Optional[str]) -> KBCollection:
+    if collection_id:
+        col = db.get(KBCollection, collection_id)
+        if not col:
+            raise AppError("集合不存在")
+        return col
+    col = db.query(KBCollection).filter(KBCollection.zone == "study").first()
+    if not col:
+        col = KBCollection(name="默认", zone="study")
+        db.add(col)
+        db.commit()
+    return col
+
+
+def ingest_upload(
+    db: Session,
+    *,
+    filename: str,
+    content: bytes,
+    collection_id: Optional[str] = None,
+) -> Document:
+    """上传入库：全局去重 + 存储 + 解析分发。"""
+    ext = parser.file_extension(filename)
+    if ext not in parser.SUPPORTED_EXTENSIONS:
+        raise AppError(f"不支持的文件类型: {ext}")
+
+    content_hash = sha256_hex(content)
+    col = _resolve_collection(db, collection_id)
+
+    # 全局文件去重
+    existing_doc = db.query(Document).filter(Document.content_hash == content_hash).first()
+    if existing_doc:
+        raise AppError("该文件已上传过，请勿重复上传", status_code=409)
+
+    global_doc = db.query(GlobalDocument).filter(GlobalDocument.content_hash == content_hash).first()
+
+    doc = Document(
+        collection_id=col.id,
+        global_document_id=global_doc.id if global_doc else None,
+        display_name=filename,
+        zone=col.zone,
+        content_hash=content_hash,
+        file_type=parser.detect_file_type(filename),
+        indexing_status="pending",
+    )
+    db.add(doc)
+    db.commit()
+    db.refresh(doc)
+
+    # 保存原始文件到文档文件夹
+    storage.save_original(doc.id, filename, content)
+    if not global_doc:
+        original_path = storage.original_path(doc.id)
+        gpath = original_path if original_path else storage.save_original(doc.id, filename, content)
+        global_doc = GlobalDocument(
+            content_hash=content_hash,
+            original_filename=filename,
+            mime_type=ext,
+            file_size=len(content),
+            storage_path=str(gpath),
+        )
+        db.add(global_doc)
+        db.commit()
+        doc.global_document_id = global_doc.id
+        db.commit()
+
+    # 解析分发（同步执行；异步化见 api 层）
+    try:
+        result = _parse_and_ingest(db, doc, content)
+        doc.indexing_status = "completed"
+        doc.pdf_page_count = len(result.get("pages", [])) if result.get("pages") else None
+        segment_document(db, doc)
+        doc.segment_status = "completed"
+        parsed_text = storage.read_parsed(doc.id) or ""
+        if parsed_text.strip():
+            try:
+                index_document(doc.id, parsed_text)
+            except Exception as ie:
+                logger.warning("向量化失败 doc=%s: %s", doc.id, ie)
+    except Exception as e:
+        doc.indexing_status = "failed"
+        doc.updated_at = datetime.now(timezone.utc)
+        db.commit()
+        raise AppError(f"解析失败: {e}") from e
+
+    doc.updated_at = datetime.now(timezone.utc)
+    db.commit()
+    return doc
+
+
+def _parse_and_ingest(db: Session, doc: Document, content: bytes) -> dict:
+    """解析 + 图片落图床 + 图片注册表 + 分段。"""
+    ext = parser.file_extension(doc.display_name)
+    result: dict = {"pages": [], "images": {}}
+
+    # 1) md.zip：解压 md + 图片
+    if ext in parser.ZIP_EXTENSIONS:
+        md_text, zip_images = parser.parse_zip_markdown(content)
+        _ingest_md_with_images(db, doc, md_text, zip_images, page_num=0)
+        result["pages"] = []
+        return result
+
+    # 2) 图片文件 / 扫描 PDF → MinerU
+    is_image = ext in parser.IMAGE_EXTENSIONS
+    if is_image:
+        # 单张图片：存图床，生成简单 md
+        from ..utils import slugify
+        img_name = image_file_name(Path(doc.display_name).stem, 1, 1, ext.lstrip("."))
+        storage.save_image(doc.id, img_name, content)
+        db.add(DocumentImage(
+            document_id=doc.id, page_num=1, image_index=1,
+            file_name=img_name, relative_path=f"images/{img_name}",
+        ))
+        db.commit()
+        storage.save_parsed(doc.id, f"![image](images/{img_name})")
+        return result
+
+    # 3) PDF
+    if ext in parser.PDF_EXTENSIONS:
+        text, pages = parser.parse_pdf_text(content)
+        if parser.is_pdf_scanned(content) or not text.strip():
+            # 扫描件 → MinerU
+            mineru = parse_pdf(content)
+            pages_md = mineru["page_mds"]
+            for idx, p in enumerate(pages_md, 1):
+                md_text = p["markdown"]
+                page_images = mineru["images"]
+                # 该页图片落图床
+                _rewrite_md_images(db, doc, md_text, page_images, page_num=idx)
+                storage.save_pages(doc.id, [md_text])
+            full = "\n\n".join(p["markdown"] for p in pages_md)
+            storage.save_parsed(doc.id, full)
+            result["pages"] = pages_md
+            doc.is_scanned_pdf = True
+            return result
+        # 文本 PDF：逐页保存
+        storage.save_parsed(doc.id, text)
+        if pages:
+            storage.save_pages(doc.id, pages)
+            result["pages"] = [{"page": i + 1, "markdown": t} for i, t in enumerate(pages)]
+        return result
+
+    # 4) docx / 文本类
+    if ext in parser.RICH_EXTENSIONS:
+        md_text = parser.parse_docx_bytes(content)
+    else:
+        md_text = parser.parse_text_bytes(content, ext)
+    _ingest_md_with_images(db, doc, md_text, {}, page_num=0)
+    storage.save_parsed(doc.id, md_text)
+    return result
+
+
+def _ingest_md_with_images(
+    db: Session,
+    doc: Document,
+    md_text: str,
+    zip_images: dict[str, bytes],
+    *,
+    page_num: int,
+) -> None:
+    """md 文本入库：zip 附带图片落图床并改写引用。"""
+    if not zip_images:
+        return
+    for idx, (name, data) in enumerate(zip_images.items(), 1):
+        ext = Path(name).suffix
+        new_name = image_file_name(doc.display_name, page_num, idx, ext.lstrip("."))
+        storage.save_image(doc.id, new_name, data)
+        db.add(DocumentImage(
+            document_id=doc.id, page_num=page_num, image_index=idx,
+            file_name=new_name, relative_path=f"images/{new_name}",
+        ))
+        md_text = md_text.replace(f"images/{name}", f"images/{new_name}")
+        md_text = md_text.replace(name, f"images/{new_name}")
+    db.commit()
+    storage.save_parsed(doc.id, md_text)
+
+
+def _rewrite_md_images(
+    db: Session,
+    doc: Document,
+    md_text: str,
+    page_images: dict[str, bytes],
+    *,
+    page_num: int,
+) -> str:
+    """MinerU 该页图片：落图床 + 注册 + 改写引用。返回改写后的 md。"""
+    for idx, (name, data) in enumerate(page_images.items(), 1):
+        ext = Path(name).suffix or ".png"
+        new_name = image_file_name(doc.display_name, page_num, idx, ext.lstrip("."))
+        storage.save_image(doc.id, new_name, data)
+        db.add(DocumentImage(
+            document_id=doc.id, page_num=page_num, image_index=idx,
+            file_name=new_name, relative_path=f"images/{new_name}",
+        ))
+        md_text = md_text.replace(name, f"images/{new_name}")
+        md_text = md_text.replace(f"images/images/{new_name}", f"images/{new_name}")
+    db.commit()
+    return md_text
+
+
+# ---- 分段 ----
+
+def segment_document(db: Session, doc: Document) -> int:
+    """文档分段：按标题切分，写 document_segments。返回段数。"""
+    text = storage.read_parsed(doc.id) or ""
+    if not text.strip():
+        return 0
+
+    # 清旧段
+    db.query(DocumentSegment).filter(DocumentSegment.document_id == doc.id).delete()
+
+    lines = text.splitlines()
+    sections: list[list[str]] = []
+    current: list[str] = []
+
+    def flush():
+        if current and any(l.strip() for l in current):
+            sections.append(list(current))
+            current.clear()
+
+    for line in lines:
+        stripped = line.strip()
+        if re.match(r"^#{1,6}\s", stripped):
+            flush()
+        current.append(line)
+    flush()
+
+    if not sections:
+        sections = [lines]
+
+    for i, section in enumerate(sections):
+        content = "\n".join(section).strip()
+        if not content:
+            continue
+        title = None
+        for line in section:
+            m = re.match(r"^#{1,6}\s+(.*)", line.strip())
+            if m:
+                title = m.group(1).strip()
+                break
+        seg = DocumentSegment(
+            document_id=doc.id,
+            order_index=i,
+            title=title,
+            content=content,
+            char_start=0,
+            char_end=len(content),
+        )
+        db.add(seg)
+
+    db.commit()
+    return len(sections)
+
+
+# ---- 查询 ----
+
+def list_documents(
+    db: Session,
+    page: int = 1,
+    limit: int = 20,
+    collection_id: Optional[str] = None,
+) -> dict:
+    q = db.query(Document)
+    if collection_id:
+        q = q.filter(Document.collection_id == collection_id)
+    total = q.count()
+    docs = q.order_by(Document.created_at.desc()).offset((page - 1) * limit).limit(limit).all()
+    return {"documents": docs, "total": total, "page": page, "limit": limit}
+
+
+def get_document(db: Session, doc_id: str) -> Document:
+    doc = db.get(Document, doc_id)
+    if not doc:
+        raise NotFoundError("文档不存在")
+    return doc
+
+
+def delete_document(db: Session, doc_id: str) -> None:
+    doc = get_document(db, doc_id)
+    db.query(DocumentSegment).filter(DocumentSegment.document_id == doc_id).delete()
+    db.query(DocumentImage).filter(DocumentImage.document_id == doc_id).delete()
+    db.delete(doc)
+    db.commit()
+    storage.delete_document(doc_id)
+    storage.delete_thumbnail(doc_id)
+    try:
+        delete_document_index(doc_id)
+    except Exception as ie:
+        logger.warning("删除向量索引失败 doc=%s: %s", doc_id, ie)

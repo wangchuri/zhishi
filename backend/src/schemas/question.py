@@ -1,6 +1,7 @@
 """题库 schemas（对齐前端 Question/QuestionListResult/PageQuestionResult）。"""
 
 from __future__ import annotations
+from datetime import datetime
 
 from typing import Optional
 
@@ -29,7 +30,7 @@ class Question(BaseModel):
     source_type: Optional[str] = None
     document_id: Optional[str] = None
     collection_id: Optional[str] = None
-    created_at: Optional[str] = None
+    created_at: Optional[datetime] = None
     user_answer_status: Optional[str] = None  # correct/wrong/unknown/null
     attempt_count: Optional[int] = None
     html_content: Optional[str] = None

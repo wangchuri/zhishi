@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any, Optional
 
 from pydantic import BaseModel
@@ -14,8 +15,8 @@ class KbCollection(BaseModel):
     description: Optional[str] = None
     dataset_id: Optional[str] = None
     is_default: bool = False
-    created_at: Optional[str] = None
-    updated_at: Optional[str] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
 
 
 class CollectionCreate(BaseModel):
@@ -50,7 +51,7 @@ class KnowledgeDoc(BaseModel):
     questionCount: Optional[int] = None
     zone: Optional[str] = None
     wordCount: int = 0
-    updatedAt: Optional[str] = None
+    updatedAt: Optional[datetime] = None
 
 
 class DocumentSegment(BaseModel):
@@ -61,7 +62,7 @@ class DocumentSegment(BaseModel):
     content: str
     char_start: int = 0
     char_end: int = 0
-    created_at: Optional[str] = None
+    created_at: Optional[datetime] = None
 
 
 class Citation(BaseModel):

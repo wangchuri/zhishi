@@ -1,6 +1,7 @@
 """刷题与辅导 schemas（对齐前端 QuizSession/QuizAnswerResult/TutorSession）。"""
 
 from __future__ import annotations
+from datetime import datetime
 
 from typing import Optional
 
@@ -26,8 +27,8 @@ class QuizSession(BaseModel):
     collection_id: Optional[str] = None
     total_questions: int = 0
     answered_count: int = 0
-    started_at: Optional[str] = None
-    finished_at: Optional[str] = None
+    started_at: Optional[datetime] = None
+    finished_at: Optional[datetime] = None
     questions: list[QuizSessionQuestion] = []
 
 
@@ -86,7 +87,7 @@ class TutorMessage(BaseModel):
     role: str  # user/assistant
     content: str
     reasoning_content: Optional[str] = None
-    created_at: Optional[str] = None
+    created_at: Optional[datetime] = None
 
 
 class TutorSessionCreate(BaseModel):
@@ -105,8 +106,8 @@ class TutorSession(BaseModel):
     question_stem: Optional[str] = None
     segment_context: Optional[dict] = None
     messages: list[TutorMessage] = []
-    created_at: Optional[str] = None
-    updated_at: Optional[str] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
 
 
 class TutorMessageSend(BaseModel):

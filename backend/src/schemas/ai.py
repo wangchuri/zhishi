@@ -1,6 +1,7 @@
 """AI 对话 / 伴学 / 笔记 schemas。"""
 
 from __future__ import annotations
+from datetime import datetime
 
 from typing import Optional
 
@@ -19,8 +20,8 @@ class ChatSend(BaseModel):
 class ChatSessionMeta(BaseModel):
     id: str
     title: str = "对话"
-    created_at: Optional[str] = None
-    updated_at: Optional[str] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
     message_count: int = 0
 
 
@@ -45,14 +46,14 @@ class CompanionSend(BaseModel):
 class CompanionMessage(BaseModel):
     role: str
     content: str
-    created_at: Optional[str] = None
+    created_at: Optional[datetime] = None
     citations: Optional[list[dict]] = None
 
 
 class CompanionHistory(BaseModel):
     document_id: str
     document_name: Optional[str] = None
-    updated_at: Optional[str] = None
+    updated_at: Optional[datetime] = None
     messages: list[CompanionMessage] = []
 
 
@@ -72,8 +73,8 @@ class NoteItem(BaseModel):
     note_type: str = "manual"
     document_id: Optional[str] = None
     page_number: Optional[int] = None
-    created_at: Optional[str] = None
-    updated_at: Optional[str] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
 
 
 class NoteListResult(BaseModel):
