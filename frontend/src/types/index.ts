@@ -78,8 +78,8 @@ export interface PathTask {
   suggestion: string[]
 }
 
-/** 智能提醒 */
-export interface Reminder {
+/** 智能提醒（旧 mock 数据用，实际数据见 Reminder 的 remind_date 结构） */
+export interface SampleReminder {
   id: string
   title: string
   type: "review" | "task" | "doc" | "longterm"
@@ -173,6 +173,7 @@ export interface QuestionListResult {
   correct_count?: number
   wrong_count?: number
   unknown_count?: number
+  best_streak?: number
 }
 export interface AnswerParam {
   key: string
@@ -218,6 +219,7 @@ export interface QuizAnswerResult {
   answered_count: number
   total_questions: number
   session_status: string
+  current_streak?: number
 }
 
 /** 错题回顾项 */
@@ -322,6 +324,80 @@ export interface ActivityStats {
   total_active_seconds: number
   today_quiz_seconds: number
   total_quiz_seconds: number
+  due_review_count: number
+  unorganized_doc_count: number
+}
+
+/** 打卡热力图单日 */
+export interface HeatmapDay {
+  date: string
+  seconds: number
+}
+
+/** 打卡统计（累计天数 / 连续 / 热力图） */
+export interface StreakStats {
+  active_days: number
+  current_streak: number
+  best_streak: number
+  heatmap: HeatmapDay[]
+}
+
+/** 智能提醒 */
+export interface Reminder {
+  id: string
+  title: string
+  remind_date: string
+  done: boolean
+  created_at?: string | null
+}
+
+/** 自动错题提醒 */
+export interface AutoReview {
+  count: number
+  document_names: string[]
+}
+
+export interface ReminderList {
+  reminders: Reminder[]
+  auto_review: AutoReview
+}
+
+/** 成就 */
+export interface Achievement {
+  id: string
+  name: string
+  description: string
+  icon: string
+  target: number
+  progress: number
+  unlocked: boolean
+  unlocked_at?: string | null
+}
+
+export interface AchievementList {
+  achievements: Achievement[]
+  newly_unlocked: string[]
+}
+
+/** 学习计划 */
+export interface StudyPlan {
+  id: string
+  title: string
+  goal?: string | null
+  task_count: number
+  done_count: number
+  created_at?: string | null
+}
+
+export interface PlanTask {
+  id: string
+  plan_id: string
+  title: string
+  due_date?: string | null
+  done: boolean
+  position: number
+  completed_at?: string | null
+  created_at?: string | null
 }
 
 /** 学习报告 */

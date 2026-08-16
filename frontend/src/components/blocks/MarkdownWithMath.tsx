@@ -17,6 +17,8 @@ interface MarkdownWithMathProps {
   children: string
   className?: string
   proseClass?: string
+  /** 图片相对路径的前缀（如文档图片接口 base），提供后 images/xxx 会拼成完整 URL */
+  imageBaseUrl?: string
 }
 
 /**
@@ -41,14 +43,28 @@ export function MarkdownWithMath({
   children,
   className,
   proseClass = markdownProseClass,
+  imageBaseUrl,
 }: MarkdownWithMathProps) {
   if (!children) return null
 
   const processed = preprocessLatex(children)
 
+  // 把相对图片路径 images/xxx 解析为完整 URL（图床式引用）
+  const urlTransform = (url: string): string => {
+    if (!imageBaseUrl || !url) return url
+    if (/^(https?:|data:|blob:|#|\/)/i.test(url)) return url
+    // 兼容 images/xxx 与 图N 标记链接
+    const cleaned = url.startsWith("images/") ? url : url
+    return `${imageBaseUrl.replace(/\/$/, "")}/${cleaned}`
+  }
+
   return (
     <div className={cn(proseClass, className)}>
-      <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]}>
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm, remarkMath]}
+        rehypePlugins={[rehypeKatex]}
+        urlTransform={urlTransform}
+      >
         {processed}
       </ReactMarkdown>
     </div>

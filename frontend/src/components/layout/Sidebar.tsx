@@ -13,7 +13,7 @@ export function Sidebar() {
   return (
     <aside
       className={cn(
-        "bg-paper border-r border-line-light flex flex-col shrink-0 transition-all duration-200",
+        "bg-paper border-r border-line-light flex flex-col shrink-0 h-dvh max-h-dvh transition-all duration-200",
         sidebarCollapsed ? "w-[72px]" : "w-[248px]",
       )}
     >
@@ -32,7 +32,7 @@ export function Sidebar() {
       </div>
 
       {/* 导航 */}
-      <nav className="flex-1 overflow-y-auto scroll-thin px-3 py-2 space-y-4">
+      <nav className="flex-1 overflow-y-auto scroll-thin px-3 py-2 space-y-4 min-h-0">
         {navGroups.map((group, gi) => (
           <div key={gi} className="space-y-0.5">
             {group.title && !sidebarCollapsed && (

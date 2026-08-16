@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react"
-import { ArrowLeft, Loader2, AlertTriangle } from "lucide-react"
+import { ArrowLeft, Download, Loader2, AlertTriangle } from "lucide-react"
 import { useNavigate, useParams, useSearchParams } from "react-router-dom"
 import { AppShell } from "@/components/layout/AppShell"
 import { PageHeader } from "@/components/blocks/PageHeader"
@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { DocumentContentViewer } from "@/components/blocks/DocumentContentViewer"
 import { kbApi } from "@/lib/api"
+import { toast } from "sonner"
 import type { DocumentContentMeta } from "@/types"
 
 export function DocumentViewPage() {
@@ -21,6 +22,20 @@ export function DocumentViewPage() {
   const [meta, setMeta] = useState<DocumentContentMeta | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [exporting, setExporting] = useState(false)
+
+  const handleExport = async () => {
+    if (!docId || exporting) return
+    setExporting(true)
+    try {
+      await kbApi.exportPackage(docId, fileName)
+      toast.success("书本包已下载，可分享给其他用户导入")
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "导出失败")
+    } finally {
+      setExporting(false)
+    }
+  }
 
   useEffect(() => {
     if (!docId) return
@@ -44,6 +59,10 @@ export function DocumentViewPage() {
   return (
     <AppShell maxWidth={previewMode === "pdf" ? null : 960}>
       <PageHeader title={fileName} subtitle="文档全文预览">
+        <Button variant="secondary" size="md" onClick={handleExport} disabled={exporting}>
+          {exporting ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Download className="h-4 w-4 mr-2" />}
+          导出书本+题库
+        </Button>
         <Button variant="ghost" size="md" onClick={() => navigate("/knowledge")}>
           <ArrowLeft className="h-4 w-4 mr-2" />
           返回知识库

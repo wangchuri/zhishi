@@ -337,14 +337,125 @@ export const kbApi = {
   getConfig() {
     return request<any>("GET", "/api/v1/kb/config")
   },
+
+  /** 导出书本+题库 zip 包，并触发浏览器下载 */
+  async exportPackage(docId: string, displayName?: string) {
+    const blob = await requestBlob(`/api/v1/kb/documents/${docId}/export`)
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement("a")
+    a.href = url
+    a.download = `${displayName || "document"}-题库.zip`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  },
+
+  /** 导入书本+题库 zip 包（后端先合并数据库再向量化，成功才算导入成功） */
+  importPackage(file: File, collectionId?: string) {
+    const formData = new FormData()
+    formData.append("file", file)
+    if (collectionId) {
+      formData.append("collection_id", collectionId)
+    }
+    return request<{ status: string; document_id?: string; imported_questions?: number; reused_questions?: number }>(
+      "POST",
+      "/api/v1/kb/import",
+      formData,
+      true
+    )
+  },
+}
+
+// ─── 扫描件解析 ────────────────────────────────────────
+
+export interface DocParsePage {
+  page: number
+  text: string
+}
+
+export interface DocParsePreview {
+  filename: string
+  total_pages: number
+  pages: DocParsePage[]
+  images: Record<string, string>
+}
+
+export interface DocParseImportResult {
+  message: string
+  status: string
+  document_id?: string
+  id?: string
+  file_name?: string
+  collection_id?: string
+  segment_status?: string
+  indexing_status?: string
+}
+
+export const docParseApi = {
+  /** 上传 PDF，MinerU 解析并返回按页 md + 图片（不落库） */
+  preview(file: File) {
+    const formData = new FormData()
+    formData.append("file", file)
+    return request<DocParsePreview>("POST", "/api/v1/parse/preview", formData, true)
+  },
+
+  /** 编辑后的 md 直接导入知识库（跳过重新解析，保留分页结构） */
+  importMarkdown(
+    markdown: string,
+    filename: string,
+    collectionId?: string,
+    images?: Record<string, string>
+  ) {
+    const formData = new FormData()
+    formData.append("markdown", markdown)
+    formData.append("filename", filename)
+    if (collectionId) {
+      formData.append("collection_id", collectionId)
+    }
+    if (images && Object.keys(images).length > 0) {
+      formData.append("images", JSON.stringify(images))
+    }
+    return request<DocParseImportResult>(
+      "POST",
+      "/api/v1/parse/import-md",
+      formData,
+      true
+    )
+  },
+
+  /** md zip 包导入知识库（合并为一个文档） */
+  importZip(file: File, collectionId?: string) {
+    const formData = new FormData()
+    formData.append("file", file)
+    if (collectionId) {
+      formData.append("collection_id", collectionId)
+    }
+    return request<DocParseImportResult>(
+      "POST",
+      "/api/v1/parse/import-zip",
+      formData,
+      true
+    )
+  },
+}
+
+/** 生成文档图片的完整 URL（图床式引用，供 md 图片渲染） */
+export function documentImageUrl(docId: string, filename: string): string {
+  const base = getApiBase().replace(/\/$/, "")
+  return `${base}/api/v1/kb/documents/${encodeURIComponent(docId)}/images/${encodeURIComponent(filename)}`
 }
 
 // ─── Questions ─────────────────────────────────────────
 
 export const questionsApi = {
-  list(params: { document_id?: string }) {
-    const qs = params.document_id ? `?document_id=${params.document_id}` : ""
-    return request<any>("GET", `/api/v1/questions${qs}`)
+  list(params: { document_id?: string; collection_id?: string; keyword?: string }) {
+    const qs = new URLSearchParams()
+    if (params.document_id) qs.set("document_id", params.document_id)
+    if (params.collection_id) qs.set("collection_id", params.collection_id)
+    if (params.keyword) qs.set("keyword", params.keyword)
+    const q = qs.toString()
+    return request<any>("GET", `/api/v1/questions${q ? `?${q}` : ""}`)
   },
 
   generateFromPages(data: {
@@ -353,6 +464,20 @@ export const questionsApi = {
     questions_per_page?: number
   }) {
     return request<PageQuestionResult>("POST", "/api/v1/questions/generate-from-pages", data)
+  },
+
+  generateWholeDocument(data: {
+    document_id: string
+    questions_per_page?: number
+  }) {
+    return request<PageQuestionResult>(
+      "POST",
+      "/api/v1/questions/generate-whole-document",
+      {
+        document_id: data.document_id,
+        questions_per_page: data.questions_per_page ?? 1,
+      }
+    )
   },
 
   generateStream(data: {
@@ -528,6 +653,11 @@ export const analyticsApi = {
     return request<import("@/types").ActivityStats>("GET", "/api/v1/analytics/activity")
   },
 
+  /** 打卡统计：累计天数 / 连续 / 热力图 */
+  getStreak() {
+    return request<import("@/types").StreakStats>("GET", "/api/v1/analytics/streak")
+  },
+
   /** 心跳上报活跃秒数（前端计时，单次上限 90s） */
   reportActivity(seconds: number) {
     return request<import("@/types").ActivityStats>(
@@ -535,6 +665,78 @@ export const analyticsApi = {
       "/api/v1/analytics/activity",
       { seconds }
     )
+  },
+}
+
+// ─── Reminders (智能提醒) ───────────────────────────────
+
+export const remindersApi = {
+  list(filter = "all") {
+    return request<import("@/types").ReminderList>(
+      "GET",
+      `/api/v1/reminders?filter=${encodeURIComponent(filter)}`
+    )
+  },
+
+  create(data: { title: string; remind_date: string }) {
+    return request<import("@/types").Reminder>("POST", "/api/v1/reminders", data)
+  },
+
+  update(id: string, data: { title?: string; remind_date?: string; done?: boolean }) {
+    return request<import("@/types").Reminder>("PATCH", `/api/v1/reminders/${id}`, data)
+  },
+
+  remove(id: string) {
+    return request<{ deleted: boolean }>("DELETE", `/api/v1/reminders/${id}`)
+  },
+}
+
+// ─── Plans (学习计划) ──────────────────────────────────
+
+export const plansApi = {
+  list() {
+    return request<{ plans: import("@/types").StudyPlan[] }>("GET", "/api/v1/plans")
+  },
+
+  create(data: { title: string; goal?: string }) {
+    return request<import("@/types").StudyPlan>("POST", "/api/v1/plans", data)
+  },
+
+  removePlan(id: string) {
+    return request<{ deleted: boolean }>("DELETE", `/api/v1/plans/${id}`)
+  },
+
+  /** 某月任务（日历视图数据源） */
+  listTasksByMonth(month: string) {
+    return request<import("@/types").PlanTask[]>(
+      "GET",
+      `/api/v1/plans/tasks/month?month=${encodeURIComponent(month)}`
+    )
+  },
+
+  createTask(planId: string, data: { title: string; due_date?: string }) {
+    return request<import("@/types").PlanTask>(
+      "POST",
+      `/api/v1/plans/${planId}/tasks`,
+      data
+    )
+  },
+
+  updateTask(id: string, data: { title?: string; due_date?: string; done?: boolean }) {
+    return request<import("@/types").PlanTask>("PATCH", `/api/v1/plans/tasks/${id}`, data)
+  },
+
+  removeTask(id: string) {
+    return request<{ deleted: boolean }>("DELETE", `/api/v1/plans/tasks/${id}`)
+  },
+}
+
+// ─── Achievements (成就) ────────────────────────────────
+
+export const achievementsApi = {
+  /** 成就墙：返回全部成就 + 本次新解锁（惰性判定，达标即解锁） */
+  list() {
+    return request<import("@/types").AchievementList>("GET", "/api/v1/achievements")
   },
 }
 

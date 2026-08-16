@@ -8,6 +8,7 @@ import {
   Loader2,
   FileUp,
   XCircle,
+  Package,
 } from "lucide-react"
 import { AppShell } from "@/components/layout/AppShell"
 import { RightPanel } from "@/components/layout/RightPanel"
@@ -72,6 +73,15 @@ export function UploadPage() {
   const [collections, setCollections] = useState<KbCollection[]>([])
   const [selectedCollectionId, setSelectedCollectionId] = useState("")
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const importInputRef = useRef<HTMLInputElement>(null)
+  const [importing, setImporting] = useState(false)
+  const [importResult, setImportResult] = useState<{
+    fileName: string
+    status: "success" | "duplicate" | "error"
+    imported?: number
+    reused?: number
+    message?: string
+  } | null>(null)
 
   useEffect(() => {
     kbApi.getConfig()
@@ -322,6 +332,55 @@ export function UploadPage() {
     [handleFiles]
   )
 
+  const handleImport = useCallback(
+    async (file: File) => {
+      if (!file) return
+      setImporting(true)
+      setImportResult(null)
+      try {
+        const res = await kbApi.importPackage(file, selectedCollectionId || undefined)
+        if (res.status === "duplicate") {
+          setImportResult({
+            fileName: file.name,
+            status: "duplicate",
+            reused: res.reused_questions,
+          })
+          toast.info(`《${file.name}》已导入过，跳过`)
+        } else {
+          setImportResult({
+            fileName: file.name,
+            status: "success",
+            imported: res.imported_questions,
+            reused: res.reused_questions,
+          })
+          toast.success(`书本导入成功（含 ${res.imported_questions ?? 0} 题，复用 ${res.reused_questions ?? 0} 题）`)
+        }
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : "导入失败"
+        setImportResult({
+          fileName: file.name,
+          status: "error",
+          message: msg,
+        })
+        toast.error(msg)
+      } finally {
+        setImporting(false)
+      }
+    },
+    [selectedCollectionId]
+  )
+
+  const onImportInputChange = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0]
+      if (file) {
+        void handleImport(file)
+        e.target.value = ""
+      }
+    },
+    [handleImport]
+  )
+
   const completedCount = tasks.filter((t) => t.status === "completed").length
   const processingCount = tasks.filter((t) => t.status === "uploading" || t.status === "ocr" || t.status === "indexing").length
   const errorCount = tasks.filter((t) => t.status === "error").length
@@ -393,8 +452,8 @@ export function UploadPage() {
         </div>
       </div>
 
-      {/* 上传方式卡片 */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+      {/* 上传方式卡片 + 导入卡片 */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 mb-8">
         {uploadMethods.map((m) => (
           <button
             key={m.id}
@@ -418,7 +477,80 @@ export function UploadPage() {
             <div className="text-small text-ink-tertiary">{m.desc}</div>
           </button>
         ))}
+
+        {/* 导入书本包卡片 */}
+        <button
+          type="button"
+          onClick={() => importInputRef.current?.click()}
+          disabled={importing}
+          className={cn(
+            "text-left bg-surface border rounded-lg p-5 transition-all duration-160",
+            "border-line-soft shadow-xs hover:-translate-y-0.5 hover:shadow-md hover:border-primary/30",
+            importing && "opacity-70"
+          )}
+        >
+          <div className="w-11 h-11 rounded-md flex items-center justify-center mb-3 bg-primary-soft text-primary">
+            {importing ? (
+              <Loader2 className="w-5 h-5 animate-spin" strokeWidth={2} />
+            ) : (
+              <Package className="w-5 h-5" strokeWidth={2} />
+            )}
+          </div>
+          <div className="text-card-title font-semibold text-ink-primary mb-1">
+            {importing ? "导入中..." : "导入书本包"}
+          </div>
+          <div className="text-small text-ink-tertiary">
+            {importing ? "合并数据库 + 向量化中..." : "分享的 zip 包，直接复用题库"}
+          </div>
+        </button>
       </div>
+
+      {/* 导入结果 */}
+      {importResult && (
+        <div
+          className={cn(
+            "mb-8 rounded-lg border px-4 py-3 text-body",
+            importResult.status === "success"
+              ? "border-success/30 bg-success-soft text-ink"
+              : importResult.status === "duplicate"
+                ? "border-warning/30 bg-warning-soft text-ink"
+                : "border-danger/30 bg-danger-soft text-danger"
+          )}
+        >
+          <div className="flex items-start gap-2">
+            {importResult.status === "success" ? (
+              <CheckCircle2 className="w-4 h-4 mt-0.5 text-success shrink-0" strokeWidth={2} />
+            ) : importResult.status === "duplicate" ? (
+              <FileUp className="w-4 h-4 mt-0.5 text-warning shrink-0" strokeWidth={2} />
+            ) : (
+              <XCircle className="w-4 h-4 mt-0.5 shrink-0" strokeWidth={2} />
+            )}
+            <div>
+              <div className="font-medium">《{importResult.fileName}》</div>
+              {importResult.status === "success" && (
+                <div className="text-small text-ink-soft">
+                  导入成功：新建 {importResult.imported ?? 0} 题，复用 {importResult.reused ?? 0} 题。书本已分段并完成向量化。
+                </div>
+              )}
+              {importResult.status === "duplicate" && (
+                <div className="text-small text-ink-soft">该书已在你的知识库中（复用 {importResult.reused ?? 0} 题），已跳过。</div>
+              )}
+              {importResult.status === "error" && (
+                <div className="text-small">{importResult.message || "导入失败"}</div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 导入文件选择器 */}
+      <input
+        ref={importInputRef}
+        type="file"
+        accept=".zip"
+        className="hidden"
+        onChange={onImportInputChange}
+      />
 
       {/* 隐藏的文件选择器 */}
       <input

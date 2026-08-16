@@ -1,7 +1,13 @@
 import { MarkdownWithMath } from "@/components/blocks/MarkdownWithMath"
 import { PdfPageViewer } from "@/components/blocks/PdfPageViewer"
 import { renderHighlightedContent } from "@/components/blocks/DocumentPreviewModal"
+import { getApiBase } from "@/lib/api"
 import { cn } from "@/lib/utils"
+
+function imageBaseFor(docId: string): string {
+  const base = getApiBase().replace(/\/$/, "")
+  return `${base}/api/v1/kb/documents/${encodeURIComponent(docId)}/images`
+}
 
 interface DocumentContentViewerProps {
   docId: string
@@ -25,11 +31,14 @@ export function DocumentContentViewer({
   if (previewMode === "pdf") {
     return (
       <div className={cn("flex flex-col gap-4 min-h-0", className)}>
-        <PdfPageViewer docId={docId} pageNumber={pageNumber} />
+        <PdfPageViewer source={{ docId }} pageNumber={pageNumber} />
         {content.trim() ? (
           <div className="border-t border-line-soft pt-4">
             <p className="text-caption text-ink-tertiary mb-2">OCR / 解析文本</p>
-            <MarkdownWithMath className="text-body leading-relaxed">
+            <MarkdownWithMath
+              className="text-body leading-relaxed"
+              imageBaseUrl={imageBaseFor(docId)}
+            >
               {content}
             </MarkdownWithMath>
           </div>
@@ -40,7 +49,10 @@ export function DocumentContentViewer({
 
   if (previewMode === "markdown") {
     return (
-      <MarkdownWithMath className={cn("text-body leading-relaxed", className)}>
+      <MarkdownWithMath
+        className={cn("text-body leading-relaxed", className)}
+        imageBaseUrl={imageBaseFor(docId)}
+      >
         {content || "（空白页）"}
       </MarkdownWithMath>
     )

@@ -12,6 +12,7 @@ import {
   Clock,
   FileStack,
   ArrowRight,
+  Flame,
 } from "lucide-react"
 import { AppShell } from "@/components/layout/AppShell"
 import { RightPanel } from "@/components/layout/RightPanel"
@@ -22,7 +23,7 @@ import { RecentList } from "@/components/blocks/RecentList"
 import { Button } from "@/components/ui/button"
 import { useAuth } from "@/context/AuthContext"
 import { chatApi, kbApi, dashboardApi, analyticsApi } from "@/lib/api"
-import type { ActivityStats } from "@/types"
+import type { ActivityStats, StreakStats } from "@/types"
 
 const quickActions = [
   { id: "quiz", title: "题库页", description: "基于学习资料检验掌握", to: "/quiz" },
@@ -62,6 +63,7 @@ export function DashboardPage() {
   const [suggestions, setSuggestions] = useState<string[]>(["上传文档，开启智能学习", "完善学习画像，获得精准推荐"])
   const [searchInput, setSearchInput] = useState("")
   const [activity, setActivity] = useState<ActivityStats | null>(null)
+  const [streak, setStreak] = useState<StreakStats | null>(null)
 
   const handleSearch = () => {
     const q = searchInput.trim()
@@ -113,6 +115,10 @@ export function DashboardPage() {
 
     analyticsApi.getActivity()
       .then(setActivity)
+      .catch(() => {})
+
+    analyticsApi.getStreak()
+      .then(setStreak)
       .catch(() => {})
   }, [])
 
@@ -201,7 +207,7 @@ export function DashboardPage() {
         )}
       </div>
 
-      <RightPanelSlot suggestions={suggestions} activity={activity} />
+      <RightPanelSlot suggestions={suggestions} activity={activity} streak={streak} />
     </AppShell>
   )
 }
@@ -218,9 +224,11 @@ function formatDuration(seconds: number): string {
 function RightPanelSlot({
   suggestions,
   activity,
+  streak,
 }: {
   suggestions: string[]
   activity: ActivityStats | null
+  streak: StreakStats | null
 }) {
   const navigate = useNavigate()
   const learnValue = activity ? formatDuration(activity.today_active_seconds) : "—"
@@ -235,8 +243,9 @@ function RightPanelSlot({
           <h3 className="font-display text-title-s text-ink mb-3">今日学习</h3>
           <div className="space-y-2.5">
             <StatusRow icon={Clock} label="学习时长" value={learnValue + quizNote} />
-            <StatusRow icon={FileStack} label="待复习" value="—" />
-            <StatusRow icon={FileText} label="待整理" value="—" />
+            <StatusRow icon={Flame} label="连续打卡" value={streak ? `${streak.current_streak} 天` : "—"} />
+            <StatusRow icon={FileStack} label="待复习" value={activity ? `${activity.due_review_count} 题` : "—"} />
+            <StatusRow icon={FileText} label="待整理" value={activity ? `${activity.unorganized_doc_count} 份` : "—"} />
           </div>
         </section>
 

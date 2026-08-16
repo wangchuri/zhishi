@@ -87,4 +87,43 @@ describe("QuizQuestionInput", () => {
     )
     expect(screen.getByPlaceholderText("请输入你的答案…")).toBeInTheDocument()
   })
+
+  it("自定义题渲染 answer_params 表单并回填答案", () => {
+    const onCustomAnswersChange = vi.fn()
+    const q = choiceQuestion({
+      question_id: "q9",
+      question_type: "custom",
+      stem: "根据对称性写解析式",
+      html_content: "<table><input data-answer-key='axis_x'></table>",
+      answer_params: JSON.stringify([
+        { key: "axis_x", label: "关于x轴对称后的解析式", type: "text" },
+        { key: "origin", label: "关于原点对称后的解析式", type: "text" },
+      ]),
+    })
+    const { rerender } = render(
+      <QuizQuestionInput
+        {...baseProps}
+        question={q}
+        onCustomAnswersChange={onCustomAnswersChange}
+      />
+    )
+    expect(screen.getByText("请填写答案")).toBeInTheDocument()
+    const inputs = screen.getAllByPlaceholderText(/请输入/) as HTMLInputElement[]
+    expect(inputs).toHaveLength(2)
+    fireEvent.change(inputs[0], { target: { value: "y=-f(x)" } })
+    expect(onCustomAnswersChange).toHaveBeenLastCalledWith({ axis_x: "y=-f(x)" })
+
+    // 回填后校验可通过
+    rerender(
+      <QuizQuestionInput
+        {...baseProps}
+        question={q}
+        customAnswers={{ axis_x: "y=-f(x)" }}
+        onCustomAnswersChange={onCustomAnswersChange}
+      />
+    )
+    expect((screen.getByDisplayValue("y=-f(x)") as HTMLInputElement).value).toBe(
+      "y=-f(x)"
+    )
+  })
 })

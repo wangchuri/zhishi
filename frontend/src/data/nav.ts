@@ -14,6 +14,9 @@ import {
   Stethoscope,
   Target,
   BookOpen,
+  Trophy,
+  CalendarDays,
+  ScanText,
 } from "lucide-react"
 
 export const navGroups: NavGroup[] = [
@@ -30,6 +33,7 @@ export const navGroups: NavGroup[] = [
       { label: "题库页", to: "/quiz", icon: Brain },
       { label: "出题页", to: "/question-gen", icon: PenLine },
       { label: "上传资料", to: "/knowledge/upload", icon: Upload },
+      { label: "扫描件解析", to: "/doc-parse", icon: ScanText },
     ],
   },
   {
@@ -39,6 +43,8 @@ export const navGroups: NavGroup[] = [
       { label: "学习分析", to: "/analytics", icon: BarChart3 },
       { label: "针对训练", to: "/training/targeted", icon: Target },
       { label: "智能提醒", to: "/reminders", icon: Bell },
+      { label: "学习计划", to: "/plans", icon: CalendarDays },
+      { label: "成就墙", to: "/achievements", icon: Trophy },
     ],
   },
   {

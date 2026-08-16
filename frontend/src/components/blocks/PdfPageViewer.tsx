@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react"
 import { Loader2 } from "lucide-react"
 import type { PDFDocumentProxy, PDFPageProxy, RenderTask } from "pdfjs-dist"
-import { usePdfDocument } from "@/hooks/usePdfDocument"
+import { usePdfDocument, type PdfSource } from "@/hooks/usePdfDocument"
 import { cn } from "@/lib/utils"
 
 const MAX_CSS_SCALE = 2
@@ -132,13 +132,13 @@ export function PdfPageCanvas({ pdf, pageNumber, className, lazy = false }: PdfP
 }
 
 interface PdfPageViewerProps {
-  docId: string
+  source: PdfSource
   pageNumber?: number | null
   className?: string
 }
 
-export function PdfPageViewer({ docId, pageNumber = null, className }: PdfPageViewerProps) {
-  const { pdf, loading, error } = usePdfDocument(docId, true)
+export function PdfPageViewer({ source, pageNumber = null, className }: PdfPageViewerProps) {
+  const { pdf, loading, error } = usePdfDocument(source, true)
 
   if (loading) {
     return (

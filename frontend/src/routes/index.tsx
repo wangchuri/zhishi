@@ -11,6 +11,8 @@ import { UploadPage } from "@/features/knowledge-base/UploadPage"
 import { LearningAnalyticsPage } from "@/features/learning/LearningAnalyticsPage"
 import { TargetedTrainingPage } from "@/features/learning/TargetedTrainingPage"
 import { RemindersPage } from "@/features/learning/RemindersPage"
+import { AchievementsPage } from "@/features/achievements/AchievementsPage"
+import { PlansPage } from "@/features/plans/PlansPage"
 import { ProfilePage } from "@/features/profile/ProfilePage"
 import { SettingsPage } from "@/features/settings/SettingsPage"
 import { DiagnosticsPage } from "@/features/settings/DiagnosticsPage"
@@ -22,6 +24,7 @@ import { QuestionGenPage } from "@/features/question-gen/QuestionGenPage"
 import { QuestionGenDocPage } from "@/features/question-gen/QuestionGenDocPage"
 import { CompanionPage } from "@/features/companion/CompanionPage"
 import { CompanionReadPage } from "@/features/companion/CompanionReadPage"
+import { DocParsePage } from "@/features/doc-parse/DocParsePage"
 
 function RequireServer({ children }: { children: React.ReactElement }) {
   const { checkServer } = useAuth()
@@ -68,6 +71,8 @@ export function AppRoutes() {
       <Route path="/analytics" element={<RequireServer><LearningAnalyticsPage /></RequireServer>} />
       <Route path="/training/targeted/*" element={<RequireServer><TargetedTrainingPage /></RequireServer>} />
       <Route path="/reminders" element={<RequireServer><RemindersPage /></RequireServer>} />
+      <Route path="/achievements" element={<RequireServer><AchievementsPage /></RequireServer>} />
+      <Route path="/plans" element={<RequireServer><PlansPage /></RequireServer>} />
       <Route path="/profile" element={<RequireServer><ProfilePage /></RequireServer>} />
       <Route path="/settings" element={<RequireServer><SettingsPage /></RequireServer>} />
       <Route path="/quiz" element={<RequireServer><QuizBookListPage /></RequireServer>} />
@@ -77,6 +82,7 @@ export function AppRoutes() {
       <Route path="/question-gen/doc/:documentId" element={<RequireServer><QuestionGenDocPage /></RequireServer>} />
       <Route path="/companion" element={<RequireServer><CompanionPage /></RequireServer>} />
       <Route path="/companion/doc/:docId" element={<RequireServer><CompanionReadPage /></RequireServer>} />
+      <Route path="/doc-parse" element={<RequireServer><DocParsePage /></RequireServer>} />
       <Route path="/settings/diagnostics" element={<RequireServer><DiagnosticsPage /></RequireServer>} />
       <Route path="*" element={<Navigate to={isServerConfigured() ? "/" : "/setup"} replace />} />
     </Routes>

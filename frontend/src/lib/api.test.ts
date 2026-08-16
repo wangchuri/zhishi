@@ -220,6 +220,32 @@ describe("kbApi", () => {
     setApiBase(BASE)
     expect(getThumbnailUrl("d1")).toBe(`${BASE}/api/v1/kb/documents/d1/thumbnail`)
   })
+
+  it("exportPackage 使用 GET /api/v1/kb/documents/{id}/export", async () => {
+    const { calls, mock, record } = installFetchMock()
+    setApiBase(BASE)
+    mock.mockImplementationOnce(async (input, init) => {
+      record(input, init)
+      return new Response(new Blob(["zip"]), { status: 200 })
+    })
+    await kbApi.exportPackage("d1", "book")
+    expect(calls[0]).toMatchObject({
+      method: "GET",
+      url: `${BASE}/api/v1/kb/documents/d1/export`,
+    })
+  })
+
+  it("importPackage 使用 POST /api/v1/kb/import 并带 FormData", async () => {
+    const { calls } = installFetchMock()
+    setApiBase(BASE)
+    const file = new File(["zip"], "book.zip", { type: "application/zip" })
+    await kbApi.importPackage(file, "c1")
+    expect(calls[0]).toMatchObject({
+      method: "POST",
+      url: `${BASE}/api/v1/kb/import`,
+    })
+    expect(calls[0].body).toBeInstanceOf(FormData)
+  })
 })
 
 describe("questionsApi", () => {
@@ -234,11 +260,24 @@ describe("questionsApi", () => {
     expect(calls[0].body).toMatchObject({ document_id: "d1", page_numbers: [1, 2] })
   })
 
-  it("list 携带 document_id", async () => {
+  it("list 携带 document_id / keyword", async () => {
     const { calls } = installFetchMock()
     setApiBase(BASE)
     await questionsApi.list({ document_id: "d1" })
     expect(calls[0].url).toContain(`${BASE}/api/v1/questions?document_id=d1`)
+    await questionsApi.list({ document_id: "d1", keyword: "极限" })
+    expect(calls[1].url).toContain(`${BASE}/api/v1/questions?document_id=d1&keyword=%E6%9E%81%E9%99%90`)
+  })
+
+  it("generateWholeDocument 使用 POST /api/v1/questions/generate-whole-document", async () => {
+    const { calls } = installFetchMock()
+    setApiBase(BASE)
+    await questionsApi.generateWholeDocument({ document_id: "d1", questions_per_page: 2 })
+    expect(calls[0]).toMatchObject({
+      method: "POST",
+      url: `${BASE}/api/v1/questions/generate-whole-document`,
+    })
+    expect(calls[0].body).toMatchObject({ document_id: "d1", questions_per_page: 2 })
   })
 
   it("get 使用 GET /api/v1/questions/{id}", async () => {

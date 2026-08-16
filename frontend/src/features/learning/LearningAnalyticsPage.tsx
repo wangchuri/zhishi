@@ -15,6 +15,8 @@ import {
   Sparkles,
   Target,
   Loader2,
+  Flame,
+  CalendarCheck,
 } from "lucide-react"
 import { AppShell } from "@/components/layout/AppShell"
 import { PageHeader } from "@/components/blocks/PageHeader"
@@ -26,8 +28,9 @@ import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { ProgressMeter } from "@/components/blocks/ProgressMeter"
 import { MarkdownWithMath } from "@/components/blocks/MarkdownWithMath"
+import { Heatmap } from "@/components/blocks/Heatmap"
 import { analyticsApi, reportsApi } from "@/lib/api"
-import type { LearningReport, LearningStats, TagStatsResult } from "@/types"
+import type { LearningReport, LearningStats, StreakStats, TagStatsResult } from "@/types"
 
 function formatDateTime(value?: string | null): string {
   if (!value) return "—"
@@ -64,6 +67,7 @@ export function LearningAnalyticsPage() {
   const [error, setError] = useState<string | null>(null)
   const [stats, setStats] = useState<LearningStats | null>(null)
   const [tagStats, setTagStats] = useState<TagStatsResult | null>(null)
+  const [streak, setStreak] = useState<StreakStats | null>(null)
   const [reports, setReports] = useState<LearningReport[]>([])
   const [latestReport, setLatestReport] = useState<LearningReport | null>(null)
   const [generatingReport, setGeneratingReport] = useState(false)
@@ -90,6 +94,7 @@ export function LearningAnalyticsPage() {
         setError(err instanceof Error ? err.message : "加载失败")
       })
       .finally(() => setLoading(false))
+    analyticsApi.getStreak().then(setStreak).catch(() => setStreak(null))
     loadReports()
   }, [])
 
@@ -160,6 +165,58 @@ export function LearningAnalyticsPage() {
           去刷题
         </Button>
       </PageHeader>
+
+      {/* 打卡 / 热力图 */}
+      {streak && (
+        <div className="mb-8">
+          <SectionHeader title="学习打卡" subtitle="连续学习保持节奏，点亮更多日子" />
+          <Card className="p-5">
+            <div className="flex flex-wrap items-center gap-x-10 gap-y-4 mb-5">
+              <div className="flex items-center gap-3">
+                <div className="w-11 h-11 rounded-[4px] bg-sea-subtle text-sea flex items-center justify-center">
+                  <Flame className="w-5 h-5" strokeWidth={2} />
+                </div>
+                <div>
+                  <div className="font-display text-display-m text-ink leading-tight">
+                    {streak.current_streak} 天
+                  </div>
+                  <div className="text-caption text-ink-soft">当前连续打卡</div>
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <div className="w-11 h-11 rounded-[4px] bg-paper-2 text-ink-soft flex items-center justify-center">
+                  <CalendarCheck className="w-5 h-5" strokeWidth={2} />
+                </div>
+                <div>
+                  <div className="font-display text-display-m text-ink leading-tight">
+                    {streak.active_days} 天
+                  </div>
+                  <div className="text-caption text-ink-soft">累计打卡</div>
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <div className="w-11 h-11 rounded-[4px] bg-paper-2 text-ink-soft flex items-center justify-center">
+                  <Activity className="w-5 h-5" strokeWidth={2} />
+                </div>
+                <div>
+                  <div className="font-display text-display-m text-ink leading-tight">
+                    {streak.best_streak} 天
+                  </div>
+                  <div className="text-caption text-ink-soft">最长连续</div>
+                </div>
+              </div>
+            </div>
+            <Heatmap data={streak.heatmap} />
+            <div className="flex items-center justify-end gap-1.5 mt-2">
+              <span className="text-caption text-ink-tertiary mr-1">少</span>
+              {["bg-paper-2", "bg-sea/30", "bg-sea/50", "bg-sea/70", "bg-sea"].map((c) => (
+                <span key={c} className={`w-[11px] h-[11px] rounded-[2px] ${c}`} />
+              ))}
+              <span className="text-caption text-ink-tertiary ml-1">多</span>
+            </div>
+          </Card>
+        </div>
+      )}
 
       <div className="mb-8">
         <SectionHeader title="学习报告" subtitle="AI 分析薄弱知识点，自动保存到生活区笔记">

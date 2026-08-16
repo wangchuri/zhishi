@@ -1,17 +1,17 @@
 import { Loader2 } from "lucide-react"
 import { PdfPageCanvas } from "@/components/blocks/PdfPageViewer"
-import { usePdfDocument } from "@/hooks/usePdfDocument"
+import { usePdfDocument, type PdfSource } from "@/hooks/usePdfDocument"
 
 interface PdfContinuousViewerProps {
-  docId: string
+  source: PdfSource
 }
 
 /**
  * PDF 连续阅读视图：一次性加载 PDF，所有页自上而下排布，
  * 随滚动自动进入下一页（每页带 data-page 供阅读页追踪）。
  */
-export function PdfContinuousViewer({ docId }: PdfContinuousViewerProps) {
-  const { pdf, loading, error } = usePdfDocument(docId, true)
+export function PdfContinuousViewer({ source }: PdfContinuousViewerProps) {
+  const { pdf, loading, error } = usePdfDocument(source, true)
 
   if (loading) {
     return (

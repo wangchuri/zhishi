@@ -1,10 +1,12 @@
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useNavigate, useParams } from "react-router-dom"
 import {
   ArrowLeft,
   CheckCircle2,
   ChevronRight,
+  Download,
   FileText,
+  Flame,
   HelpCircle,
   Loader2,
   Play,
@@ -18,10 +20,21 @@ import { Badge } from "@/components/ui/badge"
 import { StatCard } from "@/components/ui/stat-card"
 import { Card } from "@/components/ui/card"
 import { EmptyState } from "@/components/ui/empty-state"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 import { SectionHeader } from "@/components/blocks/SectionHeader"
-import { questionsApi, quizApi, analyticsApi, getThumbnailUrl } from "@/lib/api"
+import { questionsApi, quizApi, analyticsApi, kbApi, getThumbnailUrl } from "@/lib/api"
 import { useKbDocuments } from "@/hooks/useKbDocuments"
 import type { QuestionListResult, QuizSession, TagStatsResult } from "@/types"
+import { toast } from "sonner"
 
 type FilterMode = "all" | "undone" | "wrong" | "unknown"
 
@@ -45,6 +58,9 @@ export function QuizDocDetailPage() {
   const [filterMode, setFilterMode] = useState<FilterMode>("all")
   const [starting, setStarting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [genAllLoading, setGenAllLoading] = useState(false)
+  const [genAllDialogOpen, setGenAllDialogOpen] = useState(false)
+  const genAllTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const doc = useMemo(() => documents.find((d) => d.id === docId), [documents, docId])
 
@@ -102,6 +118,42 @@ export function QuizDocDetailPage() {
     navigate(`/quiz/session?session_id=${activeSession.id}`)
   }
 
+  const [exporting, setExporting] = useState(false)
+  const handleExport = async () => {
+    if (!docId || exporting) return
+    setExporting(true)
+    try {
+      await kbApi.exportPackage(docId, doc?.name)
+      toast.success("书本包已下载，可分享给其他用户导入")
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "导出失败")
+    } finally {
+      setExporting(false)
+    }
+  }
+
+  const handleGenerateWholeBook = async () => {
+    if (!docId || genAllLoading) return
+    setGenAllLoading(true)
+    setError(null)
+    try {
+      await questionsApi.generateWholeDocument({ document_id: docId, questions_per_page: 1 })
+      toast.success("整本书出题已开始，完成后会显示题目")
+      genAllTimerRef.current = setInterval(() => {
+        void loadQuestionData()
+      }, 5000)
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "整本书出题失败")
+      setGenAllLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    return () => {
+      if (genAllTimerRef.current) clearInterval(genAllTimerRef.current)
+    }
+  }, [])
+
   const stats = useMemo(() => {
     if (!questionData) return null
     return {
@@ -110,6 +162,7 @@ export function QuizDocDetailPage() {
       correct: questionData.correct_count ?? 0,
       wrong: questionData.wrong_count ?? 0,
       unknown: questionData.unknown_count ?? 0,
+      bestStreak: questionData.best_streak ?? 0,
     }
   }, [questionData])
 
@@ -149,6 +202,15 @@ export function QuizDocDetailPage() {
       <div className="flex items-center gap-3 mb-6 short:mb-4">
         <Button variant="ghost" size="md" onClick={() => navigate("/quiz")}>
           <ArrowLeft className="w-4 h-4" />返回
+        </Button>
+        <div className="flex-1" />
+        <Button variant="secondary" size="md" onClick={() => setGenAllDialogOpen(true)} disabled={genAllLoading}>
+          {genAllLoading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <FileText className="w-4 h-4 mr-2" />}
+          整本书出题
+        </Button>
+        <Button variant="secondary" size="md" onClick={handleExport} disabled={exporting}>
+          {exporting ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Download className="w-4 h-4 mr-2" />}
+          导出题库
         </Button>
       </div>
 
@@ -206,6 +268,7 @@ export function QuizDocDetailPage() {
               <StatCard icon={CheckCircle2} label="正确" value={stats.correct} tone="success" />
               <StatCard icon={XCircle} label="错误" value={stats.wrong} tone="warning" />
               <StatCard icon={HelpCircle} label="不会" value={stats.unknown} tone="warning" />
+              <StatCard icon={Flame} label="最高连对" value={stats.bestStreak} tone="warning" />
             </div>
           ) : <p className="text-body text-ink-tertiary">暂无题目数据</p>}
 
@@ -338,6 +401,31 @@ export function QuizDocDetailPage() {
           <SectionHeader title="知识点分析" subtitle="暂无答题记录，完成刷题后在此查看" />
         </div>
       ) : null}
+
+      <AlertDialog open={genAllDialogOpen} onOpenChange={setGenAllDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>确认对整本书出题？</AlertDialogTitle>
+            <AlertDialogDescription>
+              将对「{doc?.name}」的全部页面（{doc?.pdf_page_count ? `约 ${doc.pdf_page_count} 页` : "所有页"}）批量出题，
+              会消耗较多 AI 额度且耗时较长。建议仅在确实需要全量题库时使用。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={genAllLoading}>取消</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault()
+                setGenAllDialogOpen(false)
+                void handleGenerateWholeBook()
+              }}
+              disabled={genAllLoading}
+            >
+              {genAllLoading ? "出题中..." : "确认整本书出题"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </AppShell>
   )
 }

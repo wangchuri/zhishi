@@ -9,16 +9,27 @@ interface UsePdfDocumentResult {
   error: string | null
 }
 
-export function usePdfDocument(docId: string | null, enabled: boolean): UsePdfDocumentResult {
+export type PdfSource =
+  | { docId: string }
+  | { data: ArrayBuffer }
+
+function sourceKey(source: PdfSource | null): string {
+  if (!source) return ""
+  if ("docId" in source) return `doc:${source.docId}`
+  return `data:${(source.data as ArrayBuffer).byteLength}`
+}
+
+export function usePdfDocument(
+  source: PdfSource | null,
+  enabled: boolean,
+): UsePdfDocumentResult {
   const [pdf, setPdf] = useState<PDFDocumentProxy | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const key = sourceKey(source)
 
   useEffect(() => {
-    if (!enabled || !docId) {
-      setPdf(null)
-      setError(null)
-      setLoading(false)
+    if (!enabled || !source) {
       return
     }
 
@@ -29,10 +40,25 @@ export function usePdfDocument(docId: string | null, enabled: boolean): UsePdfDo
     setError(null)
     setPdf(null)
 
-    kbApi
-      .fetchDocumentFile(docId)
-      .then(async (blob) => {
-        const data = await blob.arrayBuffer()
+    const loadData = async (): Promise<ArrayBuffer> => {
+      // pdf.js 的 getDocument 会 transfer 传入的 ArrayBuffer（detach 原 buffer）。
+      // 拷贝一份副本，避免多次使用同一 buffer 时报 detached 错误。
+      if ("data" in source) {
+        // 若传入的 buffer 已被 detach（不可再 slice），抛错让上层兜底
+        try {
+          new Uint8Array(source.data)
+        } catch {
+          throw new Error("PDF 数据缓冲区已失效，请重新上传")
+        }
+        return source.data.slice(0)
+      }
+      const blob = await kbApi.fetchDocumentFile(source.docId)
+      return blob.arrayBuffer()
+    }
+
+    loadData()
+      .then(async (data) => {
+        if (cancelled) return
         loadingTask = getDocument({ data })
         const doc = await loadingTask.promise
         if (cancelled) {
@@ -55,7 +81,7 @@ export function usePdfDocument(docId: string | null, enabled: boolean): UsePdfDo
       cancelled = true
       void loadingTask?.destroy()
     }
-  }, [docId, enabled])
+  }, [key, enabled]) // eslint-disable-line react-hooks/exhaustive-deps
 
   return { pdf, loading, error }
 }

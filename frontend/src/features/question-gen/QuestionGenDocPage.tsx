@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from "react-router-dom"
 import {
   ArrowLeft,
   CheckSquare,
+  Download,
   FileQuestion,
   Loader2,
   Sparkles,
@@ -20,6 +21,7 @@ import { kbApi, questionsApi } from "@/lib/api"
 import { useKbDocuments } from "@/hooks/useKbDocuments"
 import type { DocumentPage, DocumentPageDetail, PageQuestionResult } from "@/types"
 import { cn } from "@/lib/utils"
+import { toast } from "sonner"
 
 export function QuestionGenDocPage() {
   const { documentId = "" } = useParams<{ documentId: string }>()
@@ -244,6 +246,20 @@ export function QuestionGenDocPage() {
 
   const displayName = selectedDocument?.name || documentName || "文档"
 
+  const [exporting, setExporting] = useState(false)
+  const handleExport = async () => {
+    if (!documentId || exporting) return
+    setExporting(true)
+    try {
+      await kbApi.exportPackage(documentId, displayName)
+      toast.success("书本包已下载，可分享给其他用户导入")
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "导出失败")
+    } finally {
+      setExporting(false)
+    }
+  }
+
   return (
     <AppShell maxWidth={null} noPadding>
       <div className="flex flex-col h-full">
@@ -262,6 +278,10 @@ export function QuestionGenDocPage() {
             </Button>
             <Button variant="secondary" size="md" onClick={() => navigate("/quiz")}>
               前往题库
+            </Button>
+            <Button variant="ghost" size="md" onClick={handleExport} disabled={exporting}>
+              {exporting ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Download className="h-4 w-4 mr-2" />}
+              导出题库
             </Button>
           </PageHeader>
 

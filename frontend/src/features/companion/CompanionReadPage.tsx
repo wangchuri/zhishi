@@ -16,6 +16,7 @@ import {
 } from "lucide-react"
 import { AppShell } from "@/components/layout/AppShell"
 import { MarkdownWithMath } from "@/components/blocks/MarkdownWithMath"
+import { getApiBase } from "@/lib/api"
 import { Badge } from "@/components/ui/badge"
 import { kbApi, notesApi } from "@/lib/api"
 import {
@@ -47,6 +48,10 @@ interface PageListMeta {
 export function CompanionReadPage() {
   const { docId = "" } = useParams<{ docId: string }>()
   const navigate = useNavigate()
+
+  const imageBase = docId
+    ? `${getApiBase().replace(/\/$/, "")}/api/v1/kb/documents/${encodeURIComponent(docId)}/images`
+    : undefined
 
   const [pageList, setPageList] = useState<DocumentPage[]>([])
   const [meta, setMeta] = useState<PageListMeta | null>(null)
@@ -253,7 +258,7 @@ export function CompanionReadPage() {
       return <div className="flex items-center justify-center py-24 text-ink-disabled">暂无页面</div>
     }
     if (isPdf) {
-      return <PdfContinuousViewer docId={docId} />
+      return <PdfContinuousViewer source={{ docId }} />
     }
     return (
       <div className="max-w-[820px] mx-auto">
@@ -261,7 +266,7 @@ export function CompanionReadPage() {
           const text = (fullContent || "").slice(p.char_start, p.char_end).trim()
           return (
             <section key={p.page_number} data-page={p.page_number}>
-              <MarkdownWithMath proseClass={readingProseClass}>
+              <MarkdownWithMath proseClass={readingProseClass} imageBaseUrl={imageBase}>
                 {text || "（本页无文本）"}
               </MarkdownWithMath>
               {i < pageList.length - 1 && <hr className="my-10 border-line-light" />}
@@ -388,7 +393,7 @@ export function CompanionReadPage() {
               </div>
               <div className="flex-1 overflow-y-auto scroll-thin p-4">
                 {ocrText ? (
-                  <MarkdownWithMath className="text-body leading-relaxed">{ocrText}</MarkdownWithMath>
+                  <MarkdownWithMath className="text-body leading-relaxed" imageBaseUrl={imageBase}>{ocrText}</MarkdownWithMath>
                 ) : (
                   <div className="text-caption text-ink-disabled text-center py-8">暂无 OCR 文本</div>
                 )}

@@ -1,4 +1,6 @@
+import { useCallback, useEffect, useRef } from "react"
 import { MarkdownWithMath } from "@/components/blocks/MarkdownWithMath"
+import { getApiBase } from "@/lib/api"
 import type { QuizAnswerResult, QuizSessionQuestion } from "@/types"
 import { cn } from "@/lib/utils"
 import {
@@ -23,6 +25,8 @@ type QuizQuestionInputProps = {
   onTextAnswerChange: (value: string) => void
   onBlankAnswersChange: (values: string[]) => void
   onCustomAnswersChange?: (values: Record<string, string>) => void
+  /** 来源文档 id，用于解析题目中的图片相对路径（images/xxx） */
+  documentId?: string | null
 }
 
 export function QuizQuestionInput({
@@ -37,14 +41,74 @@ export function QuizQuestionInput({
   onTextAnswerChange,
   onBlankAnswersChange,
   onCustomAnswersChange,
+  documentId,
 }: QuizQuestionInputProps) {
   const qtype = question.question_type || "single_choice"
   const disabled = !!lastResult || submitting
+  const isCustom = isCustomQuestion(qtype)
+  const iframeRef = useRef<HTMLIFrameElement>(null)
+
+  // 题目来源文档的图片 base（图床式：images/xxx → 完整 URL）
+  const imageBase = documentId
+    ? `${getApiBase().replace(/\/$/, "")}/api/v1/kb/documents/${encodeURIComponent(documentId)}/images`
+    : undefined
+
+  const handleCustomChange = useCallback(
+    (key: string, value: string) => {
+      if (!onCustomAnswersChange) return
+      const next = { ...customAnswers }
+      next[key] = value
+      onCustomAnswersChange(next)
+    },
+    [customAnswers, onCustomAnswersChange]
+  )
+
+  // 把 HTML 里 data-answer-key 输入框的值桥接到组件状态，
+  // 这样在 iframe 内直接填写也能被 canSubmitAnswer 识别。
+  const syncToIframe = useCallback(() => {
+    const win = iframeRef.current?.contentWindow
+    if (!win) return
+    win.postMessage(
+      {
+        type: "zhishi-custom-init",
+        values: customAnswers,
+        disabled: !!lastResult || submitting,
+      },
+      "*"
+    )
+  }, [customAnswers, lastResult, submitting])
+
+  useEffect(() => {
+    if (!isCustom) return
+    syncToIframe()
+  }, [isCustom, syncToIframe])
+
+  useEffect(() => {
+    if (!isCustom) return
+    const win = iframeRef.current?.contentWindow
+    const handler = (e: MessageEvent) => {
+      if (win && e.source !== win) return
+      const d = e.data
+      if (!d) return
+      if (d.type === "zhishi-custom-ready") {
+        syncToIframe()
+        return
+      }
+      if (d.type === "zhishi-custom-answer") {
+        handleCustomChange(d.key, String(d.value ?? ""))
+      }
+    }
+    window.addEventListener("message", handler)
+    return () => window.removeEventListener("message", handler)
+  }, [isCustom, handleCustomChange, syncToIframe])
 
   if (isChoiceQuestion(qtype)) {
     return (
       <>
-        <MarkdownWithMath className="text-card-title font-semibold mb-6 leading-relaxed">
+        <MarkdownWithMath
+          className="text-card-title font-semibold mb-6 leading-relaxed"
+          imageBaseUrl={imageBase}
+        >
           {question.stem}
         </MarkdownWithMath>
         <div className="space-y-2.5 mb-6">
@@ -70,6 +134,7 @@ export function QuizQuestionInput({
             <MarkdownWithMath
               proseClass="prose prose-sm max-w-none inline prose-p:inline prose-p:my-0 prose-p:text-inherit"
               className="inline"
+              imageBaseUrl={imageBase}
             >
               {opt.text}
             </MarkdownWithMath>
@@ -103,6 +168,7 @@ export function QuizQuestionInput({
                   key={`t-${i}`}
                   proseClass="prose prose-sm max-w-none inline prose-p:inline prose-p:my-0"
                   className="inline"
+                  imageBaseUrl={imageBase}
                 >
                   {part.value}
                 </MarkdownWithMath>
@@ -127,7 +193,7 @@ export function QuizQuestionInput({
 
     return (
       <div className="mb-6 space-y-3">
-        <MarkdownWithMath className="text-body leading-relaxed">{question.stem}</MarkdownWithMath>
+        <MarkdownWithMath className="text-body leading-relaxed" imageBaseUrl={imageBase}>{question.stem}</MarkdownWithMath>
         {Array.from({ length: blankCount }).map((_, idx) => (
           <div key={idx} className="flex items-center gap-2">
             <span className="text-small text-ink-tertiary shrink-0 w-12">空 {idx + 1}</span>
@@ -148,7 +214,7 @@ export function QuizQuestionInput({
   if (isTextQuestion(qtype)) {
     return (
       <>
-        <MarkdownWithMath className="text-card-title font-semibold mb-4 leading-relaxed">
+        <MarkdownWithMath className="text-card-title font-semibold mb-4 leading-relaxed" imageBaseUrl={imageBase}>
           {question.stem}
         </MarkdownWithMath>
         <textarea
@@ -166,16 +232,42 @@ export function QuizQuestionInput({
     const params = parseAnswerParams(question.answer_params ?? null)
     const htmlContent = question.html_content ?? ""
 
-    const handleCustomChange = (key: string, value: string) => {
-      if (!onCustomAnswersChange) return
-      const next = { ...customAnswers }
-      next[key] = value
-      onCustomAnswersChange(next)
+    const bridgeScript = `
+<script>
+(function () {
+  function setVal(values) {
+    document.querySelectorAll('[data-answer-key]').forEach(function (el) {
+      var k = el.getAttribute('data-answer-key');
+      if (values && Object.prototype.hasOwnProperty.call(values, k)) el.value = values[k];
+    });
+  }
+  function setDisabled(disabled) {
+    document.querySelectorAll('[data-answer-key]').forEach(function (el) { el.disabled = !!disabled; });
+  }
+  document.addEventListener('input', function (e) {
+    var t = e.target;
+    if (t && t.hasAttribute && t.hasAttribute('data-answer-key')) {
+      window.parent.postMessage({ type: 'zhishi-custom-answer', key: t.getAttribute('data-answer-key'), value: t.value }, '*');
     }
+  });
+  window.addEventListener('message', function (e) {
+    var d = e.data;
+    if (!d) return;
+    if (d.type === 'zhishi-custom-init') { setVal(d.values || {}); setDisabled(d.disabled); }
+  });
+  window.parent.postMessage({ type: 'zhishi-custom-ready' }, '*');
+})();
+</script>`
+
+    const srcDoc = htmlContent
+      ? htmlContent.includes("</body>")
+        ? htmlContent.replace(/<\/body>/i, bridgeScript + "</body>")
+        : htmlContent + bridgeScript
+      : ""
 
     return (
       <div className="mb-6 space-y-4">
-        <MarkdownWithMath className="text-card-title font-semibold leading-relaxed">
+        <MarkdownWithMath className="text-card-title font-semibold leading-relaxed" imageBaseUrl={imageBase}>
           {question.stem}
         </MarkdownWithMath>
 
@@ -183,8 +275,9 @@ export function QuizQuestionInput({
         {htmlContent && (
           <div className="border border-line-soft rounded-lg overflow-hidden">
             <iframe
+              ref={iframeRef}
               sandbox="allow-scripts"
-              srcDoc={htmlContent}
+              srcDoc={srcDoc}
               title="自定义题目"
               className="w-full"
               style={{ border: "none", minHeight: 300, maxHeight: 500 }}
@@ -192,7 +285,7 @@ export function QuizQuestionInput({
           </div>
         )}
 
-        {/* 答案输入表单 */}
+        {/* 答案输入表单（兜底：HTML 未提供 data-answer-key 输入时用） */}
         {params.length > 0 && (
           <div className="space-y-3 border border-line-soft rounded-lg p-4 bg-surface">
             <div className="text-small font-medium text-ink-primary mb-2">请填写答案</div>

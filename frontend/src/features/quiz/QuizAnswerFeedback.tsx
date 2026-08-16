@@ -2,6 +2,7 @@ import type { ReactNode } from "react"
 import { CheckCircle2, ChevronRight, HelpCircle, Sparkles, XCircle } from "lucide-react"
 import { MarkdownWithMath } from "@/components/blocks/MarkdownWithMath"
 import { CitationCard } from "@/components/blocks/CitationCard"
+import { getApiBase } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import type { QuizAnswerResult, QuizSessionQuestion } from "@/types"
 import { cn } from "@/lib/utils"
@@ -18,6 +19,8 @@ type QuizAnswerFeedbackProps = {
   onNext?: () => void
   onAiReview?: () => void
   onMarkUnknown?: () => void
+  /** 来源文档 id，用于解析题目中的图片相对路径（images/xxx） */
+  documentId?: string | null
 }
 
 function statusLabel(status: string): { text: string; className: string; icon: ReactNode } {
@@ -52,11 +55,16 @@ function statusLabel(status: string): { text: string; className: string; icon: R
 export function QuizAnswerFeedback({
   question,
   lastResult,
+  documentId,
 }: QuizAnswerFeedbackProps) {
   const qtype = question.question_type || "single_choice"
   const info = statusLabel(lastResult.status)
   const correctDisplay = formatCorrectAnswerDisplay(lastResult.correct_answer, qtype)
   const isUnknown = lastResult.status === "unknown"
+
+  const imageBase = documentId
+    ? `${getApiBase().replace(/\/$/, "")}/api/v1/kb/documents/${encodeURIComponent(documentId)}/images`
+    : undefined
 
   return (
     <div className="space-y-3">
@@ -89,7 +97,7 @@ export function QuizAnswerFeedback({
 
       {!isUnknown && lastResult.explanation && (
         <div className="text-body text-ink-primary bg-surface-soft rounded-md p-3 border border-line-soft">
-          <MarkdownWithMath>{lastResult.explanation}</MarkdownWithMath>
+          <MarkdownWithMath imageBaseUrl={imageBase}>{lastResult.explanation}</MarkdownWithMath>
         </div>
       )}
 
@@ -158,6 +166,6 @@ export function getSubmitButtonLabel(
 ): string {
   if (!submitting) return "提交答案"
   if (requestAiGrade) return "AI 判题中…"
-  if (isAiGradedQuestion(qtype) && !isFillBlankQuestion(qtype)) return "AI 判题中…"
+  if (isAiGradedQuestion(qtype)) return "AI 判题中…"
   return "提交中…"
 }

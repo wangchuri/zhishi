@@ -9,7 +9,9 @@ import {
   HelpCircle,
   Loader2,
   Play,
+  Search,
   Trash2,
+  X,
 } from "lucide-react"
 import { AppShell } from "@/components/layout/AppShell"
 import { PageHeader } from "@/components/blocks/PageHeader"
@@ -43,6 +45,7 @@ import type {
 import { QuizReviewPanel } from "./QuizReviewPanel"
 import { QuizQuestionInput } from "./QuizQuestionInput"
 import { QuizAnswerFeedback, QuizAnswerFeedbackActions, getSubmitButtonLabel } from "./QuizAnswerFeedback"
+import { StreakCelebrationDialog } from "./StreakCelebrationDialog"
 import {
   QUESTION_TYPE_LABEL,
   buildUserAnswerPayload,
@@ -121,9 +124,11 @@ export function QuizPage() {
   } | null>(null)
   const [questionListData, setQuestionListData] = useState<QuestionListResult | null>(null)
   const [loadingQuestions, setLoadingQuestions] = useState(false)
+  const [searchKeyword, setSearchKeyword] = useState("")
   const [questionStartTime, setQuestionStartTime] = useState(Date.now())
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [deletingQuestions, setDeletingQuestions] = useState(false)
+  const [streakDialog, setStreakDialog] = useState<{ open: boolean; streak: number }>({ open: false, streak: 0 })
 
   // 如果 URL 中有 session_id，直接加载该会话（从 /quiz/doc/:docId 跳转过来）
   const sessionIdFromUrl = searchParams.get("session_id")
@@ -155,10 +160,10 @@ export function QuizPage() {
     }
   }, [])
 
-  const loadQuestionList = useCallback(async (documentId: string) => {
+  const loadQuestionList = useCallback(async (documentId: string, keyword?: string) => {
     setLoadingQuestions(true)
     try {
-      const res = (await questionsApi.list({ document_id: documentId })) as QuestionListResult
+      const res = (await questionsApi.list({ document_id: documentId, keyword })) as QuestionListResult
       const items = res.questions || []
       const data: QuestionListResult = {
         ...res,
@@ -174,6 +179,23 @@ export function QuizPage() {
       setLoadingQuestions(false)
     }
   }, [])
+
+  // 搜索防抖
+  const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  useEffect(() => {
+    if (!selectedDocumentId || isLifeZone) {
+      setQuestionListData(null)
+      return
+    }
+    if (searchTimerRef.current) clearTimeout(searchTimerRef.current)
+    const timer = setTimeout(() => {
+      void loadQuestionList(selectedDocumentId, searchKeyword.trim() || undefined)
+    }, 300)
+    searchTimerRef.current = timer
+    return () => {
+      if (searchTimerRef.current) clearTimeout(searchTimerRef.current)
+    }
+  }, [selectedDocumentId, searchKeyword, isLifeZone, loadQuestionList])
 
   useEffect(() => {
     if (loadingDocuments || documents.length === 0 || selectedCollection?.zone === "life") return
@@ -205,14 +227,6 @@ export function QuizPage() {
       setSelectedDocumentId(urlDocId)
     }
   }, [documents, searchParams])
-
-  useEffect(() => {
-    if (!selectedDocumentId || isLifeZone) {
-      setQuestionListData(null)
-      return
-    }
-    loadQuestionList(selectedDocumentId)
-  }, [selectedDocumentId, isLifeZone, loadQuestionList])
 
   // ── 轮询文档出题状态，显示顶部横幅 ──
   const generatingDoc = useMemo(() => {
@@ -439,6 +453,9 @@ export function QuizPage() {
       })
       const result = res as unknown as QuizAnswerResult
       setLastResult(result)
+      if (result.status === "correct" && (result.current_streak ?? 0) >= 3) {
+        setStreakDialog({ open: true, streak: result.current_streak ?? 0 })
+      }
       setSession((prev) =>
         prev
           ? {
@@ -686,10 +703,30 @@ export function QuizPage() {
                           )}
 
                           <div className="flex-1 min-h-0 flex flex-col p-4">
-                            <div className="flex items-center justify-between mb-3 shrink-0">
+                            <div className="flex items-center justify-between mb-2 shrink-0">
                               <div className="text-small font-medium text-ink-primary">题目列表</div>
                               {loadingQuestions && (
                                 <Loader2 className="w-4 h-4 animate-spin text-ink-tertiary" />
+                              )}
+                            </div>
+                            <div className="relative mb-3 shrink-0">
+                              <Search className="w-4 h-4 text-ink-tertiary absolute left-3 top-1/2 -translate-y-1/2" />
+                              <input
+                                type="text"
+                                value={searchKeyword}
+                                onChange={(e) => setSearchKeyword(e.target.value)}
+                                placeholder="搜索题目（按题干关键词）"
+                                className="w-full h-9 pl-9 pr-8 rounded-lg border border-line-soft bg-surface-soft text-small text-ink-primary placeholder:text-ink-tertiary focus:outline-none focus:ring-2 focus:ring-primary/30"
+                              />
+                              {searchKeyword && (
+                                <button
+                                  type="button"
+                                  onClick={() => setSearchKeyword("")}
+                                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-ink-tertiary hover:text-ink-primary"
+                                  aria-label="清除搜索"
+                                >
+                                  <X className="w-4 h-4" />
+                                </button>
                               )}
                             </div>
                             {!loadingQuestions && questionListData && questionListData.questions.length > 0 ? (
@@ -707,6 +744,8 @@ export function QuizPage() {
                                   </li>
                                 ))}
                               </ul>
+                            ) : !loadingQuestions && questionListData && searchKeyword.trim() ? (
+                              <p className="text-caption text-ink-tertiary">没有匹配的题目</p>
                             ) : !loadingQuestions && docReadyForQuiz ? (
                               <p className="text-caption text-ink-tertiary">暂无题目详情</p>
                             ) : !loadingQuestions ? (
@@ -792,7 +831,8 @@ export function QuizPage() {
                         currentQuestion.question_type,
                         selectedOption,
                         textAnswer,
-                        blankAnswers
+                        blankAnswers,
+                        customAnswers
                       )
                     }
                   >
@@ -893,6 +933,12 @@ export function QuizPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <StreakCelebrationDialog
+        open={streakDialog.open}
+        streak={streakDialog.streak}
+        onClose={() => setStreakDialog((s) => ({ ...s, open: false }))}
+      />
     </AppShell>
   )
 }

@@ -31,7 +31,7 @@ export function AppShell({ children, maxWidth = 1180, noPadding = false }: AppSh
       )}
       {/* 桌面端：static sidebar；平板端：fixed 抽屉 */}
       <div className={cn(
-        "shrink-0 flex flex-col border-r border-line-light bg-paper transition-all duration-200 z-40",
+        "shrink-0 flex flex-col border-r border-line-light bg-paper transition-all duration-200 z-40 h-dvh",
         "fixed left-0 top-0 bottom-0 lg:static lg:z-auto",
         mobileMenuOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0",
       )}>
