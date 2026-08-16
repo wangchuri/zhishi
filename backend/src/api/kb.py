@@ -17,7 +17,7 @@ from ..models import Document, DocumentImage, DocumentSegment
 from ..schemas import kb as kb_schemas
 from ..services import kb as kb_service
 from ..services import thumbnail as thumb_service
-from ..services.learning_path import schedule_learning_path
+from ..agents.learning_path_agent import schedule_learning_path
 
 logger = logging.getLogger(__name__)
 
