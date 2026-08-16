@@ -24,7 +24,7 @@ from ..models import (
 from ..utils import image_file_name, sha256_hex
 from . import parser
 from .mineru import parse_pdf
-from .rag import delete_document_index, index_document
+from .rag import chroma_store
 
 # 是否在解析完成后自动调度学习路径 Agent（由 api 层设置，避免同步环境无事件循环）
 AUTO_LEARNING_PATH = True
@@ -149,7 +149,7 @@ def ingest_md_text(
         logger.warning("分段失败 doc=%s: %s", doc.id, e)
     try:
         if md_final.strip():
-            index_document(doc.id, md_final)
+            chroma_store.index_document(doc.id, md_final)
     except Exception as e:
         logger.warning("向量化失败 doc=%s: %s", doc.id, e)
 
@@ -220,7 +220,7 @@ def ingest_upload(
         parsed_text = storage.read_parsed(doc.id) or ""
         if parsed_text.strip():
             try:
-                index_document(doc.id, parsed_text)
+                chroma_store.index_document(doc.id, parsed_text)
             except Exception as ie:
                 logger.warning("向量化失败 doc=%s: %s", doc.id, ie)
     except Exception as e:
@@ -430,6 +430,6 @@ def delete_document(db: Session, doc_id: str) -> None:
     storage.delete_document(doc_id)
     storage.delete_thumbnail(doc_id)
     try:
-        delete_document_index(doc_id)
+        chroma_store.delete_document_index(doc_id)
     except Exception as ie:
         logger.warning("删除向量索引失败 doc=%s: %s", doc_id, ie)

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 from datetime import datetime, timezone
@@ -14,7 +13,7 @@ from ..core.database import SessionLocal
 from ..core.errors import NotFoundError
 from ..core.llm import create_agent
 from ..models import ChatMessage, ChatSession, Document
-from . import rag
+from .rag import chroma_store
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +21,7 @@ _RAG_PROMPT = """你是知拾（Zhishi）的知识管理助手。你帮助用户
 
 ## 核心能力
 - 基于用户知识库中的文档内容回答问题
-- 需要检索知识库时请调用 `zhishi_search_knowledge_base` 工具
+- 需要检索知识库时请调用 `chat_search_knowledge_base` 工具
 - 如果知识库中有相关内容，优先基于知识库回答，并引用来源
 - 如果知识库中没有相关内容，基于你自身的知识诚实回答
 
@@ -35,27 +34,43 @@ _RAG_PROMPT = """你是知拾（Zhishi）的知识管理助手。你帮助用户
 
 
 class ChatRAGTools:
-    """对话 RAG 检索工具（可指定 collection 范围）。"""
+    """对话 RAG 检索工具（可指定 collection 范围）。
+
+    领域方法直接注册为工具（register_tool），同步方法由 tina 自动跑线程池，
+    无需手动 asyncio.to_thread。工具名带 chat_ 命名空间前缀。
+    """
 
     def __init__(self, collection_id: Optional[str] = None):
         from tina import Tools
 
         self.collection_id = collection_id
-        self.tools = Tools(name="rag")
+        self.tools = Tools(name="chat")
+        self.tools.register_tool(tool=self.search_knowledge_base)
 
-        @self.tools.register(description="搜索用户知识库中的相关内容")
-        async def zhishi_search_knowledge_base(query: str) -> str:
-            """搜索知识库，返回匹配的文档片段和相似度分数。
-            Args:
-                query: 检索查询文本
-            """
-            results = await asyncio.to_thread(rag.search_all, query, 5)
-            if not results:
-                return "未找到相关内容"
-            lines = []
-            for i, r in enumerate(results, 1):
-                lines.append(f"[{i}] (文档 {r['document_id'][:8]}, 相关度 {r['distance']:.2f})\n{r['text']}")
-            return "\n\n".join(lines)
+    def search_knowledge_base(self, query: str) -> str:
+        """搜索用户知识库，返回匹配的文档片段和相似度分数。
+        Args:
+            query: 检索查询文本
+        """
+        document_ids = None
+        if self.collection_id:
+            db = SessionLocal()
+            try:
+                document_ids = [
+                    d.id for d in db.query(Document).filter(
+                        Document.collection_id == self.collection_id
+                    ).all()
+                ]
+            finally:
+                db.close()
+
+        results = chroma_store.search_documents(query, 5, document_ids)
+        if not results:
+            return "未找到相关内容"
+        lines = []
+        for i, r in enumerate(results, 1):
+            lines.append(f"[{i}] 文档片段（相关度 {r['distance']:.2f}）\n{r['text']}")
+        return "\n\n".join(lines)
 
     def get_tools(self):
         return self.tools

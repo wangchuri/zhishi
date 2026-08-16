@@ -5,12 +5,9 @@
 
 from __future__ import annotations
 
-import asyncio
 import json
 
 from tina import Tools
-
-from ..services import rag
 
 
 def norm_title(title) -> str:
@@ -87,19 +84,15 @@ def get_generated_path(document_id: str) -> dict | None:
 
 
 def build_learning_path_tools(document_id: str):
-    """构建学习路径 Agent 的工具集（工具隔离）。"""
-    tools = Tools()
+    """构建学习路径 Agent 的工具集（工具隔离）。
 
-    @tools.register(description="检索当前文档内容（返回相关片段）")
-    async def search_document(query: str) -> str:
-        """检索当前文档，返回与 query 相关的段落。
-        Args:
-            query: 检索关键词/问题
-        """
-        results = await asyncio.to_thread(rag.search_document, document_id, query, 3)
-        if not results:
-            return "（未检索到相关内容）"
-        return "\n---\n".join(r["text"] for r in results)
+    检索工具复用 ChromaStore 的（已注册 search_knowledge_base / search_document_content），
+    此处只补充领域专属的结构化提交工具。
+    """
+    from ..services.rag import chroma_store
+
+    tools = Tools(name="learning_path")
+    tools += chroma_store.get_tools()
 
     @tools.register(description="提交文档的学习路径（结构化输出，仅调用一次）")
     async def submit_learning_path(title, chapters) -> str:
