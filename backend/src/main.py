@@ -18,6 +18,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .api.kb import router as kb_router
+from .api.questions import router as questions_router
 from .core.config import config
 from .core.database import SessionLocal, init_db
 from .services.kb import ensure_default_collections
@@ -32,6 +33,7 @@ app.add_middleware(
 )
 
 app.include_router(kb_router)
+app.include_router(questions_router)
 
 _START_TIME = time.time()
 
