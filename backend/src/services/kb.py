@@ -168,6 +168,7 @@ class KnowledgeBaseService:
         filename: str,
         content: bytes,
         collection_id: Optional[str] = None,
+        force_scanned: bool = False,
     ) -> Document:
         """上传入库：全局去重 + 存储 + 解析分发。"""
         ext = parser.file_extension(filename)
@@ -216,7 +217,7 @@ class KnowledgeBaseService:
 
         # 解析分发（同步执行；异步化见 api 层）
         try:
-            result = self._parse_and_ingest(db, doc, content)
+            result = self._parse_and_ingest(db, doc, content, force_scanned=force_scanned)
             doc.indexing_status = "completed"
             doc.pdf_page_count = len(result.get("pages", [])) if result.get("pages") else None
             self.segment_document(db, doc)
@@ -237,7 +238,14 @@ class KnowledgeBaseService:
         db.commit()
         return doc
 
-    def _parse_and_ingest(self, db: Session, doc: Document, content: bytes) -> dict:
+    def _parse_and_ingest(
+        self,
+        db: Session,
+        doc: Document,
+        content: bytes,
+        *,
+        force_scanned: bool = False,
+    ) -> dict:
         """解析 + 图片落图床 + 图片注册表 + 分段。"""
         ext = parser.file_extension(doc.display_name)
         result: dict = {"pages": [], "images": {}}
@@ -265,7 +273,8 @@ class KnowledgeBaseService:
         # 3) PDF
         if ext in parser.PDF_EXTENSIONS:
             text, pages = parser.parse_pdf_text(content)
-            if parser.is_pdf_scanned(content) or not text.strip():
+            is_scanned = force_scanned or parser.is_pdf_scanned(content) or not text.strip()
+            if is_scanned:
                 mineru = mineru_service.parse_pdf(content)
                 pages_md = mineru["page_mds"]
                 for idx, p in enumerate(pages_md, 1):

@@ -288,11 +288,14 @@ export const kbApi = {
     return request<any>("PATCH", `/api/v1/kb/collections/${collectionId}`, data)
   },
 
-  upload(file: File, collectionId?: string) {
+  upload(file: File, collectionId?: string, forceScanned?: boolean) {
     const formData = new FormData()
     formData.append("file", file)
     if (collectionId) {
       formData.append("collection_id", collectionId)
+    }
+    if (forceScanned != null) {
+      formData.append("force_scanned", String(forceScanned))
     }
     return request<any>("POST", "/api/v1/kb/upload", formData, true)
   },

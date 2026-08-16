@@ -245,6 +245,11 @@ export function UploadPage() {
         // 判断是否为图片（需要 OCR）
         const isImage = /\.(png|jpg|jpeg|webp|bmp)$/i.test(file.name)
 
+        // 判断是否为 PDF：询问用户是否扫描件（自动判断不可靠时人工确认）
+        const isPdf = /\.pdf$/i.test(file.name)
+        const forceScanned =
+          isPdf && window.confirm(`「${file.name}」是扫描件吗？\n\n确定 → 走 OCR 扫描件识别\n取消 → 按普通 PDF 处理`)
+
         // 添加临时任务
         const tempId = `uploading-${Date.now()}-${file.name}`
         setTasks((prev) => [
@@ -260,7 +265,7 @@ export function UploadPage() {
         }
 
         try {
-          const res = await kbApi.upload(file, selectedCollectionId || undefined)
+          const res = await kbApi.upload(file, selectedCollectionId || undefined, forceScanned)
 
           if (res.warning) {
             toast.warning(res.warning, { duration: 8000 })
@@ -287,7 +292,10 @@ export function UploadPage() {
             documentId: res.document_id,
             fileName: res.file_name || file.name,
             fileSize: file.size,
-            status: res.ocr_status === "processing" ? "ocr" : "indexing",
+            status:
+              res.ocr_processed || res.ocr_status === "processing"
+                ? "ocr"
+                : "indexing",
             ocrCurrentPage: Number(res.ocr_current_page ?? 0),
             ocrTotalPages: Number(res.ocr_total_pages ?? 0),
           }

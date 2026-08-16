@@ -50,10 +50,17 @@ def update_collection(collection_id: str, body: kb_schemas.CollectionUpdate, db:
 async def upload(
     file: UploadFile = File(...),
     collection_id: Optional[str] = Form(None),
+    force_scanned: Optional[str] = Form(None),
     db: Session = Depends(get_db),
 ):
     content = await file.read()
-    doc = kb_service.ingest_upload(db, filename=file.filename or "unnamed", content=content, collection_id=collection_id)
+    doc = kb_service.ingest_upload(
+        db,
+        filename=file.filename or "unnamed",
+        content=content,
+        collection_id=collection_id,
+        force_scanned=(force_scanned or "").lower() in ("1", "true", "yes", "on"),
+    )
     # 解析完成后异步调度学习路径 Agent（每文档独立任务，受 max_concurrency 限制）
     if doc.zone == "study" and kb_service.AUTO_LEARNING_PATH:
         try:
