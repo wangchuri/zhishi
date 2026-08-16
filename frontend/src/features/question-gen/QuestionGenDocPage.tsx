@@ -35,7 +35,6 @@ export function QuestionGenDocPage() {
 
   const [pages, setPages] = useState<DocumentPage[]>([])
   const [hasPageMarkers, setHasPageMarkers] = useState(true)
-  const [docPreviewMode, setDocPreviewMode] = useState<"pdf" | "markdown" | "text">("markdown")
   const [documentName, setDocumentName] = useState("")
   const [activePageNumber, setActivePageNumber] = useState<number | null>(null)
   const [pageDetail, setPageDetail] = useState<DocumentPageDetail | null>(null)
@@ -119,7 +118,6 @@ export function QuestionGenDocPage() {
       const pageList = res.pages || []
       setPages(pageList)
       setHasPageMarkers(res.has_page_markers)
-      setDocPreviewMode(res.preview_mode || "markdown")
       setDocumentName(res.document_name || selectedDocument?.name || "")
       if (pageList.length > 0) {
         setActivePageNumber(pageList[0].page_number)
@@ -408,9 +406,8 @@ export function QuestionGenDocPage() {
               ) : (
                 <DocumentContentViewer
                   docId={documentId}
-                  previewMode={pageDetail.preview_mode === "pdf" || docPreviewMode === "pdf" ? "pdf" : "markdown"}
+                  previewMode="markdown"
                   content={pageDetail.content || ""}
-                  pageNumber={pageDetail.page_number}
                 />
               )}
             </div>

@@ -10,9 +10,7 @@ import {
   Minimize2,
   PanelLeftClose,
   PanelLeftOpen,
-  PanelRight,
   Pin,
-  X,
 } from "lucide-react"
 import { AppShell } from "@/components/layout/AppShell"
 import { MarkdownWithMath } from "@/components/blocks/MarkdownWithMath"
@@ -30,7 +28,6 @@ import { cn } from "@/lib/utils"
 import type { DocumentPage, DocumentPageDetail } from "@/types"
 import { CompanionChatSidebar } from "./CompanionChatSidebar"
 import { TipPanel } from "./TipPanel"
-import { PdfContinuousViewer } from "./PdfContinuousViewer"
 import { SelectionTipButton } from "./SelectionTipButton"
 import { toast } from "sonner"
 
@@ -60,8 +57,6 @@ export function CompanionReadPage() {
   const [activePage, setActivePage] = useState<number | null>(null)
   const [pageDetail, setPageDetail] = useState<DocumentPageDetail | null>(null)
   const [railOpen, setRailOpen] = useState(true)
-  const [ocrOpen, setOcrOpen] = useState(true)
-  const [fsOcrOpen, setFsOcrOpen] = useState(false)
   const [fullscreen, setFullscreen] = useState(false)
   const [chatOpen, setChatOpen] = useState(false)
   const [tipOpen, setTipOpen] = useState(false)
@@ -112,7 +107,7 @@ export function CompanionReadPage() {
     }
   }, [docId])
 
-  // 加载当前页详情（OCR 右栏 / AI 上下文）
+  // 加载当前页详情（AI 上下文）
   useEffect(() => {
     if (!docId || !activePage) return
     let cancelled = false
@@ -145,13 +140,10 @@ export function CompanionReadPage() {
     return () => document.removeEventListener("fullscreenchange", onFs)
   }, [])
 
-  const previewMode = pageDetail?.preview_mode || meta?.preview_mode || "markdown"
-  const isPdf = previewMode === "pdf"
-  const ocrText = pageDetail?.content?.trim() || ""
   const docName = meta?.document_name || "文档"
   const totalPages = meta?.total_pages ?? pageList.length
   const currentMarked = activePage != null && markedPages.includes(activePage)
-  const selectable = fullscreen ? !isPdf : !isPdf || !!ocrText
+  const selectable = true
 
   // 滚动自动翻页：以视口 35% 高度线定位当前页
   const handleScroll = useCallback(() => {
@@ -244,7 +236,7 @@ export function CompanionReadPage() {
     setFullscreen(false)
   }
 
-  // 连续滚动阅读内容（md/txt 切片 / PDF 连续渲染）
+  // 连续滚动阅读内容（md/txt 切片）
   const renderReadingContent = () => {
     if (loadingPages) {
       return (
@@ -256,9 +248,6 @@ export function CompanionReadPage() {
     }
     if (pageList.length === 0) {
       return <div className="flex items-center justify-center py-24 text-ink-disabled">暂无页面</div>
-    }
-    if (isPdf) {
-      return <PdfContinuousViewer source={{ docId }} />
     }
     return (
       <div className="max-w-[820px] mx-auto">
@@ -313,20 +302,6 @@ export function CompanionReadPage() {
             <span className="text-caption text-ink-soft px-1 whitespace-nowrap">
               第 {activePage ?? "—"} / {totalPages || "—"} 页
             </span>
-            {isPdf && (
-              <button
-                type="button"
-                onClick={() => setFsOcrOpen((v) => !v)}
-                className={cn(
-                  "inline-flex items-center gap-1 h-8 px-2.5 rounded-full text-caption font-medium transition-colors",
-                  fsOcrOpen ? "bg-sea-subtle text-sea" : "text-ink-soft hover:text-sea"
-                )}
-                aria-label="查看 OCR 文本"
-              >
-                <PanelRight className="w-3.5 h-3.5" strokeWidth={2} />
-                OCR
-              </button>
-            )}
             <div className="w-px h-5 bg-line mx-1" />
             <button
               type="button"
@@ -374,32 +349,6 @@ export function CompanionReadPage() {
               退出
             </button>
           </div>
-
-          {/* 全屏 OCR 文本浮层（扫描件） */}
-          {isPdf && fsOcrOpen && (
-            <div className="fixed top-0 right-0 bottom-0 z-40 w-[340px] max-w-[70vw] bg-paper border-l border-line-light flex flex-col shadow-lg">
-              <div className="flex items-center justify-between px-3 h-12 border-b border-line-light shrink-0">
-                <span className="text-small font-medium text-ink">
-                  OCR 文本 · 第 {activePage ?? "—"} 页
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setFsOcrOpen(false)}
-                  className="w-8 h-8 rounded-md flex items-center justify-center text-ink-disabled hover:text-ink hover:bg-paper-2 transition-colors"
-                  aria-label="关闭 OCR 文本"
-                >
-                  <X className="w-4 h-4" strokeWidth={2} />
-                </button>
-              </div>
-              <div className="flex-1 overflow-y-auto scroll-thin p-4">
-                {ocrText ? (
-                  <MarkdownWithMath className="text-body leading-relaxed" imageBaseUrl={imageBase}>{ocrText}</MarkdownWithMath>
-                ) : (
-                  <div className="text-caption text-ink-disabled text-center py-8">暂无 OCR 文本</div>
-                )}
-              </div>
-            </div>
-          )}
           </div>{/* 全屏正文 wrapper 结束 */}
 
           {/* 伴学侧边栏（推入式，普通/全屏共用） */}
@@ -414,7 +363,7 @@ export function CompanionReadPage() {
           />
         </div>
       ) : (
-        /* ────── 普通阅读：目录 | 连续滚动主区 | OCR 文本栏 ────── */
+        /* ────── 普通阅读：目录 | 连续滚动主区 ────── */
         <AppShell maxWidth={null} noPadding>
           <div className="flex h-full min-h-0">
             {/* 左：目录（点击跳转，滚动为主） */}
@@ -467,135 +416,81 @@ export function CompanionReadPage() {
               </div>
             </aside>
 
-            {/* 中 + 右 */}
-            <div ref={selectionRootRef} className="flex-1 flex min-w-0">
-              {/* 主阅读区（连续滚动） */}
-              <div className="flex-1 flex flex-col min-w-0">
-                <div className="h-14 shrink-0 border-b border-line-light bg-paper flex items-center gap-2 px-4">
-                  {!railOpen && (
-                    <button
-                      type="button"
-                      onClick={() => setRailOpen(true)}
-                      className="w-9 h-9 rounded-md flex items-center justify-center text-ink-disabled hover:text-ink hover:bg-paper-2 transition-colors shrink-0"
-                      aria-label="展开目录"
-                    >
-                      <PanelLeftOpen className="w-4 h-4" strokeWidth={2} />
-                    </button>
-                  )}
+            {/* 主阅读区（连续滚动） */}
+            <div ref={selectionRootRef} className="flex-1 flex flex-col min-w-0">
+              <div className="h-14 shrink-0 border-b border-line-light bg-paper flex items-center gap-2 px-4">
+                {!railOpen && (
                   <button
                     type="button"
-                    onClick={() => navigate("/companion")}
+                    onClick={() => setRailOpen(true)}
                     className="w-9 h-9 rounded-md flex items-center justify-center text-ink-disabled hover:text-ink hover:bg-paper-2 transition-colors shrink-0"
-                    aria-label="返回伴学列表"
+                    aria-label="展开目录"
                   >
-                    <ArrowLeft className="w-4 h-4" strokeWidth={2} />
+                    <PanelLeftOpen className="w-4 h-4" strokeWidth={2} />
                   </button>
-                  <div className="min-w-0 flex-1">
-                    <div className="text-small font-semibold text-ink truncate leading-tight">{docName}</div>
-                    <div className="text-caption text-ink-disabled leading-tight">
-                      第 {activePage ?? "—"} 页{totalPages ? ` / 共 ${totalPages} 页` : ""} · 滚动阅读
-                    </div>
-                  </div>
-
-                  {isPdf && (
-                    <button
-                      type="button"
-                      onClick={() => setOcrOpen((v) => !v)}
-                      className={cn(
-                        "w-9 h-9 rounded-md flex items-center justify-center transition-colors shrink-0",
-                        ocrOpen ? "text-sea bg-sea-subtle" : "text-ink-disabled hover:bg-paper-2 hover:text-ink"
-                      )}
-                      aria-label="切换 OCR 文本栏"
-                      title="OCR 文本"
-                    >
-                      <PanelRight className="w-4 h-4" strokeWidth={2} />
-                    </button>
-                  )}
-
-                  {markButton("")}
-
-                  <button
-                    type="button"
-                    onClick={() => setChatOpen((v) => !v)}
-                    className={cn(
-                      "w-9 h-9 rounded-md flex items-center justify-center transition-colors shrink-0",
-                      chatOpen ? "text-sea bg-sea-subtle" : "text-ink-disabled hover:bg-paper-2 hover:text-ink"
-                    )}
-                    aria-label="打开 AI 伴学对话"
-                    title="AI 伴学对话"
-                  >
-                    <Bot className="w-4 h-4" strokeWidth={2} />
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setTipOpen((v) => !v)}
-                    className={cn(
-                      "w-9 h-9 rounded-md flex items-center justify-center transition-colors shrink-0",
-                      tipOpen ? "text-sea bg-sea-subtle" : "text-ink-disabled hover:bg-paper-2 hover:text-ink"
-                    )}
-                    aria-label="打开本书笔记"
-                    title="本书笔记"
-                  >
-                    <FileText className="w-4 h-4" strokeWidth={2} />
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={enterFullscreen}
-                    className="w-9 h-9 rounded-md flex items-center justify-center text-ink-disabled hover:text-ink hover:bg-paper-2 transition-colors shrink-0"
-                    aria-label="全屏阅读"
-                    title="全屏阅读"
-                  >
-                    <Maximize className="w-4 h-4" strokeWidth={2} />
-                  </button>
-                </div>
-
-                <div
-                  ref={scrollRef}
-                  onScroll={handleScroll}
-                  className="relative flex-1 overflow-y-auto scroll-thin p-6 md:p-8 bg-paper"
+                )}
+                <button
+                  type="button"
+                  onClick={() => navigate("/companion")}
+                  className="w-9 h-9 rounded-md flex items-center justify-center text-ink-disabled hover:text-ink hover:bg-paper-2 transition-colors shrink-0"
+                  aria-label="返回伴学列表"
                 >
-                  {renderReadingContent()}
-                  <div className="h-24" />
+                  <ArrowLeft className="w-4 h-4" strokeWidth={2} />
+                </button>
+                <div className="min-w-0 flex-1">
+                  <div className="text-small font-semibold text-ink truncate leading-tight">{docName}</div>
+                  <div className="text-caption text-ink-disabled leading-tight">
+                    第 {activePage ?? "—"} 页{totalPages ? ` / 共 ${totalPages} 页` : ""} · 滚动阅读
+                  </div>
                 </div>
+
+                {markButton("")}
+
+                <button
+                  type="button"
+                  onClick={() => setChatOpen((v) => !v)}
+                  className={cn(
+                    "w-9 h-9 rounded-md flex items-center justify-center transition-colors shrink-0",
+                    chatOpen ? "text-sea bg-sea-subtle" : "text-ink-disabled hover:bg-paper-2 hover:text-ink"
+                  )}
+                  aria-label="打开 AI 伴学对话"
+                  title="AI 伴学对话"
+                >
+                  <Bot className="w-4 h-4" strokeWidth={2} />
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setTipOpen((v) => !v)}
+                  className={cn(
+                    "w-9 h-9 rounded-md flex items-center justify-center transition-colors shrink-0",
+                    tipOpen ? "text-sea bg-sea-subtle" : "text-ink-disabled hover:bg-paper-2 hover:text-ink"
+                  )}
+                  aria-label="打开本书笔记"
+                  title="本书笔记"
+                >
+                  <FileText className="w-4 h-4" strokeWidth={2} />
+                </button>
+
+                <button
+                  type="button"
+                  onClick={enterFullscreen}
+                  className="w-9 h-9 rounded-md flex items-center justify-center text-ink-disabled hover:text-ink hover:bg-paper-2 transition-colors shrink-0"
+                  aria-label="全屏阅读"
+                  title="全屏阅读"
+                >
+                  <Maximize className="w-4 h-4" strokeWidth={2} />
+                </button>
               </div>
 
-              {/* 右：OCR 文本栏（扫描件/PDF，跟随当前页） */}
-              {isPdf &&
-                (ocrOpen ? (
-                  <aside className="shrink-0 w-[320px] border-l border-line-light bg-paper flex flex-col overflow-hidden">
-                    <div className="flex items-center justify-between px-3 h-12 border-b border-line-light shrink-0">
-                      <span className="text-small font-medium text-ink">
-                        OCR 文本 · 第 {activePage ?? "—"} 页
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => setOcrOpen(false)}
-                        className="w-8 h-8 rounded-md flex items-center justify-center text-ink-disabled hover:text-ink hover:bg-paper-2 transition-colors"
-                        aria-label="收起 OCR 文本"
-                      >
-                        <PanelRight className="w-4 h-4" strokeWidth={2} />
-                      </button>
-                    </div>
-                    <div className="flex-1 overflow-y-auto scroll-thin p-4">
-                      {ocrText ? (
-                        <MarkdownWithMath className="text-body leading-relaxed">{ocrText}</MarkdownWithMath>
-                      ) : (
-                        <div className="text-caption text-ink-disabled text-center py-8">暂无 OCR 文本</div>
-                      )}
-                    </div>
-                  </aside>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => setOcrOpen(true)}
-                    className="shrink-0 w-9 border-l border-line-light bg-paper flex items-center justify-center text-caption text-ink-disabled hover:text-sea transition-colors"
-                    aria-label="展开 OCR 文本"
-                  >
-                    <span className="[writing-mode:vertical-rl] tracking-widest">OCR</span>
-                  </button>
-                ))}
+              <div
+                ref={scrollRef}
+                onScroll={handleScroll}
+                className="relative flex-1 overflow-y-auto scroll-thin p-6 md:p-8 bg-paper"
+              >
+                {renderReadingContent()}
+                <div className="h-24" />
+              </div>
             </div>
 
             {/* 伴学侧边栏（推入式，挤压主内容区） */}

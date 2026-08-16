@@ -120,11 +120,8 @@ def delete_document(doc_id: str, db: Session = Depends(get_db)):
 def document_content(doc_id: str, db: Session = Depends(get_db)):
     doc = kb_service.get_document(db, doc_id)
     content = storage.read_parsed(doc.id) or ""
-    preview_mode = "text"
-    if doc.file_type == "pdf":
-        preview_mode = "pdf" if doc.is_scanned_pdf or doc.pdf_page_count else "pdf"
-    elif doc.file_type in ("md", "docx"):
-        preview_mode = "markdown"
+    # PDF（含扫描件）已解析为 markdown，统一按 markdown 预览，不再走 PDF 渲染
+    preview_mode = "markdown" if doc.file_type in ("pdf", "md", "docx") else "text"
     return kb_schemas.DocumentContentMeta(
         doc_id=doc.id,
         file_name=doc.display_name,

@@ -15,7 +15,6 @@ import { AppShell } from "@/components/layout/AppShell"
 import { PageHeader } from "@/components/blocks/PageHeader"
 import { Button } from "@/components/ui/button"
 import { MarkdownWithMath } from "@/components/blocks/MarkdownWithMath"
-import { PdfContinuousViewer } from "@/features/companion/PdfContinuousViewer"
 import { cn } from "@/lib/utils"
 import { docParseApi, type DocParsePreview } from "@/lib/api"
 import { toast } from "sonner"
@@ -32,7 +31,6 @@ function formatPageTitle(page: number) {
 
 export function DocParsePage() {
   const [preview, setPreview] = useState<DocParsePreview | null>(null)
-  const [pdfBytes, setPdfBytes] = useState<ArrayBuffer | null>(null)
   const [pages, setPages] = useState<EditablePage[]>([])
   const [parsing, setParsing] = useState(false)
   const [parseError, setParseError] = useState<string | null>(null)
@@ -45,7 +43,6 @@ export function DocParsePage() {
     const session = loadDocParseSession()
     if (session) {
       setPreview(session.preview)
-      setPdfBytes(session.pdfBytes)
       setPages(session.pages)
       setEditing(session.editing)
     }
@@ -53,9 +50,9 @@ export function DocParsePage() {
 
   // 状态变化时保存会话（内存优先，sessionStorage 尽力而为）
   useEffect(() => {
-    if (!preview || !pdfBytes) return
-    saveDocParseSession({ preview, pdfBytes, pages, editing })
-  }, [preview, pdfBytes, pages, editing])
+    if (!preview) return
+    saveDocParseSession({ preview, pages, editing })
+  }, [preview, pages, editing])
 
   const hasResult = preview !== null
 
@@ -85,16 +82,12 @@ export function DocParsePage() {
           dirty: false,
         }))
       )
-      // 读取 PDF 字节用于左侧原文预览
-      const buf = await file.arrayBuffer()
-      setPdfBytes(buf)
       toast.success(`解析完成：共 ${data.total_pages} 页`)
     } catch (e) {
       const msg = e instanceof Error ? e.message : "解析失败"
       setParseError(msg)
       setPreview(null)
       setPages([])
-      setPdfBytes(null)
       toast.error(msg)
     } finally {
       setParsing(false)
@@ -271,7 +264,6 @@ export function DocParsePage() {
                     clearDocParseSession()
                     setPreview(null)
                     setPages([])
-                    setPdfBytes(null)
                     setEditing({})
                   }}
                 >
@@ -280,25 +272,9 @@ export function DocParsePage() {
               </div>
             </div>
 
-            {/* 双栏：左原文 / 右解析结果 */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
-              {/* 左：PDF 原文对照 */}
-              <div className="rounded-lg border border-line bg-surface-soft/40 p-4 min-h-[400px]">
-                <div className="text-caption text-ink-tertiary mb-3 flex items-center gap-1.5">
-                  <Eye className="w-3.5 h-3.5" /> 原文对照
-                </div>
-                {pdfBytes ? (
-                  <div className="max-h-[70vh] overflow-y-auto pr-1">
-                    <PdfContinuousViewer source={{ data: pdfBytes }} />
-                  </div>
-                ) : (
-                  <div className="text-caption text-ink-disabled py-10 text-center">PDF 预览不可用</div>
-                )}
-              </div>
-
-              {/* 右：解析结果（逐页，编辑/预览切换） */}
-              <div className="space-y-3">
-                {pages.map((p) => {
+            {/* 解析结果（逐页，编辑/预览切换） */}
+            <div className="space-y-3">
+              {pages.map((p) => {
                   const isEdit = !!editing[p.page]
                   return (
                     <div key={p.page} className="rounded-lg border border-line bg-surface-soft/40">
@@ -343,7 +319,6 @@ export function DocParsePage() {
                   )
                 })}
               </div>
-            </div>
 
             {/* 底部提示 */}
             <div className="flex items-center gap-2 text-caption text-ink-tertiary pt-2">
