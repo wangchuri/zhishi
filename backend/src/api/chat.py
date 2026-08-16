@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from ..core.database import get_db, SessionLocal
 from ..schemas import ai as ai_schemas
-from ..services import chat as chat_service
+from ..services.chat import chat_service
 
 router = APIRouter(prefix="/api/v1/chat", tags=["chat"])
 

@@ -26,7 +26,7 @@ from ..models import (
 )
 from ..utils import image_file_name, sha256_hex
 from . import parser
-from .mineru import parse_pdf
+from .mineru import mineru_service
 from .rag import chroma_store
 
 logger = logging.getLogger(__name__)
@@ -266,7 +266,7 @@ class KnowledgeBaseService:
         if ext in parser.PDF_EXTENSIONS:
             text, pages = parser.parse_pdf_text(content)
             if parser.is_pdf_scanned(content) or not text.strip():
-                mineru = parse_pdf(content)
+                mineru = mineru_service.parse_pdf(content)
                 pages_md = mineru["page_mds"]
                 for idx, p in enumerate(pages_md, 1):
                     md_text = p["markdown"]

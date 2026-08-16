@@ -16,7 +16,7 @@ from ..core.storage import storage
 from ..models import DocumentImage
 from ..schemas import parse as parse_schemas
 from ..services.kb import kb_service
-from ..services.mineru import parse_pdf
+from ..services.mineru import mineru_service
 from ..utils import escape_ordered_list_numbers, image_file_name, rewrite_image_refs
 
 logger = logging.getLogger(__name__)
@@ -29,7 +29,7 @@ async def preview(file: UploadFile = File(...)):
     """PDF → MinerU 解析 → 逐页 md + 图片（不落库，图片转 base64 返回）。"""
     content = await file.read()
     filename = file.filename or "document.pdf"
-    result = parse_pdf(content)
+    result = mineru_service.parse_pdf(content)
 
     pages = []
     for p in result["page_mds"]:

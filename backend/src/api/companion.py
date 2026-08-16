@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from ..core.database import get_db
 from ..schemas import ai as ai_schemas
-from ..services import companion as companion_service
+from ..services.companion import companion_service
 
 router = APIRouter(prefix="/api/v1/companion", tags=["companion"])
 

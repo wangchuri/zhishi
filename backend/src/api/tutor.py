@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from ..core.database import get_db
 from ..schemas import quiz as quiz_schemas
-from ..services import tutor as tutor_service
+from ..services.tutor import tutor_service
 
 router = APIRouter(prefix="/api/v1/tutor", tags=["tutor"])
 
