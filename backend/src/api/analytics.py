@@ -41,6 +41,13 @@ def streak(db: Session = Depends(get_db)):
     return analytics_service.get_streak(db)
 
 
+@router.post("/analytics/learning-report")
+async def learning_report(db: Session = Depends(get_db)):
+    from ..services import report as report_service
+    report, saved = await report_service.generate_report(db)
+    return {"report": report, "saved_to_notes": saved}
+
+
 # ---- 笔记 ----
 
 @router.post("/notes/tips", response_model=ai_schemas.NoteItem)

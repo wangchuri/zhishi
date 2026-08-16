@@ -14,8 +14,9 @@ _BACKEND_DIR = Path(__file__).resolve().parent.parent
 if str(_BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(_BACKEND_DIR))
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from .api.kb import router as kb_router
 from .api.questions import router as questions_router
@@ -29,9 +30,15 @@ from .api.learning import router as learning_router
 from .api.parse import router as parse_router
 from .core.config import config
 from .core.database import SessionLocal, init_db
+from .core.errors import AppError
 from .services.kb import ensure_default_collections
 
 app = FastAPI(title="知拾", version="0.1.0")
+
+
+@app.exception_handler(AppError)
+async def _app_error_handler(request: Request, exc: AppError):
+    return JSONResponse(status_code=exc.status_code, content={"detail": exc.message})
 
 app.add_middleware(
     CORSMiddleware,

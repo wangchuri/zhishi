@@ -64,9 +64,11 @@ async def generate_for_document(
     document_id: str,
     page_numbers: list[int] | None = None,
     questions_per_page: int = 3,
+    stream_handler=None,
 ) -> dict:
     """为文档指定页生成题目。
 
+    stream_handler: 可选回调，接收 {event, content?, questions?} 事件（逐 chunk/页）。
     返回: {"questions_created": n, "questions_reused": n, "total_questions": n}
     """
     db = SessionLocal()
@@ -135,8 +137,10 @@ async def generate_for_document(
 
     try:
         # 异步流式消费全部 chunk，让 Agent 完整跑完（含多轮工具调用）
-        async for _chunk in agent.apredict(instruction):
-            pass
+        async for chunk in agent.apredict(instruction):
+            c = chunk.get("content", "")
+            if stream_handler and c:
+                stream_handler({"event": "chunk", "content": c})
     except Exception as e:
         logger.warning("出题失败 doc=%s: %s", document_id, e)
 
@@ -165,8 +169,17 @@ async def generate_for_document(
     finally:
         db.close()
 
-    return {
+    result = {
         "questions_created": created,
         "questions_reused": reused,
         "total_questions": len(submitted),
     }
+    if stream_handler:
+        stream_handler({
+            "event": "result",
+            "content": "",
+            "questions_created": created,
+            "questions_reused": reused,
+            "total_questions": len(submitted),
+        })
+    return result

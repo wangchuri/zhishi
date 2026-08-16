@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Optional
 
 from fastapi import APIRouter, Depends
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from ..core.database import get_db
@@ -58,6 +59,40 @@ async def generate_whole_document(body: q_schemas.GenerateWholeRequest, db: Sess
         questions_reused=result["questions_reused"],
         total_questions=result["total_questions"],
     )
+
+
+@router.post("/generate-stream")
+async def generate_stream(body: q_schemas.GenerateRequest):
+    """SSE 流式出题：逐 chunk 推送进度，完成推送 result 事件。"""
+    import asyncio
+    import json as _json
+
+    async def gen():
+        queue: asyncio.Queue = asyncio.Queue()
+
+        def emit(ev: dict):
+            queue.put_nowait(ev)
+
+        task = asyncio.create_task(
+            generate_for_document(
+                body.document_id,
+                page_numbers=body.page_numbers,
+                questions_per_page=body.questions_per_page or 3,
+                stream_handler=emit,
+            )
+        )
+
+        while True:
+            if task.done() and queue.empty():
+                break
+            try:
+                ev = await asyncio.wait_for(queue.get(), timeout=1.0)
+                yield f"data: {_json.dumps(ev, ensure_ascii=False)}\n\n"
+            except asyncio.TimeoutError:
+                continue
+        yield "data: [DONE]\n\n"
+
+    return StreamingResponse(gen(), media_type="text/event-stream")
 
 
 @router.get("/{question_id}")
