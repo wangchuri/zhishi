@@ -17,7 +17,7 @@ from typing import Optional
 from ..core.database import SessionLocal
 from ..core.llm import create_agent
 from ..models import Document
-from ..services import question as question_service
+from ..services.question import question_service
 from ..tools.question_gen_tools import QuestionGenTools
 
 logger = logging.getLogger(__name__)

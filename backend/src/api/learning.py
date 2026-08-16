@@ -22,7 +22,7 @@ from ..models import (
 )
 from ..schemas import learning as l_schemas
 from ..services import analytics as analytics_service
-from ..services import quiz as quiz_service
+from ..services.quiz import quiz_service
 from ..services import report as report_service
 
 router = APIRouter(prefix="/api/v1", tags=["learning"])

@@ -15,7 +15,7 @@ from ..core.errors import AppError
 from ..core.storage import storage
 from ..models import DocumentImage
 from ..schemas import parse as parse_schemas
-from ..services import kb as kb_service
+from ..services.kb import kb_service
 from ..services.mineru import parse_pdf
 from ..utils import escape_ordered_list_numbers, image_file_name, rewrite_image_refs
 

@@ -15,7 +15,7 @@ from ..core.errors import AppError
 from ..core.storage import storage
 from ..models import Document, DocumentImage, DocumentSegment
 from ..schemas import kb as kb_schemas
-from ..services import kb as kb_service
+from ..services.kb import kb_service
 from ..services import thumbnail as thumb_service
 from ..services.export import export_document, import_package
 from ..agents.learning_path_agent import schedule_learning_path

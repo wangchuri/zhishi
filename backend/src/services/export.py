@@ -12,8 +12,8 @@ from sqlalchemy.orm import Session
 from ..core.errors import AppError, NotFoundError
 from ..core.storage import storage
 from ..models import Document, DocumentImage, GlobalQuestion, QuestionProvenance, QuestionRef
-from ..services import kb as kb_service
-from ..services import question as question_service
+from ..services.kb import kb_service
+from ..services.question import question_service
 
 
 def export_document(db: Session, document_id: str) -> tuple[bytes, str]:

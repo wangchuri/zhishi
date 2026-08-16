@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from ..core.database import get_db
 from ..models import GlobalQuestion, QuestionProvenance, QuestionRef
 from ..schemas import question as q_schemas
-from ..services import question as question_service
+from ..services.question import question_service
 from ..agents.question_gen_agent import generate_for_document
 
 router = APIRouter(prefix="/api/v1/questions", tags=["questions"])
