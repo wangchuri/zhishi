@@ -38,6 +38,69 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _background_parse(doc_id: str, filename: str, content: bytes, collection_id: Optional[str], force_scanned: bool) -> None:
+    """后台线程执行文档解析（MinerU 可能耗时数分钟）。"""
+    from ..core.database import SessionLocal
+
+    db = SessionLocal()
+    try:
+        doc = db.query(Document).filter(Document.id == doc_id).first()
+        if not doc:
+            return
+        kb = KnowledgeBaseService()
+        kb._parse_and_ingest(db, doc, content, force_scanned=force_scanned)
+        doc.indexing_status = "completed"
+        doc.pdf_page_count = len(storage.list_pages(doc_id))
+        kb.segment_document(db, doc)
+        doc.segment_status = "completed"
+        parsed_text = storage.read_parsed(doc_id) or ""
+        if parsed_text.strip():
+            try:
+                chroma_store.index_document(doc_id, parsed_text)
+            except Exception as ie:
+                logger.warning("向量化失败 doc=%s: %s", doc_id, ie)
+        doc.updated_at = datetime.now(timezone.utc)
+        db.commit()
+        logger.info("后台解析完成 doc=%s", doc_id)
+
+        # 解析完成后异步调度学习路径 Agent
+        if doc.zone == "study":
+            try:
+                import asyncio
+                from ..agents.learning_path_agent import schedule_learning_path
+
+                # 后台线程无事件循环，用新线程跑 asyncio
+                def _schedule():
+                    try:
+                        asyncio.run(schedule_learning_path(doc_id))
+                    except Exception as le:
+                        logger.warning("后台调度学习路径失败 doc=%s: %s", doc_id, le)
+
+                _spawn_background(_schedule)
+            except Exception as le:
+                logger.warning("调度学习路径失败 doc=%s: %s", doc_id, le)
+    except Exception as e:
+        logger.warning("后台解析失败 doc=%s: %s", doc_id, e)
+        try:
+            doc = db.query(Document).filter(Document.id == doc_id).first()
+            if doc:
+                doc.indexing_status = "failed"
+                doc.updated_at = datetime.now(timezone.utc)
+                db.commit()
+        except Exception:
+            pass
+    finally:
+        db.close()
+
+
+def _spawn_background(fn, *args) -> None:
+    """在后台线程执行。"""
+    import threading
+
+    t = threading.Thread(target=fn, args=args, daemon=True)
+    t.start()
+
+
 def ensure_default_collections(db: Session) -> None:
     """确保默认学习区/生活区存在。"""
     if db.query(KBCollection).first() is None:
@@ -169,8 +232,9 @@ class KnowledgeBaseService:
         content: bytes,
         collection_id: Optional[str] = None,
         force_scanned: bool = False,
+        async_parse: bool = False,
     ) -> Document:
-        """上传入库：全局去重 + 存储 + 解析分发。"""
+        """上传入库：全局去重 + 存储 + 解析分发。async_parse=True 时解析放后台。"""
         ext = parser.file_extension(filename)
         if ext not in parser.SUPPORTED_EXTENSIONS:
             raise AppError(f"不支持的文件类型: {ext}")
@@ -215,7 +279,21 @@ class KnowledgeBaseService:
             doc.global_document_id = global_doc.id
             db.commit()
 
-        # 解析分发（同步执行；异步化见 api 层）
+        # 解析分发：async_parse=True 时后台执行（扫描件可能耗时数分钟），立即返回 pending
+        if async_parse:
+            doc.indexing_status = "processing"
+            doc.updated_at = datetime.now(timezone.utc)
+            db.commit()
+            _spawn_background(
+                _background_parse,
+                doc.id,
+                filename,
+                content,
+                collection_id,
+                force_scanned,
+            )
+            return doc
+
         try:
             result = self._parse_and_ingest(db, doc, content, force_scanned=force_scanned)
             doc.indexing_status = "completed"

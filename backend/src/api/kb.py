@@ -18,7 +18,6 @@ from ..schemas import kb as kb_schemas
 from ..services.kb import kb_service
 from ..services.thumbnail import thumb_service
 from ..services.export import export_service
-from ..agents.learning_path_agent import schedule_learning_path
 
 logger = logging.getLogger(__name__)
 
@@ -54,19 +53,16 @@ async def upload(
     db: Session = Depends(get_db),
 ):
     content = await file.read()
+    is_pdf = (file.filename or "").lower().endswith(".pdf")
     doc = kb_service.ingest_upload(
         db,
         filename=file.filename or "unnamed",
         content=content,
         collection_id=collection_id,
         force_scanned=(force_scanned or "").lower() in ("1", "true", "yes", "on"),
+        # PDF（尤其扫描件）解析耗时，放后台执行，前端轮询状态
+        async_parse=is_pdf,
     )
-    # 解析完成后异步调度学习路径 Agent（每文档独立任务，受 max_concurrency 限制）
-    if doc.zone == "study" and kb_service.AUTO_LEARNING_PATH:
-        try:
-            await schedule_learning_path(doc.id)
-        except Exception as e:
-            logger.warning("调度学习路径失败 doc=%s: %s", doc.id, e)
     return kb_schemas.UploadResult(
         message="上传成功",
         batch_id=doc.id,
@@ -76,6 +72,7 @@ async def upload(
         collection_id=doc.collection_id,
         status=doc.indexing_status,
         ocr_processed=doc.is_scanned_pdf,
+        ocr_status="processing" if (doc.indexing_status == "processing" and doc.is_scanned_pdf) else None,
     )
 
 
