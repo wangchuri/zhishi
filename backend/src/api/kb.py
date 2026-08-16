@@ -17,6 +17,7 @@ from ..models import Document, DocumentImage, DocumentSegment
 from ..schemas import kb as kb_schemas
 from ..services import kb as kb_service
 from ..services import thumbnail as thumb_service
+from ..services.learning_path import schedule_learning_path
 
 logger = logging.getLogger(__name__)
 
@@ -52,6 +53,12 @@ async def upload(
 ):
     content = await file.read()
     doc = kb_service.ingest_upload(db, filename=file.filename or "unnamed", content=content, collection_id=collection_id)
+    # 解析完成后异步调度学习路径 Agent（每文档独立任务，受 max_concurrency 限制）
+    if doc.zone == "study" and kb_service.AUTO_LEARNING_PATH:
+        try:
+            await schedule_learning_path(doc.id)
+        except Exception as e:
+            logger.warning("调度学习路径失败 doc=%s: %s", doc.id, e)
     return kb_schemas.UploadResult(
         message="上传成功",
         batch_id=doc.id,

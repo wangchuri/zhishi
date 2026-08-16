@@ -26,6 +26,9 @@ from . import parser
 from .mineru import parse_pdf
 from .rag import delete_document_index, index_document
 
+# 是否在解析完成后自动调度学习路径 Agent（由 api 层设置，避免同步环境无事件循环）
+AUTO_LEARNING_PATH = True
+
 logger = logging.getLogger(__name__)
 
 _IMAGE_RE = re.compile(r"!\[[^\]]*\]\(([^)]+)\)")
