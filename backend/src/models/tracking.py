@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 from sqlalchemy import Boolean, Date, DateTime, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
@@ -25,7 +25,7 @@ class DailyActivity(Base):
     __tablename__ = "daily_activity"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    activity_date: Mapped[str] = mapped_column(Date, nullable=False)  # YYYY-MM-DD
+    activity_date: Mapped[date] = mapped_column(Date, nullable=False)  # YYYY-MM-DD
     active_seconds: Mapped[int] = mapped_column(Integer, default=0)
     quiz_seconds: Mapped[int] = mapped_column(Integer, default=0)
     current_streak: Mapped[int] = mapped_column(Integer, default=0)

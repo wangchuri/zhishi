@@ -23,6 +23,9 @@ from .api.quiz import router as quiz_router
 from .api.tutor import router as tutor_router
 from .api.chat import router as chat_router
 from .api.companion import router as companion_router
+from .api.analytics import router as analytics_router
+from .api.tracking import router as tracking_router
+from .api.learning import router as learning_router
 from .core.config import config
 from .core.database import SessionLocal, init_db
 from .services.kb import ensure_default_collections
@@ -42,6 +45,9 @@ app.include_router(quiz_router)
 app.include_router(tutor_router)
 app.include_router(chat_router)
 app.include_router(companion_router)
+app.include_router(analytics_router)
+app.include_router(tracking_router)
+app.include_router(learning_router)
 
 _START_TIME = time.time()
 
