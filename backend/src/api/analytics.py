@@ -10,8 +10,8 @@ from sqlalchemy.orm import Session
 from ..core.database import get_db
 from ..schemas import ai as ai_schemas
 from ..schemas import learning as l_schemas
-from ..services import analytics as analytics_service
-from ..services import note as note_service
+from ..services.analytics import analytics_service
+from ..services.note import note_service
 
 router = APIRouter(prefix="/api/v1", tags=["analytics"])
 
@@ -43,7 +43,7 @@ def streak(db: Session = Depends(get_db)):
 
 @router.post("/analytics/learning-report")
 async def learning_report(db: Session = Depends(get_db)):
-    from ..services import report as report_service
+    from ..services.report import report_service
     report, saved = await report_service.generate_report(db)
     return {"report": report, "saved_to_notes": saved}
 

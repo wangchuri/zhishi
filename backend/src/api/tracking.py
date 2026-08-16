@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from ..core.database import get_db
 from ..schemas import learning as l_schemas
-from ..services import tracking as tracking_service
+from ..services.tracking import tracking_service
 
 router = APIRouter(prefix="/api/v1", tags=["tracking"])
 
