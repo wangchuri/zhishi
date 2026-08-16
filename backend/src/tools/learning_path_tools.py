@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 
 from tina import Tools
@@ -90,18 +91,18 @@ def build_learning_path_tools(document_id: str):
     tools = Tools()
 
     @tools.register(description="检索当前文档内容（返回相关片段）")
-    def search_document(query: str) -> str:
+    async def search_document(query: str) -> str:
         """检索当前文档，返回与 query 相关的段落。
         Args:
             query: 检索关键词/问题
         """
-        results = rag.search_document(document_id, query, top_k=3)
+        results = await asyncio.to_thread(rag.search_document, document_id, query, 3)
         if not results:
             return "（未检索到相关内容）"
         return "\n---\n".join(r["text"] for r in results)
 
     @tools.register(description="提交文档的学习路径（结构化输出，仅调用一次）")
-    def submit_learning_path(title, chapters) -> str:
+    async def submit_learning_path(title, chapters) -> str:
         """提交文档学习路径。
         Args:
             title: 文档标题

@@ -66,7 +66,7 @@ class QuestionGenTools:
 
     # ---- 提交工具 ----
 
-    def submit_single_choice(
+    async def submit_single_choice(
         self,
         stem: str,
         option_a: str,
@@ -98,7 +98,7 @@ class QuestionGenTools:
             "page_number": page_number,
         })
 
-    def submit_fill_blank(
+    async def submit_fill_blank(
         self,
         stem: str,
         answer: str,
@@ -121,7 +121,7 @@ class QuestionGenTools:
             "page_number": page_number,
         })
 
-    def submit_short_answer(
+    async def submit_short_answer(
         self,
         stem: str,
         answer: str,
@@ -144,7 +144,7 @@ class QuestionGenTools:
             "page_number": page_number,
         })
 
-    def submit_application(
+    async def submit_application(
         self,
         stem: str,
         answer: str,
@@ -167,7 +167,7 @@ class QuestionGenTools:
             "page_number": page_number,
         })
 
-    def submit_custom_question(
+    async def submit_custom_question(
         self,
         stem: str,
         html_content: str,

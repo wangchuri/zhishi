@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from datetime import datetime, timezone
@@ -43,12 +44,12 @@ class ChatRAGTools:
         self.tools = Tools(name="rag")
 
         @self.tools.register(description="搜索用户知识库中的相关内容")
-        def zhishi_search_knowledge_base(query: str) -> str:
+        async def zhishi_search_knowledge_base(query: str) -> str:
             """搜索知识库，返回匹配的文档片段和相似度分数。
             Args:
                 query: 检索查询文本
             """
-            results = rag.search_all(query, top_k=5)
+            results = await asyncio.to_thread(rag.search_all, query, 5)
             if not results:
                 return "未找到相关内容"
             lines = []
