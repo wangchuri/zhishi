@@ -1,44 +1,25 @@
 import { useState, useEffect } from "react"
 import { useNavigate } from "react-router-dom"
-import {
-  Search,
-  Sparkles,
-  Brain,
-  MessageSquare,
-  Upload,
-  Library,
-  FileText,
-  Lightbulb,
-  Clock,
-  FileStack,
-  ArrowRight,
-  Flame,
-} from "lucide-react"
+import { MessageSquare, Library, BarChart3, Pencil } from "lucide-react"
 import { AppShell } from "@/components/layout/AppShell"
-import { RightPanel } from "@/components/layout/RightPanel"
 import { SectionHeader } from "@/components/blocks/SectionHeader"
 import { QuickActionCard } from "@/components/blocks/QuickActionCard"
-import { RecommendCard } from "@/components/blocks/RecommendCard"
-import { RecentList } from "@/components/blocks/RecentList"
+import { TaskSpine, TodayTaskCard } from "@/components/blocks/TodayTaskCard"
+import { EmptyNotes, MistRings, SageSprig, SealMark, TimeMotif } from "@/components/decor/PaperMotifs"
 import { Button } from "@/components/ui/button"
 import { useAuth } from "@/context/AuthContext"
-import { chatApi, kbApi, dashboardApi, analyticsApi } from "@/lib/api"
-import type { ActivityStats, StreakStats } from "@/types"
+import { tasksApi, profileApi } from "@/lib/api"
+import { noticeTodayTasks, TASKS_EVENT } from "@/lib/taskNotify"
+import { DayCompleteCard, TaskRefillHint } from "@/components/blocks/DayCompleteCard"
+import type { TodayTasksResult } from "@/types"
 
 const quickActions = [
-  { id: "quiz", title: "题库页", description: "基于学习资料检验掌握", to: "/quiz" },
-  { id: "upload", title: "上传资料", description: "PDF、TXT、MD、DOCX", to: "/knowledge/upload" },
-  { id: "chat", title: "AI 对话", description: "向 Tina 提问、检索资料", to: "/chat" },
-  { id: "kb", title: "知识库", description: "管理学习区与生活区文档", to: "/knowledge" },
+  { id: "quiz", title: "资料", description: "阅读、出题、刷题都在这里", to: "/quiz" },
+  { id: "progress", title: "进度", description: "薄弱点和成就", to: "/analytics" },
+  { id: "chat", title: "Tina", description: "向 Tina 提问、检索资料", to: "/chat" },
 ]
 
-const quickActionIcons = [Brain, Upload, MessageSquare, Library]
-
-const rightPanelShortcuts = [
-  { label: "题库页", to: "/quiz" },
-  { label: "知识库", to: "/knowledge" },
-  { label: "上传资料", to: "/knowledge/upload" },
-]
+const quickActionIcons = [Library, BarChart3, MessageSquare]
 
 function getTimeGreeting(): string {
   const hour = new Date().getHours()
@@ -54,111 +35,124 @@ export function DashboardPage() {
   const navigate = useNavigate()
   const { user } = useAuth()
   const [greetingName, setGreetingName] = useState(user?.nickname || "")
-  const [recentItems, setRecentItems] = useState<Array<{
-    id: string
-    title: string
-    meta: string
-    docId?: string
-  }>>([])
-  const [suggestions, setSuggestions] = useState<string[]>(["上传文档，开启智能学习", "完善学习画像，获得精准推荐"])
-  const [searchInput, setSearchInput] = useState("")
-  const [activity, setActivity] = useState<ActivityStats | null>(null)
-  const [streak, setStreak] = useState<StreakStats | null>(null)
-
-  const handleSearch = () => {
-    const q = searchInput.trim()
-    if (q) {
-      navigate(`/chat?q=${encodeURIComponent(q)}`)
-    }
-  }
+  const [today, setToday] = useState<TodayTasksResult | null>(null)
+  const [goalDraft, setGoalDraft] = useState("")
+  const [savingGoal, setSavingGoal] = useState(false)
+  const [checkingGoal, setCheckingGoal] = useState(true)
+  const [tasksLoading, setTasksLoading] = useState(false)
+  const [editingGoal, setEditingGoal] = useState(false)
 
   useEffect(() => {
-    Promise.allSettled([
-      chatApi.getSessions(),
-      kbApi.listDocuments(1, 5),
-    ]).then(([sessionsResult, docsResult]) => {
-      const items: Array<{ id: string; title: string; meta: string; docId?: string }> = []
-
-      if (sessionsResult.status === "fulfilled") {
-        const sessions = sessionsResult.value?.sessions || sessionsResult.value || []
-        ;(Array.isArray(sessions) ? sessions.slice(0, 3) : []).forEach((s: any) => {
-          items.push({
-            id: `session-${s.session_id || s.id}`,
-            title: s.title || s.last_message || "对话记录",
-            meta: `对话 · ${s.updated_at || s.updatedAt || "最近"}`,
-          })
-        })
-      }
-
-      if (docsResult.status === "fulfilled") {
-        const rawDocs = docsResult.value?.data || docsResult.value?.documents || []
-        ;(Array.isArray(rawDocs) ? rawDocs.slice(0, 3) : []).forEach((d: any) => {
-          items.push({
-            id: `doc-${d.id}`,
-            title: d.name || d.file_name || "文档",
-            meta: `知识库 · ${d.updated_at || d.updatedAt || "最近"}`,
-            docId: String(d.id),
-          })
-        })
-      }
-
-      setRecentItems(items)
-    })
-
-    dashboardApi.getSuggestions()
-      .then((res) => {
-        if (res.suggestions?.length) {
-          setSuggestions(res.suggestions)
+    let cancelled = false
+    profileApi
+      .get()
+      .then((profile) => {
+        if (cancelled) return
+        if (!profile.has_goal && profile.onboarding_status !== "completed") {
+          navigate("/onboarding", { replace: true })
+          return
         }
+        if (profile.nickname) setGreetingName(profile.nickname)
+        if (profile.goal?.text) setGoalDraft(profile.goal.text)
+        setCheckingGoal(false)
+        setTasksLoading(true)
+        return tasksApi.ensureToday()
       })
-      .catch(() => {})
+      .then((res) => {
+        if (cancelled || !res) return
+        setToday(res)
+        if (res.goal?.text) setGoalDraft(res.goal.text)
+        noticeTodayTasks(res)
+      })
+      .catch(() => {
+        if (!cancelled) setCheckingGoal(false)
+      })
+      .finally(() => {
+        if (!cancelled) setTasksLoading(false)
+      })
 
-    analyticsApi.getActivity()
-      .then(setActivity)
-      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [navigate])
 
-    analyticsApi.getStreak()
-      .then(setStreak)
-      .catch(() => {})
+  useEffect(() => {
+    const onTasks = (ev: Event) => {
+      const res = (ev as CustomEvent<TodayTasksResult>).detail
+      if (!res?.tasks) return
+      setToday((prev) => ({ ...(prev || res), ...res }))
+      if (res.goal?.text) setGoalDraft(res.goal.text)
+    }
+    window.addEventListener(TASKS_EVENT, onTasks)
+    return () => window.removeEventListener(TASKS_EVENT, onTasks)
   }, [])
+
+  const saveGoal = async () => {
+    const text = goalDraft.trim()
+    if (!text || savingGoal) return
+    setSavingGoal(true)
+    try {
+      await tasksApi.putGoal({ text })
+      const res = await tasksApi.ensureToday()
+      setToday(res)
+      setEditingGoal(false)
+    } finally {
+      setSavingGoal(false)
+    }
+  }
 
   useEffect(() => {
     if (user?.nickname) setGreetingName(user.nickname)
   }, [user])
 
-  return (
-    <AppShell maxWidth={1180}>
-      <div className="flex items-end justify-between gap-6 mb-6 short:mb-4">
-        <div className="min-w-0">
-          <h1 className="font-display text-display-l text-ink mb-1.5">{getTimeGreeting()}，{greetingName || "朋友"}</h1>
-          <p className="text-body text-ink-soft">持续学习，成就更好的自己。</p>
+  if (checkingGoal) {
+    return (
+      <AppShell maxWidth={880}>
+        <div className="relative py-24 text-center overflow-hidden">
+          <MistRings className="animate-mist mx-auto mb-4 w-24 h-24 text-sea" />
+          <p className="font-display text-title-s text-ink mb-1">正在打开</p>
+          <p className="text-caption text-ink-disabled">纸页摊开，稍等一下</p>
         </div>
-      </div>
+      </AppShell>
+    )
+  }
 
-      {/* 搜索框 - 纸本风格 */}
-      <form
-        onSubmit={(e) => { e.preventDefault(); handleSearch() }}
-        className="relative group mb-10 short:mb-6"
-      >
-        <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-ink-disabled group-focus-within:text-sea transition-colors" strokeWidth={2} />
-        <input
-          type="text"
-          value={searchInput}
-          onChange={(e) => setSearchInput(e.target.value)}
-          placeholder="问 Tina 或搜索学习资料..."
-          className="w-full h-12 pl-12 pr-36 rounded-[4px] bg-paper-2 border border-line text-body text-ink placeholder:text-ink-disabled focus:outline-none focus:border-sea focus:ring-1 focus:ring-sea-subtle transition-all"
-        />
-        <button
-          type="submit"
-          className="btn-primary absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-2"
-        >
-          <Sparkles className="w-4 h-4" strokeWidth={2} />
-          AI 搜索
-        </button>
-      </form>
+  const goalText = today?.goal?.text || goalDraft.trim()
+  const pendingCount = (today?.tasks || []).filter((t) => t.status === "pending").length
 
-      {/* 快捷操作卡片 */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-10 short:mb-6">
+  return (
+    <AppShell maxWidth={880}>
+      <section className="relative overflow-hidden rounded-3xl border border-line bg-paper mb-8 short:mb-5 px-6 py-7 md:px-8 md:py-8 shadow-[0_8px_28px_-16px_rgba(20,33,43,0.12)]">
+        <div className="paper-grain pointer-events-none absolute inset-0 opacity-50" />
+        <MistRings className="animate-mist pointer-events-none absolute -right-10 -top-12 w-56 h-56 text-sea" />
+        <SageSprig className="animate-sprig pointer-events-none absolute right-10 -bottom-4 w-[4.5rem] h-32 text-sea hidden sm:block" />
+        <div className="relative flex items-start gap-4">
+          <TimeMotif hour={new Date().getHours()} className="hidden sm:block w-14 h-12 text-sea shrink-0 mt-1" />
+          <div className="min-w-0">
+            <h1 className="font-display text-[2rem] md:text-[2.35rem] leading-tight text-ink mb-2">
+              {getTimeGreeting()}，{greetingName || "朋友"}
+            </h1>
+            <p className="text-body text-ink-soft max-w-xl">
+              不知道该做什么的时候，不妨{" "}
+              <button
+                type="button"
+                className="text-sea hover:underline"
+                onClick={() =>
+                  navigate(
+                    today?.onboarding_session_id
+                      ? `/chat?session=${encodeURIComponent(today.onboarding_session_id)}`
+                      : "/chat",
+                  )
+                }
+              >
+                和 Tina 聊聊
+              </button>
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-8 short:mb-5">
         {quickActions.map((action, i) => (
           <QuickActionCard
             key={action.id}
@@ -166,134 +160,99 @@ export function DashboardPage() {
             title={action.title}
             description={action.description}
             onClick={() => navigate(action.to)}
+            className="relative overflow-hidden rounded-2xl"
           />
         ))}
       </div>
 
-      {/* 推荐卡片 */}
-      <div className="mb-10">
-        <RecommendCard
-          title="开始学习"
-          highlight="上传学习区文档 → 自动出题 → 开始练习 → 错题辅导"
-          description="上传第一份学习资料，完成分段与出题后即可在题库页练习。"
-          actionLabel="上传资料"
-          onAction={() => navigate("/knowledge/upload")}
-        />
-      </div>
-
-      {/* 最近内容 */}
-      <div className="mb-4">
-        <SectionHeader title="最近内容">
-          <Button variant="ghost" size="sm" onClick={() => navigate("/knowledge")}>
-            查看全部
-            <ArrowRight className="w-4 h-4" strokeWidth={2} />
-          </Button>
-        </SectionHeader>
-        {recentItems.length === 0 ? (
-          <div className="text-body text-ink-disabled py-8 text-center">
-            暂无最近内容，开始你的学习之旅吧
+      <section className="mb-8 short:mb-5">
+        {goalText && !editingGoal ? (
+          <div className="relative overflow-hidden rounded-2xl border border-line bg-paper p-5 md:p-6 shadow-[0_4px_20px_-2px_rgba(20,33,43,0.05)] border-l-[3px] border-l-sea">
+            <div className="paper-grain pointer-events-none absolute inset-0 opacity-40" />
+            <SealMark className="pointer-events-none absolute -right-3 -bottom-4 w-24 h-24 text-sea/15" />
+            <div className="relative flex items-start justify-between gap-4">
+              <div className="min-w-0">
+                <p className="text-[11px] font-semibold tracking-wide text-sea mb-2">我的目标</p>
+                <p className="text-title-s md:text-lg font-semibold leading-relaxed text-ink">{goalText}</p>
+                <p className="text-[11px] text-ink-disabled mt-2">任务都围着这个走</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEditingGoal(true)}
+                className="shrink-0 h-8 px-3 rounded-full border border-line bg-paper-2 text-caption text-ink-soft hover:text-sea hover:border-sea/40 inline-flex items-center gap-1.5 transition-colors"
+              >
+                <Pencil className="w-3.5 h-3.5" strokeWidth={2} />
+                修改
+              </button>
+            </div>
           </div>
         ) : (
-          <RecentList
-            items={recentItems.map((r, i) => ({
-              ...r,
-              icon: i % 2 === 0 ? FileText : Lightbulb,
-              iconTone: i % 2 === 0 ? ("neutral" as const) : ("primary" as const),
-              secondaryAction: r.docId
-                ? { label: "去题库", onClick: () => navigate(`/quiz?document_id=${r.docId}`) }
-                : undefined,
-            }))}
-          />
-        )}
-      </div>
-
-      <RightPanelSlot suggestions={suggestions} activity={activity} streak={streak} />
-    </AppShell>
-  )
-}
-
-function formatDuration(seconds: number): string {
-  if (seconds < 60) return "<1 分钟"
-  const m = Math.round(seconds / 60)
-  if (m < 60) return `${m} 分钟`
-  const h = Math.floor(m / 60)
-  const mm = m % 60
-  return mm ? `${h} 小时 ${mm} 分` : `${h} 小时`
-}
-
-function RightPanelSlot({
-  suggestions,
-  activity,
-  streak,
-}: {
-  suggestions: string[]
-  activity: ActivityStats | null
-  streak: StreakStats | null
-}) {
-  const navigate = useNavigate()
-  const learnValue = activity ? formatDuration(activity.today_active_seconds) : "—"
-  const quizNote =
-    activity && activity.today_quiz_seconds > 0
-      ? ` · 刷题 ${formatDuration(activity.today_quiz_seconds)}`
-      : ""
-  return (
-    <RightPanel title="今日状态">
-      <div className="space-y-6">
-        <section>
-          <h3 className="font-display text-title-s text-ink mb-3">今日学习</h3>
-          <div className="space-y-2.5">
-            <StatusRow icon={Clock} label="学习时长" value={learnValue + quizNote} />
-            <StatusRow icon={Flame} label="连续打卡" value={streak ? `${streak.current_streak} 天` : "—"} />
-            <StatusRow icon={FileStack} label="待复习" value={activity ? `${activity.due_review_count} 题` : "—"} />
-            <StatusRow icon={FileText} label="待整理" value={activity ? `${activity.unorganized_doc_count} 份` : "—"} />
-          </div>
-        </section>
-
-        <section>
-          <h3 className="font-display text-title-s text-ink mb-3 flex items-center gap-1.5">
-            <Sparkles className="w-4 h-4 text-sea" strokeWidth={2} />
-            Tina 建议
-          </h3>
-            <div className="space-y-2">
-              {suggestions.map((s, i) => (
-                <div key={i} className="flex items-start gap-2 p-3 rounded-[4px] bg-sea-subtle border border-sea/10">
-                  <span className="w-1.5 h-1.5 rounded-full bg-sea mt-1.5 shrink-0" />
-                  <span className="text-caption text-ink leading-relaxed">{s}</span>
-                </div>
-              ))}
+          <div className="relative overflow-hidden rounded-2xl border border-line bg-paper p-5">
+            <SageSprig className="pointer-events-none absolute right-3 bottom-0 w-12 h-20 text-sea/25" />
+            <p className="relative text-[11px] font-semibold tracking-wide text-sea mb-3">写下这段时间要学什么</p>
+            <div className="relative flex gap-2">
+              <input
+                type="text"
+                value={goalDraft}
+                onChange={(e) => setGoalDraft(e.target.value)}
+                placeholder="一句话写下你这段时间要学什么"
+                className="flex-1 h-11 px-3 rounded-xl bg-paper-2 border border-line text-body text-ink placeholder:text-ink-disabled focus:outline-none focus:border-sea"
+              />
+              <Button onClick={() => void saveGoal()} disabled={savingGoal || !goalDraft.trim()}>
+                {today?.goal ? "更新" : "保存"}
+              </Button>
+              {goalText ? (
+                <Button variant="ghost" onClick={() => setEditingGoal(false)}>
+                  取消
+                </Button>
+              ) : null}
             </div>
-        </section>
-
-        <section>
-          <h3 className="font-display text-title-s text-ink mb-3">快捷入口</h3>
-          <div className="grid grid-cols-1 gap-2">
-            {rightPanelShortcuts.map((sc) => (
-              <button
-                key={sc.label}
-                onClick={() => navigate(sc.to)}
-                className="flex items-center justify-between px-3 h-10 rounded-[4px] bg-paper-2 border border-line-light text-body text-ink-soft hover:border-sea/30 hover:text-sea transition-all group"
-              >
-                {sc.label}
-                <ArrowRight className="w-4 h-4 text-ink-disabled group-hover:text-sea group-hover:translate-x-0.5 transition-all" strokeWidth={2} />
-              </button>
-            ))}
           </div>
-        </section>
-      </div>
-    </RightPanel>
-  )
-}
+        )}
+      </section>
 
-function StatusRow({ icon: Icon, label, value }: { icon: typeof Clock; label: string; value: string }) {
-  return (
-    <div className="flex items-center gap-3">
-      <div className="w-8 h-8 rounded-[4px] bg-paper-2 text-ink-soft flex items-center justify-center shrink-0">
-        <Icon className="w-4 h-4" strokeWidth={2} />
-      </div>
-      <div className="flex-1 flex items-center justify-between">
-        <span className="text-caption text-ink-soft">{label}</span>
-        <span className="text-body text-ink font-medium">{value}</span>
-      </div>
-    </div>
+      <section className="mb-4">
+        <SectionHeader title="Tina 给你的任务" subtitle="根据上面的目标排的，完成由程序判定">
+          <div className="flex items-center gap-3">
+            <span className="text-[11px] text-ink-disabled">
+              {tasksLoading ? "正在安排…" : `今天 ${today?.tasks?.length || 0} 件`}
+              {pendingCount > 0 ? ` · 待完成 ${pendingCount}` : ""}
+            </span>
+            <button
+              type="button"
+              className="text-[11px] text-sea hover:underline"
+              onClick={() => navigate("/tasks")}
+            >
+              全部任务
+            </button>
+          </div>
+        </SectionHeader>
+        {!today?.tasks?.length && !today?.refill_pending && !today?.day_complete ? (
+          <div className="relative overflow-hidden rounded-2xl border border-dashed border-line bg-paper/70 px-5 py-10 text-center">
+            <EmptyNotes className="mx-auto mb-3 w-28 h-16" />
+            <p className="text-body text-ink-soft">
+              {tasksLoading ? "正在把今天的便签写好…" : "今天的便签还是空白，保存目标或刷新后再看。"}
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {today?.day_complete ? <DayCompleteCard /> : null}
+            {today?.refill_pending ? <TaskRefillHint /> : null}
+            {today?.tasks?.length ? (
+              <TaskSpine>
+                {today.tasks.map((task, i) => (
+                  <TodayTaskCard
+                    key={task.id}
+                    task={task}
+                    index={i}
+                    onGo={() => navigate(task.href || "/quiz")}
+                  />
+                ))}
+              </TaskSpine>
+            ) : null}
+          </div>
+        )}
+      </section>
+    </AppShell>
   )
 }

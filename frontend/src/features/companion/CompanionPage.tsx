@@ -77,14 +77,14 @@ export function CompanionPage() {
           icon={Brain}
           title="暂无学习区知识库"
           description="请先在知识库上传学习区文档并等待分段完成"
-          primaryAction={{ label: "去知识库", onClick: () => navigate("/knowledge") }}
+          primaryAction={{ label: "去资料", onClick: () => navigate("/quiz") }}
         />
       ) : studyDocs.length === 0 ? (
         <EmptyState
           icon={Library}
           title="暂无文档"
           description="该分区还没有上传文档，上传资料后即可开始伴学阅读"
-          primaryAction={{ label: "去知识库", onClick: () => navigate("/knowledge") }}
+          primaryAction={{ label: "去资料", onClick: () => navigate("/quiz") }}
         />
       ) : (
         <div className="space-y-6">

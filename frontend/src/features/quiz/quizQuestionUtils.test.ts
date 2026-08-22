@@ -37,6 +37,7 @@ describe("题型判断", () => {
 
   it("题型标签映射", () => {
     expect(QUESTION_TYPE_LABEL["single_choice"]).toBe("选择题")
+    expect(QUESTION_TYPE_LABEL["multiple_choice"]).toBe("多选题")
     expect(QUESTION_TYPE_LABEL["fill_blank"]).toBe("填空题")
   })
 })

@@ -10,12 +10,14 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
+from ..core.config import config
 from ..core.database import get_db
 from ..core.errors import AppError
 from ..core.storage import storage
-from ..models import Document, DocumentImage, DocumentSegment
+from ..models import Document, DocumentImage, DocumentLearningPath, DocumentSegment
 from ..schemas import kb as kb_schemas
 from ..services.kb import kb_service
+from ..services.question import question_service
 from ..services.thumbnail import thumb_service
 from ..services.export import export_service
 
@@ -53,16 +55,22 @@ async def upload(
     db: Session = Depends(get_db),
 ):
     content = await file.read()
+    if not content:
+        raise AppError("空文件不能入库")
     is_pdf = (file.filename or "").lower().endswith(".pdf")
+    force = (force_scanned or "").lower() in ("1", "true", "yes", "on")
     doc = kb_service.ingest_upload(
         db,
         filename=file.filename or "unnamed",
         content=content,
         collection_id=collection_id,
-        force_scanned=(force_scanned or "").lower() in ("1", "true", "yes", "on"),
+        force_scanned=force,
         # PDF（尤其扫描件）解析耗时，放后台执行，前端轮询状态
         async_parse=is_pdf,
     )
+    ocr_status = "processing" if (doc.indexing_status == "processing" and doc.is_scanned_pdf) else None
+    from ..services.task import evaluate
+    completed = evaluate(db)
     return kb_schemas.UploadResult(
         message="上传成功",
         batch_id=doc.id,
@@ -72,7 +80,8 @@ async def upload(
         collection_id=doc.collection_id,
         status=doc.indexing_status,
         ocr_processed=doc.is_scanned_pdf,
-        ocr_status="processing" if (doc.indexing_status == "processing" and doc.is_scanned_pdf) else None,
+        ocr_status=ocr_status,
+        completed_tasks=completed or None,
     )
 
 
@@ -87,6 +96,12 @@ def list_documents(
     docs = []
     for d in data["documents"]:
         tags = json.loads(d.tags) if d.tags else []
+        if d.indexing_status == "processing" and (d.is_scanned_pdf or (d.file_type or "").lower() == "pdf"):
+            ocr_status = "processing"
+        elif d.is_scanned_pdf:
+            ocr_status = "completed"
+        else:
+            ocr_status = None
         docs.append(kb_schemas.KnowledgeDoc(
             id=d.id,
             name=d.display_name,
@@ -95,6 +110,7 @@ def list_documents(
             status=d.indexing_status,
             segment_status=d.segment_status,
             question_gen_status=d.question_gen_status,
+            ocr_status=ocr_status,
             pdf_page_count=d.pdf_page_count,
             zone=d.zone,
         ))
@@ -104,13 +120,22 @@ def list_documents(
 @router.get("/documents/{doc_id}/status", response_model=kb_schemas.DocumentStatus)
 def document_status(doc_id: str, db: Session = Depends(get_db)):
     doc = kb_service.get_document(db, doc_id)
+    if doc.indexing_status == "processing" and (doc.is_scanned_pdf or (doc.file_type or "").lower() == "pdf"):
+        ocr_status = "processing"
+    elif doc.is_scanned_pdf:
+        ocr_status = "completed"
+    else:
+        ocr_status = None
+    from ..services.task import evaluate
+    completed = evaluate(db) if doc.indexing_status == "completed" else []
     return kb_schemas.DocumentStatus(
         batch_id=doc.id,
         status=doc.indexing_status,
         error_message=None,
         completed_segments=None,
         total_segments=None,
-        ocr_status="completed" if doc.is_scanned_pdf else None,
+        ocr_status=ocr_status,
+        completed_tasks=completed or None,
     )
 
 
@@ -187,7 +212,9 @@ def document_segments(doc_id: str, db: Session = Depends(get_db)):
 @router.get("/documents/{doc_id}/pages", response_model=kb_schemas.DocumentPageList)
 def document_pages(doc_id: str, db: Session = Depends(get_db)):
     doc = kb_service.get_document(db, doc_id)
+    storage.ensure_page_headings(doc.id)
     pages = storage.list_pages(doc.id)
+    counts = question_service.page_question_counts(db, doc.id)
     items = []
     for num, p in pages:
         content = p.read_text(encoding="utf-8")
@@ -196,11 +223,25 @@ def document_pages(doc_id: str, db: Session = Depends(get_db)):
             title=f"第 {num} 页",
             preview=content[:200],
             content_length=len(content),
+            question_count=counts.get(num, 0),
         ))
+    has_page_markers = len(items) > 0
+    if not items:
+        full = storage.read_parsed(doc.id) or ""
+        if full.strip():
+            items.append(kb_schemas.DocumentPage(
+                page_number=1,
+                title=doc.display_name,
+                preview=full[:200],
+                content_length=len(full),
+                question_count=counts.get(1, 0),
+            ))
+            has_page_markers = False
     return kb_schemas.DocumentPageList(
         document_id=doc.id,
         document_name=doc.display_name,
         total_pages=len(items),
+        has_page_markers=has_page_markers,
         pages=items,
         file_type=doc.file_type,
     )
@@ -210,13 +251,17 @@ def document_pages(doc_id: str, db: Session = Depends(get_db)):
 def document_page(doc_id: str, page_number: int, db: Session = Depends(get_db)):
     kb_service.get_document(db, doc_id)
     content = storage.read_page(doc_id, page_number)
+    if content is None and page_number == 1 and not storage.list_pages(doc_id):
+        content = storage.read_parsed(doc_id)
     if content is None:
         raise HTTPException(404, "页不存在")
+    counts = question_service.page_question_counts(db, doc_id)
     return kb_schemas.DocumentPageDetail(
         page_number=page_number,
         title=f"第 {page_number} 页",
         content=content,
         content_length=len(content),
+        question_count=counts.get(page_number, 0),
     )
 
 
@@ -245,6 +290,66 @@ async def import_doc(
     return kb_schemas.ImportPackageResult(**result)
 
 
+def _learning_path_out(doc_id: str, rec: DocumentLearningPath | None) -> kb_schemas.LearningPathResult:
+    if rec is None:
+        return kb_schemas.LearningPathResult(document_id=doc_id, status="missing")
+    path: dict = {}
+    if rec.path_json:
+        try:
+            parsed = json.loads(rec.path_json)
+            if isinstance(parsed, dict):
+                path = parsed
+        except json.JSONDecodeError:
+            path = {}
+    raw_chapters = path.get("chapters") or []
+    chapters = []
+    for i, ch in enumerate(raw_chapters):
+        if not isinstance(ch, dict):
+            continue
+        try:
+            order = int(ch.get("order") or i + 1)
+        except (TypeError, ValueError):
+            order = i + 1
+        chapters.append(kb_schemas.LearningPathChapter(
+            id=str(ch.get("id") or ""),
+            title=str(ch.get("title") or ""),
+            order=order,
+            key_points=[str(p) for p in (ch.get("key_points") or []) if p],
+        ))
+    chapters.sort(key=lambda c: c.order)
+    return kb_schemas.LearningPathResult(
+        document_id=doc_id,
+        status=rec.status or "pending",
+        title=path.get("title") or None,
+        chapters=chapters,
+    )
+
+
+@router.get("/documents/{doc_id}/learning-path", response_model=kb_schemas.LearningPathResult)
+def get_learning_path(doc_id: str, db: Session = Depends(get_db)):
+    kb_service.get_document(db, doc_id)
+    rec = db.query(DocumentLearningPath).filter_by(document_id=doc_id).first()
+    return _learning_path_out(doc_id, rec)
+
+
+@router.post("/documents/{doc_id}/learning-path", response_model=kb_schemas.LearningPathResult)
+async def generate_learning_path(doc_id: str, db: Session = Depends(get_db)):
+    """后台重新提取书本目录（学习路径）。已有结果会被覆盖。"""
+    kb_service.get_document(db, doc_id)
+    rec = db.query(DocumentLearningPath).filter_by(document_id=doc_id).first()
+    if rec is None:
+        rec = DocumentLearningPath(document_id=doc_id, status="pending")
+        db.add(rec)
+    else:
+        rec.status = "pending"
+        rec.path_json = None
+    db.commit()
+
+    from ..agents.learning_path_agent import schedule_learning_path
+    await schedule_learning_path(doc_id)
+    return _learning_path_out(doc_id, rec)
+
+
 @router.get("/config", response_model=kb_schemas.KbConfig)
 def kb_config():
     return kb_schemas.KbConfig(
@@ -254,5 +359,6 @@ def kb_config():
         max_upload_size_display="200MB",
         supported_extensions=sorted(list({".pdf", ".docx", ".md", ".txt", ".zip", ".png", ".jpg", ".jpeg"})),
         max_questions_per_document=500,
-        max_pages_per_gen=30,
+        max_pages_per_gen=config.question_gen_max_pages,
+        question_gen_max_concurrency=config.question_gen_max_concurrency,
     )

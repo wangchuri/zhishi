@@ -94,7 +94,7 @@ describe("QuizQuestionInput", () => {
       question_id: "q9",
       question_type: "custom",
       stem: "根据对称性写解析式",
-      html_content: "<table><input data-answer-key='axis_x'></table>",
+      html_content: "<p>示意图</p>",
       answer_params: JSON.stringify([
         { key: "axis_x", label: "关于x轴对称后的解析式", type: "text" },
         { key: "origin", label: "关于原点对称后的解析式", type: "text" },

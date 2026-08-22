@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 from typing import Optional
 
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from ..core.errors import AppError
@@ -17,7 +18,7 @@ from ..models import (
     QuestionProvenance,
     QuestionRef,
 )
-from ..utils import sha256_hex
+from ..utils import parse_tags, sha256_hex
 
 
 # ---- 纯函数工具 ----
@@ -42,22 +43,34 @@ def normalize_question(q: dict) -> dict | None:
     if not stem:
         return None
     qtype = q.get("question_type") or "single_choice"
+    page_number = q.get("page_number")
+    try:
+        page_number = int(page_number) if page_number is not None else None
+    except (TypeError, ValueError):
+        page_number = None
     return {
         "stem": stem,
         "question_type": qtype,
         "options": q.get("options") or [],
         "answer": q.get("answer") or "",
         "explanation": q.get("explanation") or "",
-        "tags": q.get("tags") or [],
+        "tags": parse_tags(q.get("tags")),
         "source_type": q.get("source") or q.get("source_type") or "ai_generated",
         "reference_text": q.get("reference_text") or "",
         "html_content": q.get("html_content"),
         "answer_params": q.get("answer_params"),
+        "page_number": page_number,
+        "chapter_id": str(q.get("chapter_id") or "").strip() or None,
     }
 
 
-def _question_out(gq: GlobalQuestion, ref: QuestionRef | None, doc_id: Optional[str]):
-    tags = json.loads(gq.tags) if gq.tags else []
+def _question_out(
+    gq: GlobalQuestion,
+    ref: QuestionRef | None,
+    doc_id: Optional[str],
+    chapter_id: Optional[str] = None,
+):
+    tags = parse_tags(gq.tags)
     options = json.loads(gq.options) if gq.options else None
     if ref and ref.attempt_count > 0:
         user_status = ref.last_status
@@ -73,6 +86,7 @@ def _question_out(gq: GlobalQuestion, ref: QuestionRef | None, doc_id: Optional[
         "tags": tags,
         "source_type": gq.source_type,
         "document_id": doc_id,
+        "chapter_id": chapter_id,
         "html_content": gq.html_content,
         "answer_params": gq.answer_params,
         "created_at": gq.created_at.isoformat() if gq.created_at else None,
@@ -123,7 +137,14 @@ class QuestionService:
                 question_id=gq.id,
                 document_id=document.id,
                 excerpt=q["reference_text"][:500] or None,
+                page_number=q.get("page_number"),
+                chapter_id=q.get("chapter_id"),
             ))
+        else:
+            if existing.page_number is None and q.get("page_number") is not None:
+                existing.page_number = q.get("page_number")
+            if not existing.chapter_id and q.get("chapter_id"):
+                existing.chapter_id = q.get("chapter_id")
 
         # 文档级 refs（统计，未写过则计数 0）
         ref = db.query(QuestionRef).filter_by(
@@ -165,13 +186,20 @@ class QuestionService:
         result = []
         for gq in questions:
             doc_id = document_id
-            if not doc_id:
+            prov = None
+            if doc_id:
+                prov = db.query(QuestionProvenance).filter_by(
+                    question_id=gq.id, document_id=doc_id
+                ).first()
+            else:
                 prov = db.query(QuestionProvenance).filter_by(question_id=gq.id).first()
                 doc_id = prov.document_id if prov else None
             ref = None
             if doc_id:
                 ref = db.query(QuestionRef).filter_by(question_id=gq.id, document_id=doc_id).first()
-            result.append(_question_out(gq, ref, doc_id))
+            result.append(_question_out(
+                gq, ref, doc_id, chapter_id=prov.chapter_id if prov else None,
+            ))
 
         # 统计
         answered = correct = wrong = unknown = 0
@@ -208,10 +236,18 @@ class QuestionService:
                 "document_id": p.document_id,
                 "segment_id": p.segment_id,
                 "excerpt": p.excerpt,
+                "page_number": p.page_number,
+                "chapter_id": p.chapter_id,
             }
             for p in provs
         ]
-        return {**_question_out(gq, None, provs[0].document_id if provs else None), "provenance": provenance}
+        return {
+            **_question_out(
+                gq, None, provs[0].document_id if provs else None,
+                chapter_id=provs[0].chapter_id if provs else None,
+            ),
+            "provenance": provenance,
+        }
 
     def delete_by_document(self, db: Session, document_id: str) -> int:
         provs = db.query(QuestionProvenance).filter_by(document_id=document_id).all()
@@ -238,6 +274,19 @@ class QuestionService:
         deleted = q.delete()
         db.commit()
         return deleted
+
+    def page_question_counts(self, db: Session, document_id: str) -> dict[int, int]:
+        """各页已入库题目数量。"""
+        rows = (
+            db.query(QuestionProvenance.page_number, func.count())
+            .filter(
+                QuestionProvenance.document_id == document_id,
+                QuestionProvenance.page_number.isnot(None),
+            )
+            .group_by(QuestionProvenance.page_number)
+            .all()
+        )
+        return {int(page): int(n) for page, n in rows if page is not None}
 
 
 # 模块级单例：调用方仍用 question_service.xxx()

@@ -25,8 +25,9 @@ export function DocumentContentViewer({
   charEnd = null,
   className,
 }: DocumentContentViewerProps) {
+  const useMarkdown = previewMode === "markdown" || previewMode === "pdf"
   // 所有文档（含扫描件）统一按 markdown 预览
-  if (previewMode === "markdown" || previewMode === "pdf") {
+  if (useMarkdown) {
     return (
       <MarkdownWithMath
         className={cn("text-body leading-relaxed", className)}

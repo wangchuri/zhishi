@@ -13,6 +13,7 @@ from ..core.errors import AppError, NotFoundError
 from ..core.storage import storage
 from ..models import Document, DocumentImage, GlobalQuestion, QuestionProvenance, QuestionRef
 from ..services.kb import kb_service
+from ..utils import parse_tags
 from ..services.question import question_service
 
 
@@ -47,7 +48,7 @@ class ExportService:
                         "options": json.loads(gq.options) if gq.options else [],
                         "answer": gq.answer,
                         "explanation": gq.explanation,
-                        "tags": json.loads(gq.tags) if gq.tags else [],
+                        "tags": parse_tags(gq.tags),
                         "source_type": gq.source_type,
                     })
             zf.writestr("questions.json", json.dumps(questions, ensure_ascii=False, indent=2))

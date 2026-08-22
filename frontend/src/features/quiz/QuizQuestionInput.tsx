@@ -235,6 +235,12 @@ export function QuizQuestionInput({
     const bridgeScript = `
 <script>
 (function () {
+  function report(key, value) {
+    var el = document.querySelector('[data-answer-key="' + key + '"]');
+    if (el) el.value = value == null ? "" : String(value);
+    window.parent.postMessage({ type: 'zhishi-custom-answer', key: key, value: value == null ? "" : String(value) }, '*');
+  }
+  window.zhishiSetAnswer = report;
   function setVal(values) {
     document.querySelectorAll('[data-answer-key]').forEach(function (el) {
       var k = el.getAttribute('data-answer-key');
@@ -243,13 +249,16 @@ export function QuizQuestionInput({
   }
   function setDisabled(disabled) {
     document.querySelectorAll('[data-answer-key]').forEach(function (el) { el.disabled = !!disabled; });
+    document.querySelectorAll('[draggable]').forEach(function (el) { el.draggable = !disabled; });
   }
-  document.addEventListener('input', function (e) {
+  function onField(e) {
     var t = e.target;
     if (t && t.hasAttribute && t.hasAttribute('data-answer-key')) {
-      window.parent.postMessage({ type: 'zhishi-custom-answer', key: t.getAttribute('data-answer-key'), value: t.value }, '*');
+      report(t.getAttribute('data-answer-key'), t.value);
     }
-  });
+  }
+  document.addEventListener('input', onField);
+  document.addEventListener('change', onField);
   window.addEventListener('message', function (e) {
     var d = e.data;
     if (!d) return;
@@ -285,8 +294,8 @@ export function QuizQuestionInput({
           </div>
         )}
 
-        {/* 答案输入表单（兜底：HTML 未提供 data-answer-key 输入时用） */}
-        {params.length > 0 && (
+        {/* 答案输入表单（仅当 HTML 里没有 data-answer-key 时兜底） */}
+        {params.length > 0 && !/data-answer-key/i.test(htmlContent) && (
           <div className="space-y-3 border border-line-soft rounded-lg p-4 bg-surface">
             <div className="text-small font-medium text-ink-primary mb-2">请填写答案</div>
             {params.map((p) => (

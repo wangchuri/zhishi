@@ -58,7 +58,7 @@ function createWindow(): void {
     minHeight: 600,
     autoHideMenuBar: true,
     backgroundColor: "#F3EFE6",
-    icon: path.join(__dirname, "..", "..", "public", "logo.png"),
+    icon: path.join(__dirname, "..", "..", "public", "logo.jpg"),
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,

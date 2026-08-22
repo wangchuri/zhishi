@@ -20,6 +20,7 @@ from .tracking import (
     UserNote,
 )
 from .chat import ChatMessage, ChatSession, CompanionMessage, CompanionSession
+from .goal import DailyTask, Goal, UserProfile
 
 __all__ = [
     "KBCollection",
@@ -46,4 +47,7 @@ __all__ = [
     "ChatMessage",
     "CompanionSession",
     "CompanionMessage",
+    "Goal",
+    "DailyTask",
+    "UserProfile",
 ]

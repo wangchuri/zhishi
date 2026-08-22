@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react"
-import { useNavigate, useParams } from "react-router-dom"
+import { useNavigate, useParams, useSearchParams } from "react-router-dom"
 import {
   ArrowLeft,
   Bookmark,
@@ -28,7 +28,6 @@ import { cn } from "@/lib/utils"
 import type { DocumentPage, DocumentPageDetail } from "@/types"
 import { CompanionChatSidebar } from "./CompanionChatSidebar"
 import { TipPanel } from "./TipPanel"
-import { SelectionTipButton } from "./SelectionTipButton"
 import { toast } from "sonner"
 
 /** 电子书式阅读正文排版（比默认 prose 更大、更松） */
@@ -45,6 +44,8 @@ interface PageListMeta {
 export function CompanionReadPage() {
   const { docId = "" } = useParams<{ docId: string }>()
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  const pageFromUrl = Number(searchParams.get("page"))
 
   const imageBase = docId
     ? `${getApiBase().replace(/\/$/, "")}/api/v1/kb/documents/${encodeURIComponent(docId)}/images`
@@ -64,7 +65,6 @@ export function CompanionReadPage() {
   const markedPages = getMarkedPages(docId)
 
   const scrollRef = useRef<HTMLDivElement>(null)
-  const selectionRootRef = useRef<HTMLDivElement>(null)
   const activePageRef = useRef<number | null>(null)
   const resumedRef = useRef(false)
 
@@ -143,7 +143,6 @@ export function CompanionReadPage() {
   const docName = meta?.document_name || "文档"
   const totalPages = meta?.total_pages ?? pageList.length
   const currentMarked = activePage != null && markedPages.includes(activePage)
-  const selectable = true
 
   // 滚动自动翻页：以视口 35% 高度线定位当前页
   const handleScroll = useCallback(() => {
@@ -184,10 +183,15 @@ export function CompanionReadPage() {
       tries++
       const container = scrollRef.current
       const saved = getProgress(docId)
+      const fromUrl =
+        Number.isFinite(pageFromUrl) && pageList.some((p) => p.page_number === pageFromUrl)
+          ? pageFromUrl
+          : null
       const target =
-        saved != null && pageList.some((p) => p.page_number === saved)
+        fromUrl ??
+        (saved != null && pageList.some((p) => p.page_number === saved)
           ? saved
-          : pageList[0]?.page_number
+          : pageList[0]?.page_number)
       if (container && target != null) {
         const section = container.querySelector<HTMLElement>(`[data-page="${target}"]`)
         if (section) {
@@ -200,7 +204,7 @@ export function CompanionReadPage() {
       if (tries > 40) window.clearInterval(timer)
     }, 100)
     return () => window.clearInterval(timer)
-  }, [docId, pageList])
+  }, [docId, pageList, pageFromUrl])
 
   const toggleMark = useCallback(() => {
     if (!docId || activePage == null) return
@@ -286,7 +290,11 @@ export function CompanionReadPage() {
     <>
       {fullscreen ? (
         /* ────── 全屏阅读：连续滚动正文 + 推入式伴学侧边栏 + 迷你指示条 ────── */
-        <div className="h-dvh bg-paper flex relative">
+        <div
+          className="h-dvh bg-paper flex relative"
+          data-tip-doc={docId}
+          data-tip-doc-name={docName}
+        >
           <div className="flex flex-col flex-1 min-w-0 relative">
           <div
             ref={scrollRef}
@@ -417,7 +425,11 @@ export function CompanionReadPage() {
             </aside>
 
             {/* 主阅读区（连续滚动） */}
-            <div ref={selectionRootRef} className="flex-1 flex flex-col min-w-0">
+            <div
+              className="flex-1 flex flex-col min-w-0"
+              data-tip-doc={docId}
+              data-tip-doc-name={docName}
+            >
               <div className="h-14 shrink-0 border-b border-line-light bg-paper flex items-center gap-2 px-4">
                 {!railOpen && (
                   <button
@@ -431,9 +443,9 @@ export function CompanionReadPage() {
                 )}
                 <button
                   type="button"
-                  onClick={() => navigate("/companion")}
+                  onClick={() => navigate(docId ? `/quiz/doc/${docId}` : "/quiz")}
                   className="w-9 h-9 rounded-md flex items-center justify-center text-ink-disabled hover:text-ink hover:bg-paper-2 transition-colors shrink-0"
-                  aria-label="返回伴学列表"
+                  aria-label="返回资料"
                 >
                   <ArrowLeft className="w-4 h-4" strokeWidth={2} />
                 </button>
@@ -513,13 +525,6 @@ export function CompanionReadPage() {
         open={tipOpen}
         onOpenChange={setTipOpen}
         onJumpToPage={scrollToPage}
-      />
-      <SelectionTipButton
-        containerRef={selectionRootRef}
-        enabled={selectable}
-        docName={docName}
-        pageNumber={activePage}
-        onSave={handleSaveTip}
       />
     </>
   )

@@ -88,6 +88,7 @@ class UploadResult(BaseModel):
     ocr_status: Optional[str] = None
     ocr_current_page: Optional[int] = None
     ocr_total_pages: Optional[int] = None
+    completed_tasks: Optional[list[dict]] = None
 
 
 class DocumentStatus(BaseModel):
@@ -99,6 +100,7 @@ class DocumentStatus(BaseModel):
     ocr_status: Optional[str] = None
     ocr_current_page: Optional[int] = None
     ocr_total_pages: Optional[int] = None
+    completed_tasks: Optional[list[dict]] = None
 
 
 class DeleteResult(BaseModel):
@@ -130,6 +132,7 @@ class DocumentPage(BaseModel):
     segment_id: Optional[str] = None
     preview_mode: Optional[str] = None
     file_type: Optional[str] = None
+    question_count: int = 0
 
 
 class DocumentPageDetail(DocumentPage):
@@ -162,6 +165,7 @@ class KbConfig(BaseModel):
     supported_extensions: list[str] = []
     max_questions_per_document: Optional[int] = None
     max_pages_per_gen: Optional[int] = None
+    question_gen_max_concurrency: Optional[int] = None
 
 
 class ImportPackageResult(BaseModel):
@@ -169,3 +173,17 @@ class ImportPackageResult(BaseModel):
     document_id: Optional[str] = None
     imported_questions: Optional[int] = None
     reused_questions: Optional[int] = None
+
+
+class LearningPathChapter(BaseModel):
+    id: str = ""
+    title: str = ""
+    order: int = 0
+    key_points: list[str] = []
+
+
+class LearningPathResult(BaseModel):
+    document_id: str
+    status: str = "missing"  # missing/pending/generated/failed
+    title: Optional[str] = None
+    chapters: list[LearningPathChapter] = []

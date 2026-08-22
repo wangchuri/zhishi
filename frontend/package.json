@@ -31,7 +31,7 @@
       "target": [
         "nsis"
       ],
-      "icon": "public/logo.png"
+      "icon": "public/logo.jpg"
     },
     "nsis": {
       "oneClick": false,

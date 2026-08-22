@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
-import { Link, useNavigate, useParams } from "react-router-dom"
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom"
 import {
   ArrowLeft,
   CheckSquare,
@@ -22,9 +22,17 @@ import { useKbDocuments } from "@/hooks/useKbDocuments"
 import type { DocumentPage, DocumentPageDetail, PageQuestionResult } from "@/types"
 import { cn } from "@/lib/utils"
 import { toast } from "sonner"
+import { notifyCompletedTasks } from "@/lib/taskNotify"
+import {
+  applyStreamEvent,
+  QuestionGenAgentBoard,
+  type StreamLogEvent,
+  type StreamLogItem,
+} from "@/features/quiz/QuestionGenStreamLog"
 
 export function QuestionGenDocPage() {
   const { documentId = "" } = useParams<{ documentId: string }>()
+  const [searchParams] = useSearchParams()
   const navigate = useNavigate()
   const { documents, refreshDocuments, updateDocument } = useKbDocuments({
     zoneFilter: "study",
@@ -45,9 +53,10 @@ export function QuestionGenDocPage() {
   const [error, setError] = useState<string | null>(null)
   const [questionsPerPage, setQuestionsPerPage] = useState(1)
   const [result, setResult] = useState<PageQuestionResult | null>(null)
-  const [streamContent, setStreamContent] = useState<string>("")
+  const [logItems, setLogItems] = useState<StreamLogItem[]>([])
   const [maxQuestionsPerDoc, setMaxQuestionsPerDoc] = useState(100)
   const [maxPagesPerGen, setMaxPagesPerGen] = useState(10)
+  const [maxConcurrency, setMaxConcurrency] = useState(3)
   const streamEndRef = useRef<HTMLDivElement>(null)
 
   // 仅当用户已滚动到底部时才自动跟随（仅滚动右侧 AI 日志容器，不影响整页）
@@ -66,7 +75,7 @@ export function QuestionGenDocPage() {
       const el = streamContainerRef.current
       el.scrollTop = el.scrollHeight
     }
-  }, [streamContent, working, userScrolled])
+  }, [logItems, working, userScrolled])
 
   const selectedPageList = useMemo(
     () => pages.filter((p) => selectedPages.has(p.page_number)),
@@ -74,6 +83,11 @@ export function QuestionGenDocPage() {
   )
 
   const hasKeySelected = selectedPageList.some((p) => p.is_key_page)
+  const activePageMeta = useMemo(
+    () => pages.find((p) => p.page_number === activePageNumber) || null,
+    [pages, activePageNumber]
+  )
+  const activeQuestionCount = activePageMeta?.question_count ?? pageDetail?.question_count ?? 0
 
   // 每页出题上限：受单文档题目总数限制（由后端 config 下发）
   const perPageMax = selectedPages.size > 0
@@ -93,6 +107,9 @@ export function QuestionGenDocPage() {
         if (typeof cfg.max_pages_per_gen === "number" && cfg.max_pages_per_gen > 0) {
           setMaxPagesPerGen(cfg.max_pages_per_gen)
         }
+        if (typeof cfg.question_gen_max_concurrency === "number" && cfg.question_gen_max_concurrency > 0) {
+          setMaxConcurrency(cfg.question_gen_max_concurrency)
+        }
       })
       .catch(() => {})
     return () => {
@@ -103,23 +120,25 @@ export function QuestionGenDocPage() {
   const handleQuestionsPerPageChange = (value: string) => {
     const n = Number(value)
     if (!Number.isFinite(n)) return
-    setQuestionsPerPage(Math.min(Math.max(Math.round(n), 1), perPageMax))
+    setQuestionsPerPage(Math.min(Math.max(Math.round(n), 0), perPageMax))
   }
 
-  const loadPages = useCallback(async (docId: string) => {
+  const loadPages = useCallback(async (docId: string, opts?: { keepSelection?: boolean }) => {
     setLoadingPages(true)
     setError(null)
-    setSelectedPages(new Set())
-    setResult(null)
-    setActivePageNumber(null)
-    setPageDetail(null)
+    if (!opts?.keepSelection) {
+      setSelectedPages(new Set())
+      setResult(null)
+      setActivePageNumber(null)
+      setPageDetail(null)
+    }
     try {
       const res = await kbApi.getDocumentPages(docId)
       const pageList = res.pages || []
       setPages(pageList)
       setHasPageMarkers(res.has_page_markers)
       setDocumentName(res.document_name || selectedDocument?.name || "")
-      if (pageList.length > 0) {
+      if (!opts?.keepSelection && pageList.length > 0) {
         setActivePageNumber(pageList[0].page_number)
       }
     } catch (e) {
@@ -133,6 +152,18 @@ export function QuestionGenDocPage() {
   useEffect(() => {
     if (documentId) void loadPages(documentId)
   }, [documentId, loadPages])
+
+  useEffect(() => {
+    const raw = searchParams.get("pages")
+    if (!raw || pages.length === 0) return
+    const wanted = raw
+      .split(",")
+      .map((s) => Number(s.trim()))
+      .filter((n) => pages.some((p) => p.page_number === n))
+    if (!wanted.length) return
+    setSelectedPages(new Set(wanted))
+    setActivePageNumber(wanted[0])
+  }, [pages, searchParams])
 
   useEffect(() => {
     if (!documentId || !activePageNumber) {
@@ -180,8 +211,15 @@ export function QuestionGenDocPage() {
     event?.stopPropagation()
     setSelectedPages((prev) => {
       const next = new Set(prev)
-      if (next.has(pageNumber)) next.delete(pageNumber)
-      else next.add(pageNumber)
+      if (next.has(pageNumber)) {
+        next.delete(pageNumber)
+        return next
+      }
+      if (next.size >= maxPagesPerGen) {
+        toast.warning(`单次最多选择 ${maxPagesPerGen} 页`)
+        return prev
+      }
+      next.add(pageNumber)
       return next
     })
   }
@@ -190,7 +228,15 @@ export function QuestionGenDocPage() {
     setActivePageNumber(pageNumber)
   }
 
-  const selectAll = () => setSelectedPages(new Set(pages.map((p) => p.page_number)))
+  const selectAll = () => {
+    const nums = pages.map((p) => p.page_number)
+    if (nums.length > maxPagesPerGen) {
+      toast.warning(`已按上限选取前 ${maxPagesPerGen} 页`)
+      setSelectedPages(new Set(nums.slice(0, maxPagesPerGen)))
+      return
+    }
+    setSelectedPages(new Set(nums))
+  }
   const clearSelection = () => setSelectedPages(new Set())
 
   const runGenerate = async () => {
@@ -198,9 +244,10 @@ export function QuestionGenDocPage() {
     setWorking(true)
     setError(null)
     setResult(null)
-    setStreamContent("")
+    setLogItems([])
+    updateDocument(documentId, { question_gen_status: "processing" })
 
-    const pageNumbers = Array.from(selectedPages).sort((a, b) => a - b)
+    const pageNumbers = Array.from(selectedPages).sort((a, b) => a - b).slice(0, maxPagesPerGen)
 
     try {
       await questionsApi.generateStream(
@@ -210,12 +257,10 @@ export function QuestionGenDocPage() {
           questions_per_page: questionsPerPage,
         },
         (raw: any) => {
-          const c: Record<string, any> = raw
-          if (c.event === "page_done") {
-            const count = c.count ?? 0
-            setStreamContent((prev) => prev + `📄 第 ${c.page} 页完成（${count} 题）\n`)
-          } else if (c.event === "page_error") {
-            setStreamContent((prev) => prev + `❌ 第 ${c.page} 页出题失败\n`)
+          const c = raw as StreamLogEvent
+          setLogItems((prev) => applyStreamEvent(prev, c))
+          if (c.event === "completed_tasks") {
+            notifyCompletedTasks(raw)
           } else if (c.event === "result") {
             updateDocument(documentId, { question_gen_status: "completed" })
             const created = c.questions_created ?? 0
@@ -228,17 +273,21 @@ export function QuestionGenDocPage() {
               questions_reused: 0,
               total_questions: created,
             })
-            setStreamContent((prev) => prev + `✅ 出题完成，共 ${created} 题\n`)
             setWorking(false)
+            void loadPages(documentId, { keepSelection: true })
           } else if (c.event === "error") {
             setError(c.content || "出题失败")
             setWorking(false)
+            updateDocument(documentId, { question_gen_status: "failed" })
           }
         }
       )
     } catch (e) {
-      setError(e instanceof Error ? e.message : "批量出题失败")
+      const msg = e instanceof Error ? e.message : "批量出题失败"
+      setError(msg)
+      setLogItems((prev) => applyStreamEvent(prev, { event: "error", content: msg }))
       setWorking(false)
+      updateDocument(documentId, { question_gen_status: "failed" })
     }
   }
 
@@ -269,13 +318,10 @@ export function QuestionGenDocPage() {
             <Button
               variant="ghost"
               size="md"
-              onClick={() => navigate("/question-gen")}
+              onClick={() => navigate(documentId ? `/quiz/doc/${documentId}` : "/quiz")}
             >
               <ArrowLeft className="h-4 w-4 mr-2" />
-              返回文档列表
-            </Button>
-            <Button variant="secondary" size="md" onClick={() => navigate("/quiz")}>
-              前往题库
+              返回资料
             </Button>
             <Button variant="ghost" size="md" onClick={handleExport} disabled={exporting}>
               {exporting ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Download className="h-4 w-4 mr-2" />}
@@ -300,9 +346,9 @@ export function QuestionGenDocPage() {
           </div>
         )}
 
-        {!hasPageMarkers && pages.length > 0 && (
+        {!hasPageMarkers && pages.length === 1 && (
           <div className="mx-8 mt-4 rounded-[4px] border border-line-light bg-paper-2 px-4 py-2 text-caption text-ink-soft shrink-0">
-            该文档无「## 第 N 页」标记，已作为单页全文展示。扫描 PDF 经 OCR 后会自动带页码。
+            该文档没有按页拆分，当前按全文单页出题。
           </div>
         )}
 
@@ -360,6 +406,11 @@ export function QuestionGenDocPage() {
                         )}
                       >
                         <div className="truncate">{page.title}</div>
+                        {(page.question_count || 0) > 0 && (
+                          <div className="text-caption text-sea mt-0.5">
+                            已出题 {page.question_count}
+                          </div>
+                        )}
                         {(page.has_builtin_questions || page.is_key_page) && (
                           <div className="flex flex-wrap gap-1 mt-1">
                             {page.has_builtin_questions && <Badge variant="neutral" size="sm">含习题</Badge>}
@@ -385,6 +436,9 @@ export function QuestionGenDocPage() {
               </span>
               {pageDetail && (
                 <div className="flex flex-wrap gap-1 mt-2">
+                  {activeQuestionCount > 0 && (
+                    <Badge variant="primary" size="sm">已出题 {activeQuestionCount}</Badge>
+                  )}
                   {pageDetail.has_builtin_questions && <Badge variant="neutral" size="sm">含习题</Badge>}
                   {pageDetail.is_key_page && <Badge variant="primary" size="sm">重点</Badge>}
                 </div>
@@ -422,17 +476,30 @@ export function QuestionGenDocPage() {
               <p className="text-caption text-ink-soft">
                 在左侧勾选要出题的页面。已选{" "}
                 <span className="font-medium text-ink">{selectedPages.size}</span> 页
+                {selectedPages.size > 0 && (
+                  questionsPerPage === 0 ? (
+                    <>，每页题数由 Agent 按内容自行决定</>
+                  ) : (
+                    <>，本次最多出{" "}
+                      <span className="font-medium text-ink">
+                        {selectedPages.size * questionsPerPage}
+                      </span>{" "}
+                      题
+                    </>
+                  )
+                )}
               </p>
 
               {selectedPages.size > 0 && (
                 <div className="text-caption text-ink-disabled space-y-1">
                   {hasKeySelected && <p>· 选中页含重点内容</p>}
                   <p>· 单次最多选择 {maxPagesPerGen} 页</p>
+                  <p>· 每页一个 Agent，最多同时跑 {maxConcurrency} 路</p>
                   <div className="flex items-center gap-2 pt-2">
                     <label className="text-caption text-ink-soft shrink-0">每页出题：</label>
                     <input
                       type="number"
-                      min={1}
+                      min={0}
                       max={perPageMax}
                       value={questionsPerPage}
                       onChange={(e) => handleQuestionsPerPageChange(e.target.value)}
@@ -441,13 +508,17 @@ export function QuestionGenDocPage() {
                     />
                     <span className="text-caption text-ink-disabled shrink-0">道/页</span>
                   </div>
-                  <p>
-                    共 {selectedPages.size} 页 × {questionsPerPage} 道 ={" "}
-                    <span className="font-medium text-ink">
-                      {selectedPages.size * questionsPerPage}
-                    </span>{" "}
-                    题（单文档上限 {maxQuestionsPerDoc} 题，每页最多 {perPageMax} 道）
-                  </p>
+                  {questionsPerPage === 0 ? (
+                    <p>填 0 表示不限制每页题数，由 Agent 根据页面内容自行发挥（单文档上限 {maxQuestionsPerDoc} 题）。</p>
+                  ) : (
+                    <p>
+                      共 {selectedPages.size} 页 × {questionsPerPage} 道 ={" "}
+                      <span className="font-medium text-ink">
+                        {selectedPages.size * questionsPerPage}
+                      </span>{" "}
+                      题（单文档上限 {maxQuestionsPerDoc} 题，每页最多 {perPageMax} 道）
+                    </p>
+                  )}
                 </div>
               )}
 
@@ -471,7 +542,7 @@ export function QuestionGenDocPage() {
                   {result.total_questions > 0 ? (
                     <>
                       新建 {result.questions_created} 题，共 {result.total_questions} 题。
-                      <Link to={`/quiz?document_id=${result.document_id}`} className="ml-1 text-sea hover:underline">去题库</Link>
+                      <Link to={`/quiz/doc/${result.document_id}`} className="ml-1 text-sea hover:underline">回这本书</Link>
                     </>
                   ) : (
                     "未生成题目"
@@ -487,24 +558,20 @@ export function QuestionGenDocPage() {
               className="flex-1 min-h-0 overflow-y-auto scroll-thin bg-paper-2 p-4"
               style={{ maxHeight: "calc(100dvh - 280px)" }}
             >
-              {working && streamContent && (
-                <>
-                  <div className="flex items-center gap-1.5 mb-2 shrink-0">
-                    <Bot className="w-3.5 h-3.5 text-sea" strokeWidth={2} />
-                    <span className="text-caption font-medium text-sea">AI 正在出题...</span>
-                    <Loader2 className="w-3 h-3 animate-spin text-sea" />
-                  </div>
-                  <div className="text-caption text-ink leading-relaxed whitespace-pre-wrap font-mono text-[12px]">
-                    {streamContent}
-                  </div>
-                </>
+              {working && (
+                <div className="flex items-center gap-1.5 mb-3 shrink-0">
+                  <Bot className="w-3.5 h-3.5 text-sea" strokeWidth={2} />
+                  <span className="text-caption font-medium text-sea">AI 正在出题</span>
+                  <Loader2 className="w-3 h-3 animate-spin text-sea" />
+                </div>
               )}
-              {!working && !streamContent && (
-                <div className="text-caption text-ink-disabled text-center py-8">点击"AI 批量出题"开始生成</div>
+              {logItems.length === 0 && !working && (
+                <div className="text-caption text-ink-disabled text-center py-8">点击「AI 批量出题」开始生成</div>
               )}
-              {!working && streamContent && (
-                <div className="text-caption text-sea mt-2">✓ 出题完成</div>
+              {logItems.length === 0 && working && (
+                <div className="text-caption text-ink-disabled">等待 Agent 输出…</div>
               )}
+              <QuestionGenAgentBoard items={logItems} finished={!working} layout="stack" />
               <div ref={streamEndRef} />
             </div>
           </div>

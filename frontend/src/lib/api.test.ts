@@ -204,6 +204,8 @@ describe("kbApi", () => {
     await kbApi.getDocumentSegments("d1")
     await kbApi.getDocumentPages("d1")
     await kbApi.getDocumentPage("d1", 3)
+    await kbApi.getLearningPath("d1")
+    await kbApi.generateLearningPath("d1")
     await kbApi.getConfig()
 
     const urls = calls.map((c) => `${c.method} ${c.url}`)
@@ -213,6 +215,8 @@ describe("kbApi", () => {
     expect(urls).toContain(`GET ${BASE}/api/v1/kb/documents/d1/segments`)
     expect(urls).toContain(`GET ${BASE}/api/v1/kb/documents/d1/pages`)
     expect(urls).toContain(`GET ${BASE}/api/v1/kb/documents/d1/pages/3`)
+    expect(urls).toContain(`GET ${BASE}/api/v1/kb/documents/d1/learning-path`)
+    expect(urls).toContain(`POST ${BASE}/api/v1/kb/documents/d1/learning-path`)
     expect(urls).toContain(`GET ${BASE}/api/v1/kb/config`)
   })
 
@@ -316,6 +320,7 @@ describe("quizApi", () => {
     await quizApi.getSession("s1")
     await quizApi.getRecentActiveSession("d1")
     await quizApi.submitAnswer("s1", { question_id: "q1", user_answer: "B" })
+    await quizApi.grade({ question_id: "q1", user_answer: "B" })
     await quizApi.getResults("s1")
 
     const urls = calls.map((c) => `${c.method} ${c.url}`)
@@ -323,6 +328,7 @@ describe("quizApi", () => {
     expect(urls).toContain(`GET ${BASE}/api/v1/quiz/sessions/s1`)
     expect(urls).toContain(`GET ${BASE}/api/v1/quiz/sessions/recent/by-document/d1`)
     expect(urls).toContain(`POST ${BASE}/api/v1/quiz/sessions/s1/answers`)
+    expect(urls).toContain(`POST ${BASE}/api/v1/quiz/grade`)
     expect(urls).toContain(`GET ${BASE}/api/v1/quiz/sessions/s1/results`)
   })
 })
@@ -462,6 +468,7 @@ describe("notesApi", () => {
       page_number: 3,
       title: "重点",
       content: "极限的定义",
+      tags: ["易错"],
     })
     expect(calls[0]).toMatchObject({
       method: "POST",
@@ -472,6 +479,7 @@ describe("notesApi", () => {
       page_number: 3,
       title: "重点",
       content: "极限的定义",
+      tags: ["易错"],
     })
   })
 
@@ -492,6 +500,26 @@ describe("notesApi", () => {
     expect(calls[0]).toMatchObject({
       method: "GET",
       url: `${BASE}/api/v1/notes/tips/d1`,
+    })
+  })
+
+  it("get 使用 GET /api/v1/notes/{id}", async () => {
+    const { calls } = installFetchMock()
+    setApiBase(BASE)
+    await notesApi.get("n1")
+    expect(calls[0]).toMatchObject({
+      method: "GET",
+      url: `${BASE}/api/v1/notes/n1`,
+    })
+  })
+
+  it("listTipTags 使用 GET /api/v1/notes/tip-tags", async () => {
+    const { calls } = installFetchMock()
+    setApiBase(BASE)
+    await notesApi.listTipTags()
+    expect(calls[0]).toMatchObject({
+      method: "GET",
+      url: `${BASE}/api/v1/notes/tip-tags`,
     })
   })
 })

@@ -52,7 +52,7 @@ export function DocumentViewPage() {
   const previewMode =
     meta?.preview_mode === "pdf" && meta?.has_raw_file
       ? "pdf"
-      : meta?.file_type === "md"
+      : meta?.preview_mode === "markdown" || meta?.file_type === "md" || meta?.file_type === "pdf" || meta?.file_type === "docx"
         ? "markdown"
         : "text"
 
@@ -63,9 +63,9 @@ export function DocumentViewPage() {
           {exporting ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Download className="h-4 w-4 mr-2" />}
           导出书本+题库
         </Button>
-        <Button variant="ghost" size="md" onClick={() => navigate("/knowledge")}>
+        <Button variant="ghost" size="md" onClick={() => navigate("/quiz")}>
           <ArrowLeft className="h-4 w-4 mr-2" />
-          返回知识库
+          返回资料
         </Button>
       </PageHeader>
 

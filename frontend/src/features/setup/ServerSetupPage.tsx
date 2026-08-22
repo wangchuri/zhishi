@@ -11,6 +11,7 @@ import {
   hasNickname,
 } from "@/lib/api"
 import { useAuth } from "@/context/AuthContext"
+import { AppLogo } from "@/components/layout/AppLogo"
 
 type HealthState = "idle" | "checking" | "ok" | "error"
 
@@ -68,6 +69,7 @@ export function ServerSetupPage() {
     >
       <div className="w-full max-w-[440px] mx-auto animate-page-in">
         <div className="text-center mb-10">
+          <AppLogo size="lg" className="mx-auto mb-4" />
           <h1 className="font-display text-display-xl text-paper">知拾</h1>
           <p className="text-caption text-mist tracking-[0.16em] uppercase mt-2">self-learning companion</p>
         </div>

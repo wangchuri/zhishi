@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from ..core.database import get_db
@@ -52,13 +52,15 @@ async def learning_report(db: Session = Depends(get_db)):
 
 @router.post("/notes/tips", response_model=ai_schemas.NoteItem)
 def save_tip(body: ai_schemas.NoteTipCreate, db: Session = Depends(get_db)):
-    note = note_service.save_tip(db, document_id=body.document_id, page_number=body.page_number, title=body.title, content=body.content)
-    return ai_schemas.NoteItem(
-        id=note.id, title=note.title, content_md=note.content_md, note_type=note.note_type,
-        document_id=note.document_id, page_number=note.page_number,
-        created_at=note.created_at.isoformat() if note.created_at else None,
-        updated_at=note.updated_at.isoformat() if note.updated_at else None,
+    note = note_service.save_tip(
+        db,
+        document_id=body.document_id,
+        page_number=body.page_number,
+        title=body.title,
+        content=body.content,
+        tags=body.tags,
     )
+    return note_service.note_to_item(db, note)
 
 
 @router.get("/notes", response_model=ai_schemas.NoteListResult)
@@ -71,6 +73,19 @@ def list_notes(
     return note_service.list_notes(db, document_id=document_id, note_type=note_type, limit=limit)
 
 
+@router.get("/notes/tip-tags", response_model=ai_schemas.TipTagList)
+def list_tip_tags(db: Session = Depends(get_db)):
+    return {"tags": note_service.list_tip_tags(db)}
+
+
 @router.get("/notes/tips/{document_id}", response_model=ai_schemas.NoteListResult)
 def list_tips(document_id: str, db: Session = Depends(get_db)):
     return note_service.list_tips(db, document_id)
+
+
+@router.get("/notes/{note_id}", response_model=ai_schemas.NoteItem)
+def get_note(note_id: str, db: Session = Depends(get_db)):
+    note = note_service.get_note(db, note_id)
+    if not note:
+        raise HTTPException(status_code=404, detail="笔记不存在")
+    return note_service.note_to_item(db, note)

@@ -68,6 +68,13 @@ backend/certs/
 *.log
 logs/
 backend/logs/
+.cursor/*.log
+frontend/_vite_out.log
+_electron_dev.log
+
+# MinerU 解析临时目录、本地测书
+backend/output/
+test_docs/
 
 # ─── 本地运行时数据 ────────────────────────
 storage/

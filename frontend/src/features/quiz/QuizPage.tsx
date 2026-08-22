@@ -33,6 +33,7 @@ import {
 } from "@/components/ui/alert-dialog"
 import { StatCard } from "@/components/ui/stat-card"
 import { questionsApi, quizApi } from "@/lib/api"
+import { notifyCompletedTasks } from "@/lib/taskNotify"
 import { useKbDocuments } from "@/hooks/useKbDocuments"
 import type {
   KnowledgeDoc,
@@ -146,6 +147,34 @@ export function QuizPage() {
         setSetupAlert("会话加载失败，请重新选择资料开始练习")
       })
   }, [sessionIdFromUrl])
+
+  const questionIdsFromUrl = searchParams.get("question_ids")
+  useEffect(() => {
+    if (sessionIdFromUrl || !questionIdsFromUrl) return
+    const ids = questionIdsFromUrl.split(",").map((s) => s.trim()).filter(Boolean)
+    if (!ids.length) return
+    const documentId = searchParams.get("document_id") || undefined
+    let cancelled = false
+    quizApi
+      .createSession({
+        document_id: documentId,
+        question_ids: ids,
+        title: "今日任务",
+      })
+      .then((res) => {
+        if (cancelled) return
+        const s = res as unknown as QuizSession
+        setSession(s)
+        setCurrentIndex(s.answered_count)
+        setPhase("quiz")
+      })
+      .catch(() => {
+        if (!cancelled) setSetupAlert("任务题目加载失败，请从首页再进一次")
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [questionIdsFromUrl, sessionIdFromUrl, searchParams])
 
   const selectedDocument = documents.find((d) => d.id === selectedDocumentId)
   const isLifeZone = selectedCollection?.zone === "life"
@@ -452,6 +481,7 @@ export function QuizPage() {
         request_ai_grade: opts?.requestAiGrade,
       })
       const result = res as unknown as QuizAnswerResult
+      notifyCompletedTasks(result)
       setLastResult(result)
       if (result.status === "correct" && (result.current_streak ?? 0) >= 3) {
         setStreakDialog({ open: true, streak: result.current_streak ?? 0 })
@@ -495,6 +525,7 @@ export function QuizPage() {
         time_spent_seconds: timeSpent,
       })
       const result = res as unknown as QuizAnswerResult
+      notifyCompletedTasks(result)
       setSession((prev) =>
         prev
           ? {
@@ -529,6 +560,7 @@ export function QuizPage() {
         status: "unknown",
       })
       const result = res as unknown as QuizAnswerResult
+      notifyCompletedTasks(result)
       setLastResult(result)
       addReviewItem(result, currentQuestion.stem, "我不会")
       tutorPanelRef.current?.sendMessage("这道题我做错了，请帮我讲解一下")
@@ -559,8 +591,8 @@ export function QuizPage() {
         title="题库页"
         subtitle="按知识库文档浏览题目，选中后开始练习，答题时可随时使用 AI 辅导"
       >
-        <Button variant="secondary" size="md" onClick={() => navigate("/question-gen")}>
-          前往出题
+        <Button variant="secondary" size="md" onClick={() => navigate("/quiz")}>
+          返回资料
         </Button>
       </PageHeader>
 
@@ -591,7 +623,7 @@ export function QuizPage() {
               icon={Brain}
               title="暂无知识库分区"
               description="请先在知识库上传学习区文档并等待分段完成"
-              primaryAction={{ label: "去知识库", onClick: () => navigate("/knowledge") }}
+              primaryAction={{ label: "去资料", onClick: () => navigate("/quiz") }}
             />
           ) : (
             <>
@@ -601,8 +633,8 @@ export function QuizPage() {
                   <AlertTitle>暂时无法开始练习</AlertTitle>
                   <AlertDescription className="text-ink-secondary">
                     {setupAlert}{" "}
-                    <Link to="/knowledge" className="text-primary hover:underline">
-                      前往知识库查看文档状态
+                    <Link to="/quiz" className="text-primary hover:underline">
+                      前往资料查看文档状态
                     </Link>
                   </AlertDescription>
                 </Alert>
@@ -619,7 +651,7 @@ export function QuizPage() {
                   onDocumentSelect={handleDocumentSelect}
                   emptyTitle="该分区还没有文档"
                   emptyDescription="上传资料并完成分段后，可在此刷题练习"
-                  emptyAction={{ label: "去知识库", onClick: () => navigate("/knowledge") }}
+                  emptyAction={{ label: "去资料", onClick: () => navigate("/quiz") }}
                 />
 
                 <div className="flex flex-col min-h-0">
@@ -764,7 +796,11 @@ export function QuizPage() {
       )}
 
       {phase === "quiz" && session && currentQuestion && (
-        <div className="grid grid-cols-1 lg:grid-cols-[1fr_340px] gap-6 lg:h-[calc(100dvh-12rem)] min-h-0">
+        <div
+          className="grid grid-cols-1 lg:grid-cols-[1fr_340px] gap-6 lg:h-[calc(100dvh-12rem)] min-h-0"
+          data-tip-doc={selectedDocumentId || undefined}
+          data-tip-doc-name={selectedDocument?.name || undefined}
+        >
           <div className="bg-surface border border-line-soft rounded-lg shadow-xs flex flex-col min-h-0 overflow-hidden">
             {/* 题目状态头 */}
             <div className="flex items-center justify-between gap-3 px-6 py-4 border-b border-line-soft shrink-0">

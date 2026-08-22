@@ -257,3 +257,164 @@
 .animate-pulse-paper {
   animation: pulse-paper 1.5s ease-in-out infinite;
 }
+
+/* 纸纹：细点，像宣纸纤维 */
+.paper-grain {
+  background-image: radial-gradient(circle at 1px 1px, rgba(20, 33, 43, 0.05) 1px, transparent 0);
+  background-size: 11px 11px;
+}
+
+/* 稿纸横线 */
+.paper-ruled {
+  background-image: repeating-linear-gradient(
+    to bottom,
+    transparent 0,
+    transparent 27px,
+    var(--line-light) 28px
+  );
+  mask-image: linear-gradient(180deg, transparent 8px, #000 28px, #000 100%);
+}
+
+/* 首页问候雾气轻轻浮动 */
+@keyframes mist-drift {
+  0%, 100% { transform: translate3d(0, 0, 0) rotate(0deg); }
+  50% { transform: translate3d(4px, -8px, 0) rotate(3deg); }
+}
+.animate-mist {
+  animation: mist-drift 12s ease-in-out infinite;
+}
+
+@keyframes sprig-sway {
+  0%, 100% { transform: rotate(-2deg) translateY(0); }
+  50% { transform: rotate(3deg) translateY(-4px); }
+}
+.animate-sprig {
+  animation: sprig-sway 9s ease-in-out infinite;
+  transform-origin: 50% 100%;
+}
+
+/* 任务便笺依次落纸 */
+@keyframes slip-in {
+  from { opacity: 0; transform: translateY(10px) rotate(-0.4deg); }
+  to   { opacity: 1; transform: translateY(0) rotate(0); }
+}
+.task-slip {
+  animation: slip-in 420ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.task-seal {
+  animation: stamp-in 500ms 180ms cubic-bezier(0.2, 1.4, 0.3, 1) both;
+  transform: rotate(-8deg);
+}
+@keyframes stamp-in {
+  from { opacity: 0; transform: rotate(-18deg) scale(1.25); }
+  to   { opacity: 1; transform: rotate(-8deg) scale(1); }
+}
+.task-slip-done {
+  background-image:
+    linear-gradient(120deg, rgba(31, 92, 90, 0.05), transparent 42%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-mist,
+  .animate-sprig,
+  .task-slip,
+  .task-seal {
+    animation: none;
+  }
+}
+
+/* tip 堆叠牌 · 笔记页 */
+.tip-deck {
+  position: relative;
+  width: min(100%, 420px);
+  height: 236px;
+  margin-top: 8px;
+}
+.tip-deck.is-expanded {
+  width: 100%;
+  height: auto;
+  display: grid;
+  grid-template-columns: repeat(1, minmax(0, 1fr));
+  gap: 12px;
+}
+@media (min-width: 640px) {
+  .tip-deck.is-expanded {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (min-width: 1024px) {
+  .tip-deck.is-expanded {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+.tip-card {
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--sea);
+  border-radius: 18px;
+  padding: 20px 20px 16px;
+  box-shadow: 0 8px 24px -8px rgba(20, 33, 43, 0.12);
+  display: flex;
+  flex-direction: column;
+  min-height: 196px;
+  transition: transform 0.32s ease, opacity 0.32s ease, box-shadow 0.32s ease;
+}
+.tip-deck:not(.is-expanded) .tip-card {
+  position: absolute;
+  left: 0;
+  right: 24px;
+  top: 0;
+  bottom: 24px;
+  cursor: pointer;
+  pointer-events: none;
+}
+.tip-deck:not(.is-expanded) .tip-card.is-front {
+  pointer-events: auto;
+}
+.tip-deck:not(.is-expanded) .tip-card[data-depth="0"] {
+  transform: translate(0, 0) rotate(-0.4deg);
+  z-index: 3;
+}
+.tip-deck:not(.is-expanded) .tip-card[data-depth="1"] {
+  transform: translate(10px, 12px) rotate(1.6deg);
+  z-index: 2;
+  opacity: 0.95;
+}
+.tip-deck:not(.is-expanded) .tip-card[data-depth="2"] {
+  transform: translate(20px, 22px) rotate(3.2deg);
+  z-index: 1;
+  opacity: 0.8;
+}
+.tip-deck:not(.is-expanded) .tip-card[data-depth="3"] {
+  transform: translate(20px, 22px) rotate(3.2deg) scale(0.98);
+  z-index: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+.tip-deck:not(.is-expanded) .tip-card.is-front:hover {
+  transform: translate(0, -4px) rotate(-0.4deg);
+  box-shadow: 0 14px 32px -10px rgba(20, 33, 43, 0.18);
+}
+.tip-deck.is-expanded .tip-card {
+  position: relative;
+  cursor: pointer;
+  min-height: 180px;
+}
+.tip-deck.is-expanded .tip-card:hover {
+  transform: translateY(-3px);
+  border-color: color-mix(in srgb, var(--sea) 45%, var(--line));
+}
+.tip-card-mark {
+  align-self: flex-start;
+  height: 20px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: var(--sea-subtle);
+  color: var(--sea);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  display: inline-flex;
+  align-items: center;
+  margin-bottom: 10px;
+}

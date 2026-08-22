@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import json
+import uuid
 
 from tina import Tools
 
@@ -68,8 +69,65 @@ def norm_chapters(chapters) -> list[dict]:
         if not isinstance(kp, list):
             kp = [kp]
         kp = [str(k) for k in kp if k]
-        result.append({"title": title, "order": order, "key_points": kp})
+        cid = str(item.get("id") or "").strip()
+        row = {"title": title, "order": order, "key_points": kp}
+        if cid:
+            row["id"] = cid
+        result.append(row)
     return result
+
+
+def ensure_chapter_ids(path: dict | None, previous: dict | None = None) -> bool:
+    """给目录章节补上稳定 id。返回是否改过 path。"""
+    if not isinstance(path, dict):
+        return False
+    chapters = path.get("chapters")
+    if not isinstance(chapters, list):
+        return False
+    prev_by_title: dict[str, str] = {}
+    for ch in (previous or {}).get("chapters") or []:
+        if not isinstance(ch, dict):
+            continue
+        cid = str(ch.get("id") or "").strip()
+        title = str(ch.get("title") or "").strip()
+        if cid and title:
+            prev_by_title[title] = cid
+    changed = False
+    for ch in chapters:
+        if not isinstance(ch, dict):
+            continue
+        cid = str(ch.get("id") or "").strip()
+        if cid:
+            if ch.get("id") != cid:
+                ch["id"] = cid
+                changed = True
+            continue
+        title = str(ch.get("title") or "").strip()
+        ch["id"] = prev_by_title.get(title) or uuid.uuid4().hex[:8]
+        changed = True
+    return changed
+
+
+def resolve_chapter_id(learning_path: dict | None, chapter_id: str) -> str:
+    """把模型填的 chapter_id（或误填的章标题）收成目录里的 id。"""
+    raw = str(chapter_id or "").strip().strip('"').strip("'")
+    if not raw:
+        return ""
+    chapters = (learning_path or {}).get("chapters") or []
+    ids = []
+    for ch in chapters:
+        if not isinstance(ch, dict):
+            continue
+        cid = str(ch.get("id") or "").strip()
+        if cid:
+            ids.append((cid, str(ch.get("title") or "").strip()))
+    for cid, _title in ids:
+        if raw == cid:
+            return cid
+    for cid, title in ids:
+        if raw and title and (raw == title or raw in title or title in raw):
+            return cid
+    return ""
 
 
 _path_store: dict[str, dict] = {}
@@ -102,6 +160,7 @@ def build_learning_path_tools(document_id: str):
             chapters: 章节列表，每项含 title/order/key_points
         """
         path = {"title": norm_title(title), "chapters": norm_chapters(chapters)}
+        ensure_chapter_ids(path)
         store_path(document_id, path)
         return "已保存"
 

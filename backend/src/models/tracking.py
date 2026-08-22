@@ -25,6 +25,8 @@ class DailyActivity(Base):
     __tablename__ = "daily_activity"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    # 旧库 daily_activity.user_id NOT NULL；单用户默认 1
+    user_id: Mapped[int] = mapped_column(Integer, default=1)
     activity_date: Mapped[date] = mapped_column(Date, nullable=False)  # YYYY-MM-DD
     active_seconds: Mapped[int] = mapped_column(Integer, default=0)
     quiz_seconds: Mapped[int] = mapped_column(Integer, default=0)
@@ -52,12 +54,16 @@ class UserNote(Base):
     __tablename__ = "user_notes"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    # 旧库 user_notes.user_id NOT NULL；单用户默认 1
+    user_id: Mapped[int] = mapped_column(Integer, default=1)
     collection_id: Mapped[str | None] = mapped_column(String(36), index=True)
     document_id: Mapped[str | None] = mapped_column(String(36), index=True)
     page_number: Mapped[int | None] = mapped_column(Integer)
     title: Mapped[str | None] = mapped_column(String(255))
     content_md: Mapped[str | None] = mapped_column(Text)
     note_type: Mapped[str] = mapped_column(String(20), default="manual")  # manual/tip/report
+    # 用户给 tip 打的分类 tag，不是资料/题目上的知识点 tag
+    user_tags: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=_now, onupdate=_now)
 
@@ -106,6 +112,8 @@ class TrainingPlan(Base):
     __tablename__ = "training_plans"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    # 旧库 training_plans.user_id NOT NULL；单用户默认 1
+    user_id: Mapped[int] = mapped_column(Integer, default=1)
     quiz_session_id: Mapped[str | None] = mapped_column(String(36))
     agent_session_id: Mapped[str | None] = mapped_column(String(36))
     question_ids_json: Mapped[str | None] = mapped_column(Text)

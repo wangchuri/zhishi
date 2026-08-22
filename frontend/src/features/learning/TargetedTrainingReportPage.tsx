@@ -90,8 +90,8 @@ export function TargetedTrainingReportPage() {
       <AppShell maxWidth={900}>
         <Card className="p-8 text-center">
           <p className="text-body text-danger mb-4">{error}</p>
-          <Button variant="secondary" onClick={() => navigate("/training/targeted")}>
-            返回列表
+          <Button variant="secondary" onClick={() => navigate("/analytics")}>
+            返回进度
           </Button>
         </Card>
       </AppShell>
@@ -107,10 +107,10 @@ export function TargetedTrainingReportPage() {
         <Button
           variant="ghost"
           size="md"
-          onClick={() => navigate("/training/targeted")}
+          onClick={() => navigate("/analytics")}
         >
           <ArrowLeft className="w-4 h-4" />
-          返回列表
+          返回进度
         </Button>
       </PageHeader>
 

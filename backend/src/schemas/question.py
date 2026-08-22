@@ -5,7 +5,7 @@ from datetime import datetime
 
 from typing import Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class QuestionOption(BaseModel):
@@ -30,6 +30,7 @@ class Question(BaseModel):
     source_type: Optional[str] = None
     document_id: Optional[str] = None
     collection_id: Optional[str] = None
+    chapter_id: Optional[str] = None
     created_at: Optional[datetime] = None
     user_answer_status: Optional[str] = None  # correct/wrong/unknown/null
     attempt_count: Optional[int] = None
@@ -57,17 +58,18 @@ class PageQuestionResult(BaseModel):
     questions_created: int = 0
     questions_reused: int = 0
     total_questions: int = 0
+    completed_tasks: Optional[list[dict]] = None
 
 
 class GenerateRequest(BaseModel):
     document_id: str
     page_numbers: list[int] = []
-    questions_per_page: Optional[int] = None
+    questions_per_page: Optional[int] = Field(default=None, ge=0)
 
 
 class GenerateWholeRequest(BaseModel):
     document_id: str
-    questions_per_page: Optional[int] = None
+    questions_per_page: Optional[int] = Field(default=None, ge=0)
 
 
 class DeleteBulkRequest(BaseModel):

@@ -11,27 +11,11 @@ from sqlalchemy.orm import Session
 
 from ..core.database import SessionLocal
 from ..core.errors import NotFoundError
-from ..core.llm import create_agent
+from ..core.llm import create_agent, visible_assistant_delta
+from ..core.prompts import render_prompt
 from ..models import CompanionMessage, CompanionSession, Document
 
 logger = logging.getLogger(__name__)
-
-_PROMPT = """你是知拾的伴学老师，陪用户一起阅读这本「{document_name}」。
-
-当前用户在阅读第 {page_number} 页：
-```
-{page_content}
-```
-
-## 规则
-1. 结合当前页内容和全书知识，帮助用户理解、答疑
-2. 用中文交流，语气亲切
-3. 如果用户问的是当前页之外的内容，基于你已有的知识回答
-4. 适当引用书中的内容帮助理解
-
-## 历史对话
-{history}
-"""
 
 
 class CompanionService:
@@ -89,7 +73,8 @@ class CompanionService:
         history = self._load_history(db, session.id)
         history_str = "\n".join(f"{'用户' if m['role']=='user' else '伴学'}: {m['content']}" for m in history[:-1])
 
-        prompt = _PROMPT.format(
+        prompt = render_prompt(
+            "companion/chat.md.j2",
             document_name=doc.display_name,
             page_number=page_number or 1,
             page_content=(page_content or "")[:2000],
@@ -100,15 +85,25 @@ class CompanionService:
         for m in history[:-1]:
             agent.add_message(role=m["role"], content=m["content"])
 
-        return agent, session
+        return agent, session, content
 
-    async def consume_and_save(self, agent, session) -> tuple[str, Optional[str]]:
+    def persist_assistant(self, session_id: str, content: str) -> None:
+        db = SessionLocal()
+        try:
+            db.add(CompanionMessage(session_id=session_id, role="assistant", content=content))
+            session = db.get(CompanionSession, session_id)
+            if session:
+                session.updated_at = datetime.now(timezone.utc)
+            db.commit()
+        finally:
+            db.close()
+
+    async def consume_and_save(self, agent, session, user_content: str) -> tuple[str, Optional[str]]:
         full = ""
         reasoning = ""
         try:
-            async for chunk in agent.apredict():
-                c = chunk.get("content", "")
-                r = chunk.get("reasoning_content", "")
+            async for chunk in agent.apredict(user_content):
+                c, r = visible_assistant_delta(chunk)
                 if c:
                     full += c
                 if r:
@@ -117,15 +112,7 @@ class CompanionService:
             logger.warning("伴学流式失败: %s", e)
             full = full or f"（出错了：{e}）"
 
-        db = SessionLocal()
-        try:
-            db.add(CompanionMessage(session_id=session.id, role="assistant", content=full))
-            session = db.get(CompanionSession, session.id)
-            if session:
-                session.updated_at = datetime.now(timezone.utc)
-            db.commit()
-        finally:
-            db.close()
+        self.persist_assistant(session.id, full)
         return full, reasoning or None
 
 

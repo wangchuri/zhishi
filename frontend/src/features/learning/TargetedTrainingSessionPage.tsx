@@ -12,6 +12,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { analyticsApi, quizApi, trainingApi } from "@/lib/api"
+import { formatAccuracy, splitTagLabels } from "@/lib/utils"
 import { TutorPanel } from "@/features/tutor/TutorPanel"
 import { TrainingTutorPanel } from "@/features/learning/TrainingTutorPanel"
 import { QuizQuestionInput } from "@/features/quiz/QuizQuestionInput"
@@ -70,7 +71,7 @@ export function TargetedTrainingSessionPage() {
     if (reportId) {
       navigate(`/training/targeted/report/${reportId}`)
     } else {
-      navigate("/training/targeted")
+      navigate("/analytics")
     }
   }, [navigate, reportId])
 
@@ -310,10 +311,12 @@ export function TargetedTrainingSessionPage() {
                     key={t.tag}
                     className="rounded-lg border border-line-soft px-3 py-2 text-small"
                   >
-                    <div className="font-medium text-ink-primary truncate">{t.tag}</div>
+                    <div className="font-medium text-ink-primary truncate">
+                      {splitTagLabels(t.tag).join(" · ")}
+                    </div>
                     <div className="text-ink-tertiary mt-0.5">
                       错 {t.wrong_count} · 对 {t.correct_count}
-                      {t.accuracy_rate != null && ` · ${t.accuracy_rate}%`}
+                      {t.accuracy_rate != null && ` · ${formatAccuracy(t.accuracy_rate)}`}
                     </div>
                   </li>
                 ))}
@@ -324,7 +327,7 @@ export function TargetedTrainingSessionPage() {
             <ul className="space-y-1.5">
               {tagStats.slice(0, 12).map((t) => (
                 <li key={t.tag} className="flex justify-between text-caption text-ink-secondary">
-                  <span className="truncate mr-2">{t.tag}</span>
+                  <span className="truncate mr-2">{splitTagLabels(t.tag).join(" · ")}</span>
                   <span className="shrink-0 text-danger">{t.wrong_count} 错</span>
                 </li>
               ))}

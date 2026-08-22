@@ -24,6 +24,7 @@ from ..schemas import learning as l_schemas
 from ..services.analytics import analytics_service
 from ..services.quiz import quiz_service
 from ..services.report import report_service
+from ..utils import parse_tags
 
 router = APIRouter(prefix="/api/v1", tags=["learning"])
 
@@ -70,7 +71,7 @@ def _pick_questions(db: Session, weak_tags: list[dict], limit: int = 10) -> list
         gq = db.get(GlobalQuestion, ref.question_id)
         if not gq:
             continue
-        qtags = json.loads(gq.tags) if gq.tags else []
+        qtags = parse_tags(gq.tags)
         if any(t in tag_names for t in qtags):
             picked.append(ref.question_id)
         if len(picked) >= limit:
@@ -159,7 +160,8 @@ def resume_session(session_id: str, db: Session = Depends(get_db)):
 async def training_tutor(agent_session_id: str, body: l_schemas.TrainingTutorSend, db: Session = Depends(get_db)):
     """针对训练的辅导（简化为直接 LLM 回复）。"""
     from ..core.llm import create_agent
-    agent = create_agent(system_prompt="你是针对训练的辅导老师，结合学生的错题进行讲解。用中文，引导式教学。")
+    from ..core.prompts import load_prompt
+    agent = create_agent(system_prompt=load_prompt("training/training_coach.md.j2"))
     content = ""
     async for chunk in agent.apredict(body.content):
         c = chunk.get("content", "")

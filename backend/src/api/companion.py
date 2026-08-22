@@ -9,6 +9,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from ..core.database import get_db
+from ..core.llm import visible_assistant_delta
 from ..schemas import ai as ai_schemas
 from ..services.companion import companion_service
 
@@ -21,19 +22,24 @@ def _json_line(data: dict) -> str:
 
 @router.post("/chat")
 async def chat(body: ai_schemas.CompanionSend, db: Session = Depends(get_db)):
-    agent, session = await companion_service.send_message(
+    agent, session, user_content = await companion_service.send_message(
         db, body.document_id, body.content, body.page_number, body.page_content, stream=True
     )
 
     async def gen():
+        full = ""
         try:
-            async for chunk in agent.apredict():
-                c = chunk.get("content", "")
+            async for chunk in agent.apredict(user_content):
+                c, _r = visible_assistant_delta(chunk)
                 if c:
+                    full += c
                     yield _json_line({"content": c})
         except Exception as e:
-            yield _json_line({"content": f"（出错了：{e}）"})
+            err = f"（出错了：{e}）"
+            full = full or err
+            yield _json_line({"content": err})
         finally:
+            companion_service.persist_assistant(session.id, full)
             yield "data: [DONE]\n\n"
 
     return StreamingResponse(gen(), media_type="text/event-stream")

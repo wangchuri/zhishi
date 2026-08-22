@@ -20,6 +20,7 @@ import { TimelineStep } from "@/components/blocks/TimelineStep"
 import { cn } from "@/lib/utils"
 import { SegmentedTabs } from "@/components/ui/segmented-tabs"
 import { kbApi } from "@/lib/api"
+import { notifyCompletedTasks } from "@/lib/taskNotify"
 import { toast } from "sonner"
 import type { KbCollection } from "@/types"
 
@@ -104,13 +105,13 @@ export function UploadPage() {
     uploadMethods.find((m) => m.id === active)?.accept ?? ".pdf,.txt,.md,.docx,.csv,.json,.html,.htm"
 
   const pollStatus = useCallback(async (task: UploadTask) => {
-    const maxPolls = 60 // 最多轮询 60 次（约 2 分钟）
+    const maxPolls = 900 // OCR/MinerU 可能很久，约 30 分钟
     let polls = 0
 
     const poll = async () => {
       if (polls >= maxPolls) {
         setTasks((prev) =>
-          prev.map((t) => (t.id === task.id ? { ...t, status: "error" as const, errorMessage: "索引超时" } : t))
+          prev.map((t) => (t.id === task.id ? { ...t, status: "error" as const, errorMessage: "解析超时，可刷新页面查看是否已完成" } : t))
         )
         return
       }
@@ -118,6 +119,7 @@ export function UploadPage() {
 
       try {
         const res = await kbApi.getDocumentStatus(task.id)
+        notifyCompletedTasks(res)
         const status = res.status
         const ocrStatus = res.ocr_status as string | undefined
 
@@ -185,7 +187,7 @@ export function UploadPage() {
         const items = (res.documents || []) as Array<Record<string, unknown>>
         const processing = items.filter((d) => {
           const ocr = String(d.ocr_status || "") === "processing"
-          const indexing = String(d.indexing_status || "") === "processing"
+          const indexing = String(d.status || d.indexing_status || "") === "processing"
           const segment = String(d.segment_status || "") === "processing"
           return ocr || indexing || segment
         })
@@ -266,6 +268,7 @@ export function UploadPage() {
 
         try {
           const res = await kbApi.upload(file, selectedCollectionId || undefined, forceScanned)
+          notifyCompletedTasks(res)
 
           if (res.warning) {
             toast.warning(res.warning, { duration: 8000 })

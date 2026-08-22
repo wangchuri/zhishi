@@ -3,16 +3,14 @@ import { Routes, Route, Navigate } from "react-router-dom"
 import { useAuth } from "@/context/AuthContext"
 import { isServerConfigured } from "@/lib/api"
 import { DashboardPage } from "@/features/dashboard/DashboardPage"
+import { OnboardingPage } from "@/features/onboarding/OnboardingPage"
 import { ChatPage } from "@/features/chat/ChatPage"
 import { NotesPage } from "@/features/notes/NotesPage"
-import { KnowledgeBasePage } from "@/features/knowledge-base/KnowledgeBasePage"
+import { NoteDetailPage } from "@/features/notes/NoteDetailPage"
 import { DocumentViewPage } from "@/features/knowledge-base/DocumentViewPage"
 import { UploadPage } from "@/features/knowledge-base/UploadPage"
 import { LearningAnalyticsPage } from "@/features/learning/LearningAnalyticsPage"
 import { TargetedTrainingPage } from "@/features/learning/TargetedTrainingPage"
-import { RemindersPage } from "@/features/learning/RemindersPage"
-import { AchievementsPage } from "@/features/achievements/AchievementsPage"
-import { PlansPage } from "@/features/plans/PlansPage"
 import { ProfilePage } from "@/features/profile/ProfilePage"
 import { SettingsPage } from "@/features/settings/SettingsPage"
 import { DiagnosticsPage } from "@/features/settings/DiagnosticsPage"
@@ -20,11 +18,10 @@ import { ServerSetupPage } from "@/features/setup/ServerSetupPage"
 import { QuizBookListPage } from "@/features/quiz/QuizBookListPage"
 import { QuizDocDetailPage } from "@/features/quiz/QuizDocDetailPage"
 import { QuizPage } from "@/features/quiz/QuizPage"
-import { QuestionGenPage } from "@/features/question-gen/QuestionGenPage"
 import { QuestionGenDocPage } from "@/features/question-gen/QuestionGenDocPage"
-import { CompanionPage } from "@/features/companion/CompanionPage"
 import { CompanionReadPage } from "@/features/companion/CompanionReadPage"
 import { DocParsePage } from "@/features/doc-parse/DocParsePage"
+import { TasksPage } from "@/features/tasks/TasksPage"
 
 function RequireServer({ children }: { children: React.ReactElement }) {
   const { checkServer } = useAuth()
@@ -62,25 +59,27 @@ export function AppRoutes() {
   return (
     <Routes>
       <Route path="/setup" element={<ServerSetupPage />} />
+      <Route path="/onboarding" element={<RequireServer><OnboardingPage /></RequireServer>} />
       <Route path="/" element={<RequireServer><DashboardPage /></RequireServer>} />
       <Route path="/chat" element={<RequireServer><ChatPage /></RequireServer>} />
       <Route path="/notes" element={<RequireServer><NotesPage /></RequireServer>} />
-      <Route path="/knowledge" element={<RequireServer><KnowledgeBasePage /></RequireServer>} />
+      <Route path="/notes/:noteId" element={<RequireServer><NoteDetailPage /></RequireServer>} />
+      <Route path="/knowledge" element={<Navigate to="/quiz" replace />} />
       <Route path="/knowledge/doc/:docId" element={<RequireServer><DocumentViewPage /></RequireServer>} />
       <Route path="/knowledge/upload" element={<RequireServer><UploadPage /></RequireServer>} />
+      <Route path="/tasks" element={<RequireServer><TasksPage /></RequireServer>} />
       <Route path="/analytics" element={<RequireServer><LearningAnalyticsPage /></RequireServer>} />
       <Route path="/training/targeted/*" element={<RequireServer><TargetedTrainingPage /></RequireServer>} />
-      <Route path="/reminders" element={<RequireServer><RemindersPage /></RequireServer>} />
-      <Route path="/achievements" element={<RequireServer><AchievementsPage /></RequireServer>} />
-      <Route path="/plans" element={<RequireServer><PlansPage /></RequireServer>} />
+      <Route path="/achievements" element={<Navigate to="/analytics" replace />} />
+      <Route path="/plans" element={<Navigate to="/" replace />} />
       <Route path="/profile" element={<RequireServer><ProfilePage /></RequireServer>} />
       <Route path="/settings" element={<RequireServer><SettingsPage /></RequireServer>} />
       <Route path="/quiz" element={<RequireServer><QuizBookListPage /></RequireServer>} />
       <Route path="/quiz/doc/:docId" element={<RequireServer><QuizDocDetailPage /></RequireServer>} />
       <Route path="/quiz/session" element={<RequireServer><QuizPage /></RequireServer>} />
-      <Route path="/question-gen" element={<RequireServer><QuestionGenPage /></RequireServer>} />
+      <Route path="/question-gen" element={<Navigate to="/quiz" replace />} />
       <Route path="/question-gen/doc/:documentId" element={<RequireServer><QuestionGenDocPage /></RequireServer>} />
-      <Route path="/companion" element={<RequireServer><CompanionPage /></RequireServer>} />
+      <Route path="/companion" element={<Navigate to="/quiz" replace />} />
       <Route path="/companion/doc/:docId" element={<RequireServer><CompanionReadPage /></RequireServer>} />
       <Route path="/doc-parse" element={<RequireServer><DocParsePage /></RequireServer>} />
       <Route path="/settings/diagnostics" element={<RequireServer><DiagnosticsPage /></RequireServer>} />

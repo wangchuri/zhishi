@@ -4,8 +4,9 @@
   storage_dir/
     documents/{doc_id}/          # 每文档独立文件夹
       original.{ext}             # 原始上传文件
-      parsed.md                  # 解析后的 markdown 全文
-      pages/page_001.md ...      # 按页解析产物（扫描件/MinerU）
+      parsed.md                  # 分页拼接的全文（带「第 N 页」标题，供预览/RAG）
+      manifest.json              # {total_pages, pages_dir}
+      pages/page_001.md ...      # 按页解析产物（出题/伴学的真源）
       images/                    # 该文档的图片（图床引用目录）
     thumbnails/{doc_id}.png      # 文档封面缩略图
 
@@ -17,10 +18,24 @@
 
 from __future__ import annotations
 
+import json
+import re
 import shutil
 from pathlib import Path
 
 from .config import config
+
+_PAGE_HEAD_RE = re.compile(r"^#{1,3}\s*第\s*(\d+)\s*页\b")
+
+
+def _with_page_heading(num: int, text: str) -> str:
+    body = (text or "").strip()
+    m = _PAGE_HEAD_RE.match(body)
+    if m:
+        if int(m.group(1)) == num:
+            return body
+        body = _PAGE_HEAD_RE.sub("", body, count=1).lstrip()
+    return f"## 第 {num} 页\n\n{body}" if body else f"## 第 {num} 页"
 
 
 class StorageService:
@@ -77,10 +92,25 @@ class StorageService:
         return None
 
     def save_pages(self, doc_id: str, page_texts: list[str]) -> None:
-        """按页保存解析产物（page_001.md 等）。"""
+        """按页保存解析产物（page_001.md 等），并写 manifest；parsed.md 由分页拼接。"""
         pages = self.pages_dir(doc_id)
+        keep = set()
+        bodies: list[str] = []
         for i, text in enumerate(page_texts, 1):
-            (pages / f"page_{i:03d}.md").write_text(text, encoding="utf-8")
+            name = f"page_{i:03d}.md"
+            keep.add(name)
+            body = _with_page_heading(i, text)
+            bodies.append(body)
+            (pages / name).write_text(body, encoding="utf-8")
+        for p in pages.glob("page_*.md"):
+            if p.name not in keep:
+                p.unlink()
+        manifest = {"version": 1, "total_pages": len(bodies), "pages_dir": "pages"}
+        (self.document_dir(doc_id) / "manifest.json").write_text(
+            json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+        if bodies:
+            self.save_parsed(doc_id, "\n\n".join(bodies))
 
     def list_pages(self, doc_id: str) -> list[tuple[int, Path]]:
         pages: list[tuple[int, Path]] = []
@@ -92,10 +122,35 @@ class StorageService:
         return pages
 
     def read_page(self, doc_id: str, page_number: int) -> str | None:
-        for num, p in self.list_pages(doc_id):
-            if num == page_number:
-                return p.read_text(encoding="utf-8")
+        path = self.document_dir(doc_id) / "pages" / f"page_{page_number:03d}.md"
+        if path.is_file():
+            return path.read_text(encoding="utf-8")
         return None
+
+    def ensure_page_headings(self, doc_id: str) -> bool:
+        """给已有分页补上「第 N 页」标题，并按分页重写 parsed.md。已规范则跳过。"""
+        listed = self.list_pages(doc_id)
+        if not listed:
+            return False
+        first = listed[0][1].read_text(encoding="utf-8")
+        man = self.document_dir(doc_id) / "manifest.json"
+        if _PAGE_HEAD_RE.match(first.strip()) and man.is_file():
+            return False
+        changed = False
+        bodies: list[str] = []
+        for num, path in listed:
+            raw = path.read_text(encoding="utf-8")
+            body = _with_page_heading(num, raw)
+            bodies.append(body)
+            if body != raw:
+                path.write_text(body, encoding="utf-8")
+                changed = True
+        man.write_text(
+            json.dumps({"version": 1, "total_pages": len(listed), "pages_dir": "pages"}, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        self.save_parsed(doc_id, "\n\n".join(bodies))
+        return True
 
     def save_image(self, doc_id: str, file_name: str, content: bytes) -> Path:
         """保存图片到文档 images 目录。"""

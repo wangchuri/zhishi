@@ -5,7 +5,6 @@ AnalyticsService 持有学习分析领域逻辑。
 
 from __future__ import annotations
 
-import json
 from datetime import date, datetime, timedelta, timezone
 from typing import Optional
 
@@ -20,7 +19,9 @@ from ..models import (
     QuestionRef,
     QuizAnswer,
     QuizSession,
+    QuizSessionQuestion,
 )
+from ..utils import parse_tags
 
 
 def _today() -> date:
@@ -90,7 +91,7 @@ class AnalyticsService:
                 "document_id": s.document_id,
                 "document_name": doc.display_name if doc else None,
                 "status": s.status,
-                "total_questions": 0,
+                "total_questions": db.query(QuizSessionQuestion).filter(QuizSessionQuestion.session_id == s.id).count(),
                 "answered_count": db.query(QuizAnswer).filter(QuizAnswer.session_id == s.id).count(),
                 "started_at": s.started_at.isoformat() if s.started_at else None,
                 "finished_at": s.finished_at.isoformat() if s.finished_at else None,
@@ -136,7 +137,7 @@ class AnalyticsService:
             gq = db.get(GlobalQuestion, ref.question_id)
             if not gq:
                 continue
-            tags = json.loads(gq.tags) if gq.tags else []
+            tags = parse_tags(gq.tags)
             for tag in tags:
                 stat = by_tag.setdefault(tag, {"correct_count": 0, "wrong_count": 0, "unknown_count": 0, "total_attempts": 0})
                 stat["correct_count"] += ref.correct_count or 0

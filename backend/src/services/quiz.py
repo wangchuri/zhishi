@@ -232,12 +232,12 @@ class QuizService:
 
     async def _grade_by_ai(self, question: GlobalQuestion, user_answer: Optional[str], qtype: str) -> tuple[str, str]:
         """AI 判题（走 tina 流式，消费全部 chunk）。"""
-        from ..core.llm import create_llm
+        from ..core.llm import create_agent
+        from ..core.prompts import render_prompt
 
         if not user_answer or not user_answer.strip():
             return "wrong", "未作答"
         try:
-            llm = create_llm()
             type_label = {
                 "fill_blank": "填空题",
                 "short_answer": "简答题",
@@ -249,18 +249,16 @@ class QuizService:
                 parts = _parse_multi_blank_values(question.answer)
                 correct_display = "；".join(parts)
 
-            sys_prompt = """你是严谨的题目判卷助手。请根据题目、标准答案和学生答案，判断对错。
-输出 JSON：{"status": "correct|partial|wrong", "reason": "简短理由"}"""
-
-            user_prompt = f"""题目类型：{type_label}
-题干：{question.stem}
-标准答案：{correct_display}
-学生答案：{user_answer}
-
-请判定并输出 JSON。"""
-
+            agent = create_agent(system_prompt=render_prompt("quiz/grade_system.md.j2"))
+            user_prompt = render_prompt(
+                "quiz/grade_prompt.md.j2",
+                type_label=type_label,
+                stem=question.stem or "",
+                correct_display=correct_display,
+                user_answer=user_answer,
+            )
             result = ""
-            async for chunk in llm.apredict(user_prompt):
+            async for chunk in agent.apredict(user_prompt):
                 content = chunk.get("content", "") if isinstance(chunk, dict) else str(chunk)
                 result += content
             return _parse_ai_grade_response(result)
@@ -401,6 +399,75 @@ class QuizService:
             "answered_count": answered,
             "total_questions": total,
             "session_status": session.status,
+            "current_streak": _current_streak(db, question_id),
+        }
+
+    async def grade_standalone(
+        self,
+        db: Session,
+        question_id: str,
+        user_answer: Optional[str],
+        status_hint: Optional[str],
+        document_id: Optional[str] = None,
+        request_ai_grade: Optional[bool] = None,
+    ) -> dict:
+        """对话里单题判分，不依赖刷题会话。"""
+        question = db.get(GlobalQuestion, question_id)
+        if not question:
+            raise NotFoundError("题目不存在")
+
+        status, grade_method, string_match_status, ai_reason = await self.grade_answer(
+            question,
+            user_answer,
+            status_hint,
+            request_ai_grade=bool(request_ai_grade),
+        )
+
+        if not document_id:
+            prov = db.query(QuestionProvenance).filter_by(question_id=question_id).first()
+            document_id = prov.document_id if prov else None
+
+        correct_answer = None
+        explanation = None
+        citation = None
+        if status != "correct":
+            correct_answer = question.answer
+            explanation = question.explanation
+            if document_id:
+                prov = db.query(QuestionProvenance).filter_by(question_id=question_id, document_id=document_id).first()
+                if not prov:
+                    prov = db.query(QuestionProvenance).filter_by(question_id=question_id).first()
+                if prov and prov.document_id:
+                    seg = None
+                    if prov.segment_id:
+                        seg = db.get(DocumentSegment, prov.segment_id)
+                    if not seg:
+                        seg = db.query(DocumentSegment).filter_by(document_id=prov.document_id).first()
+                    if seg:
+                        citation = {
+                            "doc_id": prov.document_id,
+                            "segment_id": seg.id,
+                            "title": seg.title,
+                            "char_start": seg.char_start,
+                            "char_end": seg.char_end,
+                            "snippet": seg.content[:200],
+                        }
+
+        self.update_ref_stats(db, question_id, document_id, status)
+        db.commit()
+
+        return {
+            "question_id": question_id,
+            "status": status,
+            "correct_answer": correct_answer,
+            "explanation": explanation,
+            "citation": citation,
+            "grade_method": grade_method,
+            "string_match_status": string_match_status,
+            "ai_reason": ai_reason,
+            "answered_count": 1,
+            "total_questions": 1,
+            "session_status": "active",
             "current_streak": _current_streak(db, question_id),
         }
 

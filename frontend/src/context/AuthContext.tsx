@@ -11,6 +11,7 @@ import {
   clearApiBase,
   getStoredNickname,
   setStoredNickname,
+  profileApi,
 } from "@/lib/api"
 
 interface User {
@@ -59,6 +60,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       ok: result.ok,
       message: result.message,
     })
+    if (result.ok) {
+      try {
+        const profile = await profileApi.get()
+        if (profile?.nickname) {
+          setStoredNickname(profile.nickname)
+          setNicknameState(profile.nickname)
+        }
+      } catch {
+        /* 档案接口未就绪时仍用本地昵称 */
+      }
+    }
     return result.ok
   }, [])
 
@@ -70,6 +82,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const setNickname = useCallback((name: string) => {
     setStoredNickname(name)
     setNicknameState(getStoredNickname())
+    const trimmed = (name || "").trim()
+    if (trimmed) {
+      void profileApi.put({ nickname: trimmed }).catch(() => {})
+    }
   }, [])
 
   const user: User = {

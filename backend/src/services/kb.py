@@ -53,15 +53,20 @@ def _background_parse(doc_id: str, filename: str, content: bytes, collection_id:
         doc.pdf_page_count = len(storage.list_pages(doc_id))
         kb.segment_document(db, doc)
         doc.segment_status = "completed"
+        doc.updated_at = datetime.now(timezone.utc)
+        db.commit()
         parsed_text = storage.read_parsed(doc_id) or ""
         if parsed_text.strip():
             try:
                 chroma_store.index_document(doc_id, parsed_text)
             except Exception as ie:
                 logger.warning("向量化失败 doc=%s: %s", doc_id, ie)
-        doc.updated_at = datetime.now(timezone.utc)
-        db.commit()
         logger.info("后台解析完成 doc=%s", doc_id)
+        try:
+            from .task import evaluate
+            evaluate(db)
+        except Exception as te:
+            logger.warning("任务检查失败 doc=%s: %s", doc_id, te)
 
         # 解析完成后异步调度学习路径 Agent
         if doc.zone == "study":
@@ -108,6 +113,18 @@ def ensure_default_collections(db: Session) -> None:
         life = KBCollection(name="生活区", zone="life")
         db.add_all([study, life])
         db.commit()
+
+
+def reset_stale_processing(db: Session) -> int:
+    """进程重启后后台解析线程已不在，把仍标记 processing 的文档标为失败。"""
+    rows = db.query(Document).filter(Document.indexing_status == "processing").all()
+    if not rows:
+        return 0
+    for doc in rows:
+        doc.indexing_status = "failed"
+        doc.updated_at = datetime.now(timezone.utc)
+    db.commit()
+    return len(rows)
 
 
 def _resolve_collection(db: Session, collection_id: Optional[str]) -> KBCollection:
@@ -282,6 +299,8 @@ class KnowledgeBaseService:
         # 解析分发：async_parse=True 时后台执行（扫描件可能耗时数分钟），立即返回 pending
         if async_parse:
             doc.indexing_status = "processing"
+            if force_scanned:
+                doc.is_scanned_pdf = True
             doc.updated_at = datetime.now(timezone.utc)
             db.commit()
             _spawn_background(
@@ -355,20 +374,22 @@ class KnowledgeBaseService:
             if is_scanned:
                 mineru = mineru_service.parse_pdf(content)
                 pages_md = mineru["page_mds"]
-                for idx, p in enumerate(pages_md, 1):
-                    md_text = p["markdown"]
-                    page_images = mineru["images"]
-                    self._rewrite_md_images(db, doc, md_text, page_images, page_num=idx)
-                    storage.save_pages(doc.id, [md_text])
-                full = "\n\n".join(p["markdown"] for p in pages_md)
-                storage.save_parsed(doc.id, full)
+                all_images = mineru["images"] or {}
+                name_map = self._persist_mineru_images_once(db, doc, all_images)
+                rewritten_pages: list[str] = []
+                for p in pages_md:
+                    rewritten = self._apply_image_refs(p["markdown"], name_map)
+                    rewritten_pages.append(rewritten)
+                    p["markdown"] = rewritten
+                storage.save_pages(doc.id, rewritten_pages)
                 result["pages"] = pages_md
                 doc.is_scanned_pdf = True
                 return result
-            storage.save_parsed(doc.id, text)
             if pages:
                 storage.save_pages(doc.id, pages)
                 result["pages"] = [{"page": i + 1, "markdown": t} for i, t in enumerate(pages)]
+            else:
+                storage.save_parsed(doc.id, text)
             return result
 
         # 4) docx / 文本类
@@ -404,6 +425,35 @@ class KnowledgeBaseService:
             md_text = md_text.replace(name, f"images/{new_name}")
         db.commit()
         storage.save_parsed(doc.id, md_text)
+
+    def _persist_mineru_images_once(
+        self,
+        db: Session,
+        doc: Document,
+        images: dict[str, bytes],
+    ) -> dict[str, str]:
+        """全书图片只落盘一次，返回 MinerU 原文件名 → 图床文件名。"""
+        name_map: dict[str, str] = {}
+        for idx, (name, data) in enumerate(images.items(), 1):
+            ext = Path(name).suffix or ".png"
+            new_name = image_file_name(doc.display_name, 0, idx, ext.lstrip("."))
+            storage.save_image(doc.id, new_name, data)
+            db.add(DocumentImage(
+                document_id=doc.id, page_num=0, image_index=idx,
+                file_name=new_name, relative_path=f"images/{new_name}",
+            ))
+            name_map[name] = new_name
+            name_map[Path(name).name] = new_name
+        db.commit()
+        return name_map
+
+    def _apply_image_refs(self, md_text: str, name_map: dict[str, str]) -> str:
+        """只改 markdown 引用，不再写盘。"""
+        for old, new in name_map.items():
+            md_text = md_text.replace(f"images/{old}", f"images/{new}")
+            md_text = md_text.replace(old, f"images/{new}")
+            md_text = md_text.replace(f"images/images/{new}", f"images/{new}")
+        return md_text
 
     def _rewrite_md_images(
         self,

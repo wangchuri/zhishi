@@ -15,8 +15,7 @@ import {
   Sparkles,
   Target,
   Loader2,
-  Flame,
-  CalendarCheck,
+  Trophy,
 } from "lucide-react"
 import { AppShell } from "@/components/layout/AppShell"
 import { PageHeader } from "@/components/blocks/PageHeader"
@@ -28,9 +27,10 @@ import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { ProgressMeter } from "@/components/blocks/ProgressMeter"
 import { MarkdownWithMath } from "@/components/blocks/MarkdownWithMath"
-import { Heatmap } from "@/components/blocks/Heatmap"
-import { analyticsApi, reportsApi } from "@/lib/api"
-import type { LearningReport, LearningStats, StreakStats, TagStatsResult } from "@/types"
+import { analyticsApi, reportsApi, achievementsApi } from "@/lib/api"
+import { formatAccuracy, splitTagLabels } from "@/lib/utils"
+import type { Achievement, LearningReport, LearningStats, TagStatsResult } from "@/types"
+import { AchievementCard } from "@/features/achievements/AchievementsPage"
 
 function formatDateTime(value?: string | null): string {
   if (!value) return "—"
@@ -67,11 +67,11 @@ export function LearningAnalyticsPage() {
   const [error, setError] = useState<string | null>(null)
   const [stats, setStats] = useState<LearningStats | null>(null)
   const [tagStats, setTagStats] = useState<TagStatsResult | null>(null)
-  const [streak, setStreak] = useState<StreakStats | null>(null)
   const [reports, setReports] = useState<LearningReport[]>([])
   const [latestReport, setLatestReport] = useState<LearningReport | null>(null)
   const [generatingReport, setGeneratingReport] = useState(false)
   const [reportError, setReportError] = useState<string | null>(null)
+  const [achievements, setAchievements] = useState<Achievement[]>([])
 
   const loadReports = () => {
     reportsApi
@@ -94,8 +94,8 @@ export function LearningAnalyticsPage() {
         setError(err instanceof Error ? err.message : "加载失败")
       })
       .finally(() => setLoading(false))
-    analyticsApi.getStreak().then(setStreak).catch(() => setStreak(null))
     loadReports()
+    achievementsApi.list().then((res) => setAchievements(res.achievements || [])).catch(() => setAchievements([]))
   }, [])
 
   const handleGenerateReport = async () => {
@@ -118,13 +118,12 @@ export function LearningAnalyticsPage() {
   const hasQuestions = (questions?.total ?? 0) > 0
   const hasPractice = (questions?.answered ?? 0) > 0
 
-  const accuracyDisplay =
-    questions?.accuracy_rate != null ? `${questions.accuracy_rate}%` : "—"
+  const accuracyDisplay = formatAccuracy(questions?.accuracy_rate)
 
   if (loading) {
     return (
       <AppShell maxWidth={1180}>
-        <PageHeader title="学习分析" subtitle="汇总知识库与刷题数据">
+        <PageHeader title="进度" subtitle="刷题表现和成就">
           <Badge variant="primary" size="md">加载中</Badge>
         </PageHeader>
         <div className="bg-surface border border-line-soft rounded-lg shadow-xs p-12 flex items-center justify-center">
@@ -140,7 +139,7 @@ export function LearningAnalyticsPage() {
   if (error) {
     return (
       <AppShell maxWidth={1180}>
-        <PageHeader title="学习分析" subtitle="汇总知识库与刷题数据" />
+        <PageHeader title="进度" subtitle="刷题表现和成就" />
         <Card className="p-8 text-center">
           <p className="text-body text-danger mb-4">{error}</p>
           <Button variant="secondary" onClick={() => window.location.reload()}>
@@ -154,72 +153,16 @@ export function LearningAnalyticsPage() {
   return (
     <AppShell maxWidth={1180}>
       <PageHeader
-        title="学习分析"
-        subtitle="基于你的知识库文档、题库与刷题记录"
+        title="进度"
+        subtitle="薄弱点和成就都在这里"
       >
-        <Button variant="secondary" size="md" onClick={() => navigate("/training/targeted")}>
-          <Target className="w-4 h-4" strokeWidth={2} />
-          针对训练
-        </Button>
         <Button variant="secondary" size="md" onClick={() => navigate("/quiz")}>
-          去刷题
+          去资料
         </Button>
       </PageHeader>
 
-      {/* 打卡 / 热力图 */}
-      {streak && (
-        <div className="mb-8">
-          <SectionHeader title="学习打卡" subtitle="连续学习保持节奏，点亮更多日子" />
-          <Card className="p-5">
-            <div className="flex flex-wrap items-center gap-x-10 gap-y-4 mb-5">
-              <div className="flex items-center gap-3">
-                <div className="w-11 h-11 rounded-[4px] bg-sea-subtle text-sea flex items-center justify-center">
-                  <Flame className="w-5 h-5" strokeWidth={2} />
-                </div>
-                <div>
-                  <div className="font-display text-display-m text-ink leading-tight">
-                    {streak.current_streak} 天
-                  </div>
-                  <div className="text-caption text-ink-soft">当前连续打卡</div>
-                </div>
-              </div>
-              <div className="flex items-center gap-3">
-                <div className="w-11 h-11 rounded-[4px] bg-paper-2 text-ink-soft flex items-center justify-center">
-                  <CalendarCheck className="w-5 h-5" strokeWidth={2} />
-                </div>
-                <div>
-                  <div className="font-display text-display-m text-ink leading-tight">
-                    {streak.active_days} 天
-                  </div>
-                  <div className="text-caption text-ink-soft">累计打卡</div>
-                </div>
-              </div>
-              <div className="flex items-center gap-3">
-                <div className="w-11 h-11 rounded-[4px] bg-paper-2 text-ink-soft flex items-center justify-center">
-                  <Activity className="w-5 h-5" strokeWidth={2} />
-                </div>
-                <div>
-                  <div className="font-display text-display-m text-ink leading-tight">
-                    {streak.best_streak} 天
-                  </div>
-                  <div className="text-caption text-ink-soft">最长连续</div>
-                </div>
-              </div>
-            </div>
-            <Heatmap data={streak.heatmap} />
-            <div className="flex items-center justify-end gap-1.5 mt-2">
-              <span className="text-caption text-ink-tertiary mr-1">少</span>
-              {["bg-paper-2", "bg-sea/30", "bg-sea/50", "bg-sea/70", "bg-sea"].map((c) => (
-                <span key={c} className={`w-[11px] h-[11px] rounded-[2px] ${c}`} />
-              ))}
-              <span className="text-caption text-ink-tertiary ml-1">多</span>
-            </div>
-          </Card>
-        </div>
-      )}
-
       <div className="mb-8">
-        <SectionHeader title="学习报告" subtitle="AI 分析薄弱知识点，自动保存到生活区笔记">
+        <SectionHeader title="学习报告" subtitle="AI 分析薄弱点，点报告即可开始针对训练">
           <Button
             variant="primary"
             size="sm"
@@ -262,6 +205,15 @@ export function LearningAnalyticsPage() {
                     <p className="text-caption text-ink-tertiary mt-2">（内容已截断，完整版见笔记）</p>
                   )}
                 </div>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  className="mt-3"
+                  onClick={() => navigate(`/training/targeted/report/${latestReport.id}`)}
+                >
+                  <Target className="w-4 h-4" strokeWidth={2} />
+                  针对训练
+                </Button>
               </>
             )}
           </Card>
@@ -273,12 +225,15 @@ export function LearningAnalyticsPage() {
             ) : (
               <ul className="space-y-2 max-h-64 overflow-y-auto scroll-thin">
                 {reports.map((r) => (
-                  <li
-                    key={r.id}
-                    className="flex items-center justify-between gap-2 py-2 border-b border-line-soft last:border-0 text-small"
-                  >
-                    <span className="text-ink-primary truncate">{r.title}</span>
-                    <span className="text-ink-tertiary shrink-0">{formatDateTime(r.created_at)}</span>
+                  <li key={r.id}>
+                    <button
+                      type="button"
+                      onClick={() => navigate(`/training/targeted/report/${r.id}`)}
+                      className="w-full flex items-center justify-between gap-2 py-2 border-b border-line-soft last:border-0 text-small text-left hover:text-sea transition-colors"
+                    >
+                      <span className="text-ink-primary truncate">{r.title}</span>
+                      <span className="text-ink-tertiary shrink-0">{formatDateTime(r.created_at)}</span>
+                    </button>
                   </li>
                 ))}
               </ul>
@@ -287,23 +242,6 @@ export function LearningAnalyticsPage() {
         </div>
       </div>
 
-      {(tagStats?.by_tag.length ?? 0) > 0 && (
-        <div className="mb-8">
-          <SectionHeader title="知识点 Tag 统计" subtitle="按 tag 聚合对错次数" />
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            {tagStats?.by_tag.slice(0, 9).map((t) => (
-              <Card key={t.tag} className="p-4">
-                <div className="font-medium text-ink-primary truncate mb-1">{t.tag}</div>
-                <div className="text-small text-ink-tertiary">
-                  对 {t.correct_count} · 错 {t.wrong_count} · 不会 {t.unknown_count}
-                  {t.accuracy_rate != null && ` · 正确率 ${t.accuracy_rate}%`}
-                </div>
-              </Card>
-            ))}
-          </div>
-        </div>
-      )}
-
       {!hasDocuments && !hasQuestions ? (
         <Card variant="elevated">
           <EmptyState
@@ -311,7 +249,7 @@ export function LearningAnalyticsPage() {
             title="还没有学习数据"
             description="上传学习区文档并完成出题后，这里会展示文档处理进度、题库规模与刷题表现。"
             primaryAction={{ label: "上传资料", onClick: () => navigate("/knowledge/upload") }}
-            secondaryAction={{ label: "前往出题", onClick: () => navigate("/question-gen") }}
+            secondaryAction={{ label: "去资料", onClick: () => navigate("/quiz") }}
           />
         </Card>
       ) : (
@@ -355,6 +293,29 @@ export function LearningAnalyticsPage() {
             />
           </div>
 
+          {(tagStats?.by_tag.length ?? 0) > 0 && (
+            <div className="mb-8">
+              <SectionHeader title="知识点 Tag 统计" subtitle="按 tag 聚合对错次数" />
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                {tagStats?.by_tag.slice(0, 9).map((t) => (
+                  <Card key={t.tag} className="p-4">
+                    <div className="flex flex-wrap gap-1 mb-1">
+                      {splitTagLabels(t.tag).map((label) => (
+                        <span key={label} className="font-medium text-ink-primary">
+                          {label}
+                        </span>
+                      ))}
+                    </div>
+                    <div className="text-small text-ink-tertiary">
+                      对 {t.correct_count} · 错 {t.wrong_count} · 不会 {t.unknown_count}
+                      {t.accuracy_rate != null && ` · 正确率 ${formatAccuracy(t.accuracy_rate)}`}
+                    </div>
+                  </Card>
+                ))}
+              </div>
+            </div>
+          )}
+
           {hasPractice && (
             <div className="grid grid-cols-3 gap-4 mb-8">
               <StatCard icon={CheckCircle2} label="答对" value={questions?.correct ?? 0} tone="success" />
@@ -369,8 +330,8 @@ export function LearningAnalyticsPage() {
               subtitle={hasQuestions ? "每份文档的题库规模与作答情况" : "暂无题目，请先在出题页生成题目"}
             >
               {hasQuestions && (
-                <Button variant="ghost" size="sm" onClick={() => navigate("/question-gen")}>
-                  前往出题
+                <Button variant="ghost" size="sm" onClick={() => navigate("/quiz")}>
+                  去资料
                   <ArrowRight className="w-4 h-4" strokeWidth={2} />
                 </Button>
               )}
@@ -382,7 +343,7 @@ export function LearningAnalyticsPage() {
                   icon={PenLine}
                   title="还没有题目"
                   description="在出题页选择文档与页码，AI 生成题目后即可开始练习。"
-                  primaryAction={{ label: "前往出题", onClick: () => navigate("/question-gen") }}
+                  primaryAction={{ label: "去资料", onClick: () => navigate("/quiz") }}
                   size="sm"
                 />
               </Card>
@@ -406,13 +367,13 @@ export function LearningAnalyticsPage() {
                           </h3>
                           <p className="text-small text-ink-tertiary mt-0.5">
                             {doc.question_total} 题 · 已做 {doc.answered_count} 题
-                            {doc.accuracy_rate != null && ` · 正确率 ${doc.accuracy_rate}%`}
+                            {doc.accuracy_rate != null && ` · 正确率 ${formatAccuracy(doc.accuracy_rate)}`}
                           </p>
                         </div>
                         <Button
                           variant="secondary"
                           size="sm"
-                          onClick={() => navigate(`/quiz?document_id=${doc.document_id}`)}
+                          onClick={() => navigate(`/quiz/doc/${doc.document_id}`)}
                         >
                           去练习
                         </Button>
@@ -452,7 +413,7 @@ export function LearningAnalyticsPage() {
                   }
                   secondaryAction={
                     !hasQuestions
-                      ? { label: "前往出题", onClick: () => navigate("/question-gen") }
+                      ? { label: "去资料", onClick: () => navigate("/quiz") }
                       : undefined
                   }
                   size="sm"
@@ -529,12 +490,28 @@ export function LearningAnalyticsPage() {
                 icon={Upload}
                 title="文档已就绪，下一步：出题"
                 description="学习区文档分段完成后，可在出题页按页 AI 生成题目。"
-                primaryAction={{ label: "前往出题", onClick: () => navigate("/question-gen") }}
+                primaryAction={{ label: "去资料", onClick: () => navigate("/quiz") }}
                 size="sm"
               />
             </Card>
           )}
         </>
+      )}
+
+      {achievements.length > 0 && (
+        <div className="mt-10 mb-4">
+          <SectionHeader
+            title="成就"
+            subtitle={`已解锁 ${achievements.filter((a) => a.unlocked).length} / ${achievements.length}`}
+          >
+            <Trophy className="w-4 h-4 text-amber-500" strokeWidth={2} />
+          </SectionHeader>
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+            {achievements.map((a) => (
+              <AchievementCard key={a.id} achievement={a} />
+            ))}
+          </div>
+        </div>
       )}
     </AppShell>
   )

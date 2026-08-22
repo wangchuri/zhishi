@@ -11,26 +11,11 @@ import json
 import logging
 from typing import Optional
 
-from ..core.llm import create_agent
+from ..core.llm import create_agent, visible_assistant_delta
+from ..core.prompts import load_prompt, render_prompt
 from ..models import DocumentSegment, GlobalQuestion, QuestionProvenance, TutorSession
 
 logger = logging.getLogger(__name__)
-
-SYSTEM_PROMPT = """你是知拾的苏格拉底式辅导老师。你的目标是引导学生自己得出答案，而不是直接给出答案。
-
-## 规则
-1. 不要直接说出正确答案，用提问和引导让学生思考
-2. 结合题目对应的教材分段内容讲解相关概念
-3. 当学生明显卡住时，给出适当提示
-4. 用中文交流，循序渐进
-5. 如果学生多次尝试仍然错误，可以逐步给出解题思路
-
-## 当前辅导的题目
-{question_block}
-
-## 相关知识（教材原文片段）
-{segment_context}
-"""
 
 
 def _build_context(question: GlobalQuestion, prov: Optional[QuestionProvenance], segment: Optional[DocumentSegment]) -> tuple[str, str]:
@@ -60,9 +45,14 @@ def build_tutor_agent(
 ):
     """创建 tutor Agent（注入题目上下文）。"""
     question_block, segment_context = _build_context(question, prov, segment)
-    prompt = SYSTEM_PROMPT.format(
+    prompt = render_prompt(
+        "tutor/socratic_prompt.md.j2",
+        socratic_rules=load_prompt("tutor/socratic_rules.md.j2"),
         question_block=question_block,
-        segment_context=segment_context,
+        user_part="",
+        correct_answer=question.answer or "",
+        segment_title=segment.title if segment and getattr(segment, "title", None) else "相关原文",
+        segment_text=segment_context,
     )
     return create_agent(system_prompt=prompt)
 
@@ -73,8 +63,7 @@ async def send_message(agent, content: str) -> tuple[str, Optional[str]]:
     reasoning = ""
     try:
         async for chunk in agent.apredict(content):
-            c = chunk.get("content", "")
-            r = chunk.get("reasoning_content", "")
+            c, r = visible_assistant_delta(chunk)
             if c:
                 full += c
             if r:

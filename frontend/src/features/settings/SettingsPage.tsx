@@ -34,7 +34,7 @@ export function SettingsPage() {
 
   return (
     <AppShell maxWidth={860}>
-      <PageHeader title="设置中心" subtitle="管理画像、AI 助手、知识库、提醒和高级连接" />
+      <PageHeader title="设置" subtitle="账号、连接和诊断" />
 
       <div className="space-y-5">
         <SettingsGroup
@@ -71,6 +71,13 @@ export function SettingsPage() {
           icon={Moon}
           title="账号与画像"
           items={[
+            {
+              icon: BarChart3,
+              title: "学习画像",
+              desc: "昵称、学习目标和常用标签",
+              control: <ChevronRight className="w-4 h-4 text-ink-tertiary" strokeWidth={2} />,
+              onClick: () => navigate("/profile"),
+            },
             {
               icon: Moon,
               title: "深色模式",
@@ -136,7 +143,13 @@ export function SettingsPage() {
           title="提醒与通知"
           items={[
             { icon: Accessibility, title: "无障碍访问", desc: "辅助功能设置", control: <ChevronRight className="w-4 h-4 text-ink-tertiary" strokeWidth={2} /> },
-            { icon: Stethoscope, title: "诊断与修复", desc: "检查权限与连接状态", control: <ChevronRight className="w-4 h-4 text-ink-tertiary" strokeWidth={2} /> },
+            {
+              icon: Stethoscope,
+              title: "诊断与修复",
+              desc: "检查权限与连接状态",
+              control: <ChevronRight className="w-4 h-4 text-ink-tertiary" strokeWidth={2} />,
+              onClick: () => navigate("/settings/diagnostics"),
+            },
           ]}
         />
 
@@ -190,7 +203,7 @@ function SettingsGroup({
 }: {
   icon: typeof Moon
   title: string
-  items: { icon: typeof Moon; title: string; desc: string; control: React.ReactNode }[]
+  items: { icon: typeof Moon; title: string; desc: string; control: React.ReactNode; onClick?: () => void }[]
 }) {
   return (
     <Card className="overflow-hidden">
@@ -202,7 +215,15 @@ function SettingsGroup({
       </div>
       <div className="divide-y divide-line-soft">
         {items.map((item) => (
-          <div key={item.title} className="flex items-center gap-3 px-5 py-3.5">
+          <div
+            key={item.title}
+            className={cn(
+              "flex items-center gap-3 px-5 py-3.5",
+              item.onClick && "cursor-pointer hover:bg-surface-soft transition-colors",
+            )}
+            onClick={item.onClick}
+            role={item.onClick ? "button" : undefined}
+          >
             <item.icon className="w-[18px] h-[18px] text-ink-tertiary shrink-0" strokeWidth={2} />
             <div className="flex-1 min-w-0">
               <div className="text-body text-ink-primary font-medium">{item.title}</div>

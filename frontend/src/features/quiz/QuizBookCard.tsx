@@ -19,11 +19,14 @@ type QuizBookCardProps = {
 }
 
 function genStatusBadge(doc: KnowledgeDoc, hasQuestions?: boolean) {
+  if (doc.question_gen_status === "processing") {
+    return <Badge variant="warning" size="sm">出题中</Badge>
+  }
   if (hasQuestions) {
     return <Badge variant="success" size="sm">可刷题</Badge>
   }
-  if (doc.question_gen_status === "processing") {
-    return <Badge variant="warning" size="sm">出题中</Badge>
+  if (doc.question_gen_status === "failed") {
+    return <Badge variant="danger" size="sm">出题失败</Badge>
   }
   return <Badge variant="neutral" size="sm">未出题</Badge>
 }

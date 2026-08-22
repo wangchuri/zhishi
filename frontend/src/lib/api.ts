@@ -73,8 +73,27 @@ export function getApiBase(): string {
   return DEFAULT_API_BASE || ""
 }
 
+export function getWsUrl(path: string): string {
+  const normalized = path.startsWith("/") ? path : `/${path}`
+  const base = getApiBase()
+  if (base) {
+    const u = new URL(base)
+    u.protocol = u.protocol === "https:" ? "wss:" : "ws:"
+    return `${u.origin}${normalized}`
+  }
+  const proto = window.location.protocol === "https:" ? "wss:" : "ws:"
+  return `${proto}//${window.location.host}${normalized}`
+}
+
+/** 生产构建且通过 http(s) 打开：视为后端已托管前端，API 走同源 */
+export function isSameOriginHosted(): boolean {
+  if (typeof window === "undefined") return false
+  if (import.meta.env.DEV) return false
+  return window.location.protocol === "http:" || window.location.protocol === "https:"
+}
+
 export function isServerConfigured(): boolean {
-  return !!getStoredApiBase() || !!DEFAULT_API_BASE
+  return !!getStoredApiBase() || !!DEFAULT_API_BASE || isSameOriginHosted()
 }
 
 /** 健康检测：探测服务器 /health 端点，返回是否正常 */
@@ -82,7 +101,7 @@ export async function checkServerHealth(
   input?: string
 ): Promise<{ ok: boolean; status: string; message: string; detail?: any }> {
   const base = input ? normalizeApiBase(input) : getApiBase()
-  if (!base) {
+  if (!base && !isSameOriginHosted()) {
     return { ok: false, status: "error", message: "请输入服务器地址" }
   }
   try {
@@ -213,6 +232,9 @@ export interface ChatStreamOptions {
   content: string
   session_id?: string
   collection_id?: string
+  crisis?: boolean
+  remaining_pages?: string[]
+  kickoff?: boolean
   onChunk?: (data: Record<string, unknown>) => void
 }
 
@@ -227,7 +249,7 @@ export const chatApi = {
   },
 
   async sendStream(options: ChatStreamOptions): Promise<string> {
-    const { content, session_id, collection_id, onChunk } = options
+    const { content, session_id, collection_id, crisis, remaining_pages, kickoff, onChunk } = options
     const res = await fetch(`${getApiBase()}/api/v1/chat`, {
       method: "POST",
       headers: {
@@ -237,6 +259,9 @@ export const chatApi = {
         content,
         session_id,
         collection_id,
+        crisis: Boolean(crisis),
+        remaining_pages: remaining_pages ?? undefined,
+        kickoff: Boolean(kickoff),
         stream: true,
       }),
     })
@@ -334,6 +359,20 @@ export const kbApi = {
     return request<DocumentPageDetail>(
       "GET",
       `/api/v1/kb/documents/${docId}/pages/${pageNumber}`
+    )
+  },
+
+  getLearningPath(docId: string) {
+    return request<import("@/types").LearningPathResult>(
+      "GET",
+      `/api/v1/kb/documents/${docId}/learning-path`
+    )
+  },
+
+  generateLearningPath(docId: string) {
+    return request<import("@/types").LearningPathResult>(
+      "POST",
+      `/api/v1/kb/documents/${docId}/learning-path`
     )
   },
 
@@ -483,6 +522,10 @@ export const questionsApi = {
     )
   },
 
+  listJobs() {
+    return request<{ jobs: import("@/types").QuestionGenJob[] }>("GET", "/api/v1/questions/jobs")
+  },
+
   generateStream(data: {
     document_id: string
     page_numbers: number[]
@@ -576,6 +619,17 @@ export const quizApi = {
     return request<any>("POST", `/api/v1/quiz/sessions/${sessionId}/answers`, data)
   },
 
+  grade(data: {
+    question_id: string
+    user_answer?: string
+    status?: "unknown"
+    document_id?: string
+    chat_message_id?: string
+    request_ai_grade?: boolean
+  }) {
+    return request<any>("POST", "/api/v1/quiz/grade", data)
+  },
+
   getResults(sessionId: string) {
     return request<any>("GET", `/api/v1/quiz/sessions/${sessionId}/results`)
   },
@@ -632,6 +686,84 @@ export const dashboardApi = {
   },
 }
 
+export const tasksApi = {
+  getGoal() {
+    return request<{
+      id: string
+      text: string
+      attributes?: Record<string, unknown> | null
+      valid_until?: string | null
+      status: string
+    } | null>("GET", "/api/v1/me/goal")
+  },
+
+  putGoal(data: { text: string; attributes?: Record<string, unknown>; valid_until?: string | null }) {
+    return request<any>("PUT", "/api/v1/me/goal", data)
+  },
+
+  getToday() {
+    return request<import("@/types").TodayTasksResult>("GET", "/api/v1/tasks/today")
+  },
+
+  ensureToday() {
+    return request<import("@/types").TodayTasksResult>("POST", "/api/v1/tasks/today/ensure")
+  },
+
+  getHistory(days = 60) {
+    return request<import("@/types").TaskHistoryResult>(
+      "GET",
+      `/api/v1/tasks/history?days=${encodeURIComponent(String(days))}`,
+    )
+  },
+
+  restore(taskId: string) {
+    return request<import("@/types").RestoreTaskResult>(
+      "POST",
+      `/api/v1/tasks/${encodeURIComponent(taskId)}/restore`,
+    )
+  },
+}
+
+export type UserProfile = {
+  user_id: number
+  nickname?: string | null
+  role?: string | null
+  onboarding_status: string
+  has_goal: boolean
+  goal?: { id: string; text: string } | null
+  onboarding_session_id?: string | null
+}
+
+export const profileApi = {
+  get() {
+    return request<UserProfile>("GET", "/api/v1/me/profile")
+  },
+  put(data: { nickname?: string; role?: string; onboarding_status?: string }) {
+    return request<UserProfile>("PUT", "/api/v1/me/profile", data)
+  },
+}
+
+export type OnboardingUiItem = {
+  type: string
+  id?: string
+  status?: string
+  goal?: string
+  nickname?: string
+  role?: string
+}
+
+export const onboardingApi = {
+  getSession(replay = false) {
+    const q = replay ? "?replay=1" : ""
+    return request<{
+      session_id: string
+      profile: UserProfile
+      messages: Array<Record<string, unknown>>
+      needs_kickoff: boolean
+    }>(`GET`, `/api/v1/onboarding/session${q}`)
+  },
+}
+
 // ─── Analytics (学习分析) ────────────────────────────────
 
 export const analyticsApi = {
@@ -668,29 +800,6 @@ export const analyticsApi = {
       "/api/v1/analytics/activity",
       { seconds }
     )
-  },
-}
-
-// ─── Reminders (智能提醒) ───────────────────────────────
-
-export const remindersApi = {
-  list(filter = "all") {
-    return request<import("@/types").ReminderList>(
-      "GET",
-      `/api/v1/reminders?filter=${encodeURIComponent(filter)}`
-    )
-  },
-
-  create(data: { title: string; remind_date: string }) {
-    return request<import("@/types").Reminder>("POST", "/api/v1/reminders", data)
-  },
-
-  update(id: string, data: { title?: string; remind_date?: string; done?: boolean }) {
-    return request<import("@/types").Reminder>("PATCH", `/api/v1/reminders/${id}`, data)
-  },
-
-  remove(id: string) {
-    return request<{ deleted: boolean }>("DELETE", `/api/v1/reminders/${id}`)
   },
 }
 
@@ -878,12 +987,17 @@ export type { Citation }
 
 export interface NoteItem {
   id: string
-  title: string
-  content_md: string
+  title?: string | null
+  content_md?: string | null
   collection_id?: string | null
   document_id?: string | null
+  document_name?: string | null
+  page_number?: number | null
+  /** 用户给 tip 打的分类 tag，不是知识点 tag */
+  tags?: string[]
   note_type: string
   created_at?: string
+  updated_at?: string
 }
 
 export interface NoteListResult {
@@ -893,7 +1007,13 @@ export interface NoteListResult {
 
 export const notesApi = {
   /** 保存一条伴学 tip 到后端笔记 */
-  saveTip(data: { document_id: string; page_number: number; title: string; content: string }) {
+  saveTip(data: {
+    document_id?: string | null
+    page_number?: number | null
+    title: string
+    content: string
+    tags?: string[]
+  }) {
     return request<NoteItem>("POST", "/api/v1/notes/tips", data)
   },
 
@@ -905,6 +1025,14 @@ export const notesApi = {
     if (params?.limit != null) qs.set("limit", String(params.limit))
     const suffix = qs.toString() ? `?${qs.toString()}` : ""
     return request<NoteListResult>("GET", `/api/v1/notes${suffix}`)
+  },
+
+  get(noteId: string) {
+    return request<NoteItem>("GET", `/api/v1/notes/${encodeURIComponent(noteId)}`)
+  },
+
+  listTipTags() {
+    return request<{ tags: string[] }>("GET", "/api/v1/notes/tip-tags")
   },
 
   /** 列出某本书的全部 tip（用于阅读页面板 / 卡片计数） */

@@ -6,8 +6,8 @@ tina 工具（tools 属性），供 Agent 使用——领域对象的工具是�
 
 from __future__ import annotations
 
-import asyncio
 import logging
+import threading
 from typing import Optional
 
 from tina import Tools
@@ -25,6 +25,7 @@ class ChromaStore:
     def __init__(self) -> None:
         self._client = None
         self._embedding_fn = None
+        self._lock = threading.Lock()
         self.tools = Tools(name="chroma")
         self._register_tools()
 
@@ -38,11 +39,41 @@ class ChromaStore:
             self._client = chromadb.PersistentClient(path=persist_dir)
         return self._client
 
+    def _reset_client(self) -> None:
+        self._client = None
+
     def _get_embedding_fn(self):
         if self._embedding_fn is None:
+            import os
+            import time as _time
+            from pathlib import Path
             from sentence_transformers import SentenceTransformer
 
-            model = SentenceTransformer("BAAI/bge-small-zh-v1.5")
+            model_id = "BAAI/bge-small-zh-v1.5"
+            cache_dir = Path.home() / ".cache" / "huggingface" / "hub" / "models--BAAI--bge-small-zh-v1.5"
+            snapshot = None
+            snaps = cache_dir / "snapshots"
+            if snaps.is_dir():
+                for d in snaps.iterdir():
+                    if (d / "model.safetensors").exists() or (d / "pytorch_model.bin").exists():
+                        snapshot = d
+                        break
+            t0 = _time.time()
+            # 直接读本地 snapshot，并强制离线，否则仍会 HEAD huggingface.co
+            os.environ["HF_HUB_OFFLINE"] = "1"
+            os.environ["TRANSFORMERS_OFFLINE"] = "1"
+            load_path = str(snapshot) if snapshot is not None else model_id
+            try:
+                model = SentenceTransformer(load_path, local_files_only=True)
+                source = "local_snapshot" if snapshot is not None else "local_id"
+            except Exception as e:
+                os.environ.pop("HF_HUB_OFFLINE", None)
+                os.environ.pop("TRANSFORMERS_OFFLINE", None)
+                logger.warning("本地嵌入模型不可用，尝试联网下载 %s: %s", model_id, e)
+                model = SentenceTransformer(model_id)
+                source = "download"
+            elapsed_ms = int((_time.time() - t0) * 1000)
+            logger.info("嵌入模型就绪 source=%s elapsed_ms=%s path=%s", source, elapsed_ms, load_path)
             self._embedding_fn = lambda texts: model.encode(
                 [t if isinstance(t, str) else str(t) for t in texts]
             ).tolist()
@@ -55,33 +86,34 @@ class ChromaStore:
 
     def index_document(self, doc_id: str, text: str) -> int:
         """向量化文档（分段写入 chroma）。返回 chunk 数。"""
-        client = self._get_client()
         chunks = _chunk_text(text)
         if not chunks:
             return 0
+        with self._lock:
+            client = self._get_client()
+            try:
+                client.delete_collection(self._collection_name(doc_id))
+            except Exception:
+                pass
 
-        try:
-            client.delete_collection(self._collection_name(doc_id))
-        except Exception:
-            pass
-
-        collection = client.get_or_create_collection(
-            self._collection_name(doc_id),
-            embedding_function=None,  # 手动提供 embedding
-        )
-        ids = [f"{doc_id}_{i}" for i in range(len(chunks))]
-        collection.add(
-            ids=ids,
-            documents=chunks,
-            embeddings=self._get_embedding_fn()(chunks),
-        )
-        return len(chunks)
+            collection = client.get_or_create_collection(
+                self._collection_name(doc_id),
+                embedding_function=None,  # 手动提供 embedding
+            )
+            ids = [f"{doc_id}_{i}" for i in range(len(chunks))]
+            collection.add(
+                ids=ids,
+                documents=chunks,
+                embeddings=self._get_embedding_fn()(chunks),
+            )
+            return len(chunks)
 
     def delete_document_index(self, doc_id: str) -> None:
-        try:
-            self._get_client().delete_collection(self._collection_name(doc_id))
-        except Exception:
-            pass
+        with self._lock:
+            try:
+                self._get_client().delete_collection(self._collection_name(doc_id))
+            except Exception:
+                pass
 
     # ---- 检索（供代码直接调用） ----
 
@@ -93,6 +125,16 @@ class ChromaStore:
         max_chars: int = 800,
     ) -> list[dict]:
         """检索单文档，返回 [{text, distance}]。"""
+        with self._lock:
+            return self._search_document_unlocked(doc_id, query, top_k, max_chars)
+
+    def _search_document_unlocked(
+        self,
+        doc_id: str,
+        query: str,
+        top_k: int,
+        max_chars: int,
+    ) -> list[dict]:
         client = self._get_client()
         try:
             collection = client.get_collection(self._collection_name(doc_id))
@@ -122,6 +164,21 @@ class ChromaStore:
             top_k:返回最大结果数
             document_ids:文档id，为 None 时检索全部文档；否则只检索指定文档。
         """
+        with self._lock:
+            try:
+                return self._search_documents_unlocked(query, top_k, document_ids, max_chars)
+            except Exception as e:
+                logger.warning("chroma 检索失败，重置客户端后重试: %s", e)
+                self._reset_client()
+                return self._search_documents_unlocked(query, top_k, document_ids, max_chars)
+
+    def _search_documents_unlocked(
+        self,
+        query: str,
+        top_k: int,
+        document_ids: list[str] | None,
+        max_chars: int,
+    ) -> list[dict]:
         client = self._get_client()
         q_vec = self._get_embedding_fn()([query])
 

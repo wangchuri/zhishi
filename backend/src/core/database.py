@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from sqlalchemy import create_engine, event
+from sqlalchemy import create_engine, event, inspect, text
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
 from .config import config
@@ -67,8 +67,41 @@ def _sqlite_db_path() -> Path:
     return p
 
 
+def _sync_sqlite_schema() -> None:
+    """给已有 SQLite 表补上 ORM 新增列。
+
+    create_all 不会 ALTER 已存在的表；旧库缺列时查询/写入会直接 500。
+    """
+    insp = inspect(engine)
+    existing_tables = set(insp.get_table_names())
+    with engine.begin() as conn:
+        for table in Base.metadata.sorted_tables:
+            if table.name not in existing_tables:
+                continue
+            db_cols = {c["name"]: c for c in insp.get_columns(table.name)}
+            orm_cols = {c.name: c for c in table.columns}
+            for name, col in orm_cols.items():
+                if name in db_cols:
+                    continue
+                col_type = col.type.compile(dialect=engine.dialect)
+                ddl = f'ALTER TABLE "{table.name}" ADD COLUMN "{name}" {col_type}'
+                if col.server_default is not None:
+                    ddl += f" DEFAULT {col.server_default.arg}"
+                elif not col.nullable:
+                    python_default = col.default.arg if (col.default is not None and getattr(col.default, "is_scalar", False)) else None
+                    if python_default is False:
+                        ddl += " DEFAULT 0"
+                    elif python_default is True:
+                        ddl += " DEFAULT 1"
+                    elif isinstance(python_default, (int, float)):
+                        ddl += f" DEFAULT {python_default}"
+                    elif isinstance(python_default, str):
+                        ddl += f" DEFAULT '{python_default}'"
+                conn.execute(text(ddl))
+
+
 def init_db() -> None:
-    """创建全部 ORM 表。"""
+    """创建全部 ORM 表，并同步已有 SQLite 表结构。"""
     if _is_sqlite:
         db_path = _sqlite_db_path()
         if db_path != Path(":memory:"):
@@ -77,3 +110,5 @@ def init_db() -> None:
     import src.models  # noqa: F401  注册所有 model 到 Base.metadata
 
     Base.metadata.create_all(bind=engine)
+    if _is_sqlite:
+        _sync_sqlite_schema()

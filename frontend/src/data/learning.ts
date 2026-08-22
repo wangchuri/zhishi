@@ -1,4 +1,4 @@
-import type { SkillMastery, PathTask, SampleReminder, GraphNode, GraphEdge } from "@/types"
+import type { SkillMastery, PathTask, GraphNode, GraphEdge } from "@/types"
 
 // 学习分析
 export const learningOverview = {
@@ -88,21 +88,6 @@ export const pathTasks: PathTask[] = [
     reason: "HTTP 请求是后端通信的核心，需要结合异步编程巩固。",
     suggestion: ["使用 dio 封装请求", "处理拦截器", "统一错误处理"],
   },
-]
-
-// 智能提醒
-export const reminderStats = {
-  pending: 0,
-  today: 0,
-  done: 0,
-}
-
-export const sampleReminders: SampleReminder[] = [
-  { id: "r1", title: "复习 State 管理笔记", type: "review", time: "今天 20:00", done: false, related: "Flutter State 管理笔记" },
-  { id: "r2", title: "整理 Dart 异步编程要点", type: "doc", time: "今天 21:30", done: false, repeat: false },
-  { id: "r3", title: "完成 HTTP 请求练习", type: "task", time: "明天 10:00", done: false, repeat: true },
-  { id: "r4", title: "每周知识回顾", type: "longterm", time: "周日 09:00", done: false, repeat: true },
-  { id: "r5", title: "上传课堂笔记", type: "doc", time: "昨天", done: true },
 ]
 
 // 知识图谱

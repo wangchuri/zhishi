@@ -29,6 +29,8 @@ class KBCollection(Base):
     __tablename__ = "kb_collections"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    # 旧库 kb_collections.user_id NOT NULL；单用户默认 1
+    user_id: Mapped[int] = mapped_column(Integer, default=1)
     name: Mapped[str] = mapped_column(String(100), nullable=False)
     zone: Mapped[str] = mapped_column(String(20), nullable=False, default="study")
     description: Mapped[str | None] = mapped_column(String(500))
@@ -57,6 +59,8 @@ class Document(Base):
     __tablename__ = "documents"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    # 旧库 documents.user_id NOT NULL + FK；单用户默认 1，避免 INSERT 失败
+    user_id: Mapped[int] = mapped_column(Integer, default=1)
     collection_id: Mapped[str | None] = mapped_column(String(36), index=True)
     global_document_id: Mapped[str | None] = mapped_column(String(36), index=True)
     display_name: Mapped[str] = mapped_column(String(255), nullable=False)

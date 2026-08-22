@@ -1,12 +1,15 @@
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { useNavigate } from "react-router-dom"
-import { Brain, Loader2, Library } from "lucide-react"
+import { Brain, Loader2, Library, Upload } from "lucide-react"
 import { AppShell } from "@/components/layout/AppShell"
 import { PageHeader } from "@/components/blocks/PageHeader"
 import { EmptyState } from "@/components/ui/empty-state"
+import { Button } from "@/components/ui/button"
 import { useKbDocuments } from "@/hooks/useKbDocuments"
 import { questionsApi } from "@/lib/api"
 import { QuizBookCard, type BookCardStats } from "./QuizBookCard"
+import { QuestionGenJobsBanner } from "./QuestionGenJobsBanner"
+import type { QuestionGenJob } from "@/types"
 
 export function QuizBookListPage() {
   const navigate = useNavigate()
@@ -21,6 +24,9 @@ export function QuizBookListPage() {
 
   const [statsMap, setStatsMap] = useState<Record<string, BookCardStats>>({})
   const [loadingStats, setLoadingStats] = useState(false)
+  const [genJobs, setGenJobs] = useState<QuestionGenJob[]>([])
+  const [statsEpoch, setStatsEpoch] = useState(0)
+  const hadJobsRef = useRef(false)
 
   // 只展示学习区文档
   const studyDocs = useMemo(() => {
@@ -61,14 +67,48 @@ export function QuizBookListPage() {
     })
 
     return () => { cancelled = true }
-  }, [studyDocs])
+  }, [studyDocs, statsEpoch])
+
+  useEffect(() => {
+    let cancelled = false
+    const tick = async () => {
+      try {
+        const res = await questionsApi.listJobs()
+        const jobs = res.jobs || []
+        if (cancelled) return
+        setGenJobs(jobs)
+        if (hadJobsRef.current && jobs.length === 0) {
+          setStatsEpoch((n) => n + 1)
+        }
+        hadJobsRef.current = jobs.length > 0
+      } catch {
+        if (!cancelled) setGenJobs([])
+      }
+    }
+    void tick()
+    const timer = window.setInterval(tick, 2500)
+    return () => {
+      cancelled = true
+      window.clearInterval(timer)
+    }
+  }, [])
+
+  const processingIds = useMemo(
+    () => new Set(genJobs.map((j) => j.document_id)),
+    [genJobs]
+  )
 
   return (
     <AppShell maxWidth={1180}>
       <PageHeader
-        title="题库"
-        subtitle="选择一份文档开始刷题练习"
-      />
+        title="资料"
+        subtitle="你的书本、题目都在这里"
+      >
+        <Button variant="primary" size="md" onClick={() => navigate("/knowledge/upload")}>
+          <Upload className="w-4 h-4 mr-2" strokeWidth={2} />
+          上传
+        </Button>
+      </PageHeader>
 
       {loadingCollections ? (
         <div className="flex items-center justify-center py-20 text-ink-tertiary gap-2">
@@ -78,19 +118,20 @@ export function QuizBookListPage() {
       ) : collections.length === 0 ? (
         <EmptyState
           icon={Brain}
-          title="暂无知识库分区"
-          description="请先在知识库上传学习区文档并等待分段完成"
-          primaryAction={{ label: "去知识库", onClick: () => navigate("/knowledge") }}
+          title="暂无资料"
+          description="先上传学习资料，解析完成后会显示在这里"
+          primaryAction={{ label: "去上传", onClick: () => navigate("/knowledge/upload") }}
         />
       ) : studyDocs.length === 0 ? (
         <EmptyState
           icon={Library}
           title="暂无文档"
-          description="该分区还没有上传文档，上传资料后可在此刷题练习"
-          primaryAction={{ label: "去知识库", onClick: () => navigate("/knowledge") }}
+          description="还没有上传文档，上传后即可刷题、出题"
+          primaryAction={{ label: "去上传", onClick: () => navigate("/knowledge/upload") }}
         />
       ) : (
         <div className="space-y-6">
+          <QuestionGenJobsBanner jobs={genJobs} />
           {/* 集合选择器 */}
           {collections.length > 1 && (
             <div className="flex flex-wrap gap-2">
@@ -123,7 +164,11 @@ export function QuizBookListPage() {
             {studyDocs.map((doc) => (
               <QuizBookCard
                 key={doc.id}
-                doc={doc}
+                doc={
+                  processingIds.has(doc.id)
+                    ? { ...doc, question_gen_status: "processing" }
+                    : doc
+                }
                 stats={statsMap[doc.id] ?? null}
                 onClick={() => navigate(`/quiz/doc/${doc.id}`)}
               />

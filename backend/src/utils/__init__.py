@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import random
 import re
 import string
@@ -31,6 +32,77 @@ def slugify(name: str) -> str:
     s = _SLUG_UNSAFE.sub("-", name.strip())
     s = re.sub(r"-+", "-", s)
     return s.strip("-") or "doc"
+
+
+_TAG_SEP = re.compile(r"[,，、]+")
+
+
+def parse_tags(tags) -> list[str]:
+    """把模型/库里的 tags 收成干净的知识点名。
+
+    出题工具常把 JSON 数组当字符串传入，旧逻辑按逗号切开后会留下
+    `["高等数学"`、`"零基础"`、`"归纳法"]` 这类碎片。
+    同时模型也常直接传「零基础, 数列, 等比数列」整串，这种要拆开。
+    """
+    out: list[str] = []
+    _collect_tags(tags, out)
+    seen: set[str] = set()
+    result: list[str] = []
+    for name in out:
+        if name and name not in seen:
+            seen.add(name)
+            result.append(name)
+    return result
+
+
+def _clean_tag(raw) -> str:
+    t = str(raw).strip()
+    if t.startswith("[") and not t.endswith("]"):
+        t = t[1:].strip()
+    if t.endswith("]") and not t.startswith("["):
+        t = t[:-1].strip()
+    if len(t) >= 2 and t[0] == t[-1] and t[0] in "\"'":
+        t = t[1:-1].strip()
+    return t.strip(" ,")
+
+
+def _collect_tags(tags, out: list[str]) -> None:
+    if tags is None or isinstance(tags, bool):
+        return
+    if isinstance(tags, (list, tuple)):
+        for item in tags:
+            _collect_tags(item, out)
+        return
+    if isinstance(tags, dict):
+        return
+    s = str(tags).strip()
+    if not s:
+        return
+    if s[0] in "[{":
+        try:
+            _collect_tags(json.loads(s), out)
+            return
+        except json.JSONDecodeError:
+            pass
+    if s[0] in "\"'":
+        try:
+            parsed = json.loads(s)
+            if parsed != s:
+                _collect_tags(parsed, out)
+                return
+        except json.JSONDecodeError:
+            pass
+    name = _clean_tag(s)
+    if not name:
+        return
+    # 已是完整 JSON 的上面会解析。普通逗号串拆开；带 [ ] 的碎片不拆，避免旧 bug。
+    if "[" not in name and "]" not in name and _TAG_SEP.search(name):
+        parts = [p.strip() for p in _TAG_SEP.split(name) if p.strip()]
+        if len(parts) > 1:
+            for part in parts:
+                _collect_tags(part, out)
+            return
+    out.append(name)
 
 
 def image_file_name(

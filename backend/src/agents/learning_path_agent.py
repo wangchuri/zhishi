@@ -19,7 +19,11 @@ from ..core.config import config
 from ..core.database import SessionLocal
 from ..core.llm import create_agent
 from ..models import DocumentLearningPath
-from ..tools.learning_path_tools import build_learning_path_tools, get_generated_path
+from ..tools.learning_path_tools import (
+    build_learning_path_tools,
+    ensure_chapter_ids,
+    get_generated_path,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -100,6 +104,15 @@ async def generate_learning_path(document_id: str) -> dict:
                     DocumentLearningPath.document_id == document_id
                 ).first()
                 if rec:
+                    previous = None
+                    if rec.path_json:
+                        try:
+                            parsed = json.loads(rec.path_json)
+                            if isinstance(parsed, dict):
+                                previous = parsed
+                        except json.JSONDecodeError:
+                            previous = None
+                    ensure_chapter_ids(path, previous)
                     rec.path_json = json.dumps(path, ensure_ascii=False)
                     rec.model = "deepseek-v4-flash"
                     db.commit()

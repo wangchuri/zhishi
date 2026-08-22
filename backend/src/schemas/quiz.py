@@ -46,6 +46,8 @@ class QuizAnswerSubmit(BaseModel):
     status: Optional[str] = None  # unknown 标记"我不会"
     time_spent_seconds: Optional[int] = None
     request_ai_grade: Optional[bool] = None
+    document_id: Optional[str] = None
+    chat_message_id: Optional[str] = None
 
 
 class QuizAnswerResult(BaseModel):
@@ -61,6 +63,7 @@ class QuizAnswerResult(BaseModel):
     total_questions: int = 0
     session_status: str = "active"
     current_streak: Optional[int] = None
+    completed_tasks: Optional[list[dict]] = None
 
 
 class QuizReviewItem(BaseModel):

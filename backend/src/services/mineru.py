@@ -85,7 +85,8 @@ class MineruService:
         formula_enable: bool = True,
     ) -> dict:
         """提交 PDF 到 MinerU 同步解析，返回 {total_pages, page_mds, images}。"""
-        if not self.ensure_mineru_api(port):
+        up = self.ensure_mineru_api(port)
+        if not up:
             raise AppError("MinerU 服务启动失败，请检查 mineru-api 是否可运行")
 
         base = f"http://{MINERU_HOST}:{port}"
@@ -115,6 +116,7 @@ class MineruService:
                 field("formula_enable", "true" if formula_enable else "false"),
                 field("return_md", "true"),
                 field("return_images", "true"),
+                field("return_content_list", "true"),
                 field("backend", "pipeline"),
                 field("parse_method", "auto"),
                 f"--{boundary}--\r\n".encode(),
@@ -152,32 +154,75 @@ class MineruService:
         if not md_text.strip():
             raise AppError(f"MinerU 解析完成但未产出内容: {payload.get('status')}")
 
-        # 按页拆分（## 页码标题）
-        page_mds = self._split_pages(md_text)
+        content_list = file_results.get("content_list")
+        if isinstance(content_list, str):
+            try:
+                content_list = json.loads(content_list)
+            except Exception:
+                content_list = None
+        page_mds = self._pages_from_content_list(content_list)
+        if not page_mds:
+            page_mds = self._split_pages(md_text)
         return {
             "total_pages": len(page_mds),
             "page_mds": page_mds,
             "images": images,
         }
 
+    def _pages_from_content_list(self, content_list) -> list[dict]:
+        """用 MinerU content_list 按 page_idx 拆页。"""
+        if not isinstance(content_list, list) or not content_list:
+            return []
+        from collections import defaultdict
+
+        def block_text(item: dict) -> str:
+            for key in ("text", "md", "content"):
+                val = item.get(key)
+                if isinstance(val, str) and val.strip():
+                    return val.strip()
+            img = item.get("img_path") or item.get("image_path")
+            if img:
+                return f"![]({Path(str(img)).name})"
+            return ""
+
+        # v2: 外层按页
+        if isinstance(content_list[0], list):
+            pages = []
+            for i, blocks in enumerate(content_list, 1):
+                parts = [block_text(b) for b in blocks if isinstance(b, dict)]
+                pages.append({"page": i, "markdown": "\n\n".join(p for p in parts if p)})
+            return pages
+
+        buckets: dict[int, list[str]] = defaultdict(list)
+        for item in content_list:
+            if not isinstance(item, dict):
+                continue
+            idx = item.get("page_idx", item.get("page_no", item.get("page")))
+            if idx is None:
+                continue
+            text = block_text(item)
+            if text:
+                buckets[int(idx)].append(text)
+        if not buckets:
+            return []
+        return [{"page": i + 1, "markdown": "\n\n".join(buckets[i])} for i in sorted(buckets)]
+
     def _split_pages(self, md_text: str) -> list[dict]:
         """按页码标题把整份 md 拆成逐页。"""
         import re
 
-        # 常见页码标记：# 第 N 页 / ## Page N / 页码分隔
-        parts = re.split(r"(?m)^#{1,3}\s*(?:第\s*)?(\d+)\s*页?", md_text)
-        if len(parts) <= 1:
-            # 无页码标记，整份作为单页
+        # 必须带「第 N 页」或 Page N，避免把「## 26 版…」误当成页码
+        pat = re.compile(r"(?mi)^#{1,3}\s*(?:第\s*(\d+)\s*页|page\s+(\d+))\s*$")
+        matches = list(pat.finditer(md_text))
+        if not matches:
             return [{"page": 1, "markdown": md_text}]
-
         page_mds: list[dict] = []
-        # parts[0] 是前置内容，parts[1:] 成对 (页码, 内容)
-        for i in range(1, len(parts) - 1, 2):
-            page_no = int(parts[i])
-            page_mds.append({"page": page_no, "markdown": parts[i + 1].strip()})
-        if not page_mds:
-            return [{"page": 1, "markdown": md_text}]
-        return page_mds
+        for i, m in enumerate(matches):
+            page_no = int(m.group(1) or m.group(2))
+            start = m.end()
+            end = matches[i + 1].start() if i + 1 < len(matches) else len(md_text)
+            page_mds.append({"page": page_no, "markdown": md_text[start:end].strip()})
+        return page_mds or [{"page": 1, "markdown": md_text}]
 
 
 # 模块级单例

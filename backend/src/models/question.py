@@ -49,6 +49,8 @@ class QuestionProvenance(Base):
     document_id: Mapped[str | None] = mapped_column(String(36), index=True)
     segment_id: Mapped[str | None] = mapped_column(String(36), index=True)
     excerpt: Mapped[str | None] = mapped_column(Text)
+    page_number: Mapped[int | None] = mapped_column(Integer, index=True)
+    chapter_id: Mapped[str | None] = mapped_column(String(36), index=True)
 
 
 class QuestionRef(Base):

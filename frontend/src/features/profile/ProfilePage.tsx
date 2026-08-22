@@ -1,4 +1,5 @@
 import { useState } from "react"
+import { useNavigate } from "react-router-dom"
 import {
   Sparkles,
   Plus,
@@ -20,10 +21,10 @@ const tinaUsage = [
   "调整回答深度",
   "推荐更适合你的学习路径",
   "优先整理与你目标相关的知识",
-  "生成更贴合你的复习提醒",
 ]
 
 export function ProfilePage() {
+  const navigate = useNavigate()
   const { user } = useAuth()
   const [name, setName] = useState(user?.nickname || "")
   const [goal, setGoal] = useState("")
@@ -40,7 +41,11 @@ export function ProfilePage() {
 
   return (
     <AppShell maxWidth={960}>
-      <PageHeader title="个人学习画像" subtitle="维护昵称、学习目标和常用知识标签" />
+      <PageHeader title="学习画像" subtitle="维护昵称、学习目标和常用知识标签">
+        <Button variant="ghost" size="md" onClick={() => navigate("/settings")}>
+          返回设置
+        </Button>
+      </PageHeader>
 
       {/* 顶部大卡片 */}
       <Card variant="elevated" className="mb-8">

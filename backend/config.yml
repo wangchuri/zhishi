@@ -11,5 +11,10 @@ image_base_dir: ./storage/images
 database_url: sqlite:///./data/zhishi.db
 
 # 处理
-# 最大并行处理数（上传解析 / 分段 / 出题等并发任务上限），默认 1
+# 学习路径等后台任务并发，默认 1
 max_concurrency: 1
+
+# 出题：同时运行的页 Agent 数（每页一个 Agent，超出排队）
+question_gen_max_concurrency: 3
+# 单次出题最多页数
+question_gen_max_pages: 30

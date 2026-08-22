@@ -47,7 +47,7 @@ async def submit_answer(
     db: Session = Depends(get_db),
 ):
     session = quiz_service.get_session(db, session_id)
-    return await quiz_service.submit_answer(
+    result = await quiz_service.submit_answer(
         db,
         session,
         body.question_id,
@@ -56,6 +56,32 @@ async def submit_answer(
         body.time_spent_seconds,
         body.request_ai_grade,
     )
+    from ..services.task import evaluate
+    done = evaluate(db)
+    if done:
+        result["completed_tasks"] = done
+    return result
+
+
+@router.post("/grade", response_model=quiz_schemas.QuizAnswerResult)
+async def grade_standalone(body: quiz_schemas.QuizAnswerSubmit, db: Session = Depends(get_db)):
+    result = await quiz_service.grade_standalone(
+        db,
+        body.question_id,
+        body.user_answer,
+        body.status,
+        document_id=body.document_id,
+        request_ai_grade=body.request_ai_grade,
+    )
+    if body.chat_message_id:
+        from ..services.chat import chat_service
+        chat_service.update_widget_result(
+            body.chat_message_id,
+            body.question_id,
+            result,
+            body.user_answer,
+        )
+    return result
 
 
 @router.get("/sessions/{session_id}/results", response_model=quiz_schemas.QuizResults)

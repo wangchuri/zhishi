@@ -25,6 +25,8 @@ class QuizSession(Base):
     __tablename__ = "quiz_sessions"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    # 旧库 quiz_sessions.user_id NOT NULL；单用户默认 1
+    user_id: Mapped[int] = mapped_column(Integer, default=1)
     collection_id: Mapped[str | None] = mapped_column(String(36), index=True)
     document_id: Mapped[str | None] = mapped_column(String(36), index=True)
     title: Mapped[str | None] = mapped_column(String(200))
@@ -49,6 +51,8 @@ class QuizAnswer(Base):
     __tablename__ = "quiz_answers"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    # 旧库 quiz_answers.user_id NOT NULL；单用户默认 1
+    user_id: Mapped[int] = mapped_column(Integer, default=1)
     session_id: Mapped[str] = mapped_column(String(36), index=True, nullable=False)
     question_id: Mapped[str] = mapped_column(String(36), index=True, nullable=False)
     user_answer: Mapped[str | None] = mapped_column(Text)
@@ -66,6 +70,8 @@ class TutorSession(Base):
     __tablename__ = "tutor_sessions"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    # 旧库 tutor_sessions.user_id NOT NULL；单用户默认 1
+    user_id: Mapped[int] = mapped_column(Integer, default=1)
     question_id: Mapped[str] = mapped_column(String(36), nullable=False)
     document_id: Mapped[str | None] = mapped_column(String(36), index=True)
     segment_id: Mapped[str | None] = mapped_column(String(36))

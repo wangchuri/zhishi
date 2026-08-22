@@ -1,6 +1,7 @@
 import type { ReactNode } from "react"
 import { Sidebar } from "./Sidebar"
 import { Topbar } from "./Topbar"
+import { StatusRail } from "./StatusRail"
 import { useUI } from "@/context/UIContext"
 import { cn } from "@/lib/utils"
 
@@ -52,6 +53,7 @@ export function AppShell({ children, maxWidth = 1180, noPadding = false }: AppSh
             {children}
           </div>
         </main>
+        <StatusRail />
       </div>
     </div>
   )

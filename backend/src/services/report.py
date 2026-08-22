@@ -15,17 +15,6 @@ from ..services.note import note_service
 
 logger = logging.getLogger(__name__)
 
-REPORT_SYS_PROMPT = """你是知拾的学习报告生成器。根据用户的学习统计数据，生成一份结构化的学习报告（Markdown）。
-
-报告结构：
-# 学习报告
-## 一、总体概览
-## 二、各文档学习情况
-## 三、薄弱知识点分析
-## 四、建议
-
-用中文，语气积极。基于给定数据如实分析，不要编造数据。"""
-
 
 def _report_out(n: UserNote) -> dict:
     return {
@@ -60,10 +49,11 @@ class ReportService:
         """生成学习报告，返回 (report, saved_to_notes)。"""
         stats_text = self._stats_text(db)
         from ..core.llm import create_agent
-        agent = create_agent(system_prompt=REPORT_SYS_PROMPT)
+        from ..core.prompts import render_prompt
+        agent = create_agent(system_prompt=render_prompt("report/report_system.md.j2"))
         content = ""
         try:
-            async for chunk in agent.apredict(f"以下是我的学习数据，请生成学习报告：\n{stats_text}"):
+            async for chunk in agent.apredict(render_prompt("report/report_input.md.j2", stats_text=stats_text)):
                 c = chunk.get("content", "")
                 if c:
                     content += c

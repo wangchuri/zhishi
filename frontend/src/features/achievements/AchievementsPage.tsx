@@ -1,15 +1,5 @@
 import { useState, useEffect } from "react"
 import {
-  Target,
-  CheckCircle2,
-  Award,
-  Zap,
-  Flame,
-  Crown,
-  Library,
-  BookOpen,
-  PenLine,
-  Sparkles,
   Trophy,
   Loader2,
   Lock,
@@ -19,19 +9,6 @@ import { PageHeader } from "@/components/blocks/PageHeader"
 import { Card } from "@/components/ui/card"
 import { achievementsApi } from "@/lib/api"
 import type { Achievement } from "@/types"
-
-const iconMap: Record<string, typeof Target> = {
-  Target,
-  CheckCircle2,
-  Award,
-  Zap,
-  Flame,
-  Crown,
-  Library,
-  BookOpen,
-  PenLine,
-  Sparkles,
-}
 
 export function AchievementsPage() {
   const [achievements, setAchievements] = useState<Achievement[]>([])
@@ -100,9 +77,9 @@ export function AchievementsPage() {
   )
 }
 
-function AchievementCard({ achievement }: { achievement: Achievement }) {
-  const Icon = iconMap[achievement.icon] ?? Target
-  const percent = Math.min(100, Math.round((achievement.progress / achievement.target) * 100))
+export function AchievementCard({ achievement }: { achievement: Achievement }) {
+  const percent = Math.min(100, Math.round((achievement.progress / Math.max(achievement.target, 1)) * 100))
+  const glyph = achievement.icon?.trim() || "🏆"
 
   return (
     <div
@@ -114,15 +91,11 @@ function AchievementCard({ achievement }: { achievement: Achievement }) {
     >
       <div className="flex items-start gap-3">
         <div
-          className={`w-11 h-11 rounded-[4px] flex items-center justify-center shrink-0 ${
-            achievement.unlocked ? "bg-sea-subtle text-sea" : "bg-paper-2 text-ink-disabled"
+          className={`w-11 h-11 rounded-[4px] flex items-center justify-center shrink-0 text-xl ${
+            achievement.unlocked ? "bg-sea-subtle" : "bg-paper-2 grayscale opacity-50"
           }`}
         >
-          {achievement.unlocked ? (
-            <Icon className="w-5 h-5" strokeWidth={2} />
-          ) : (
-            <Lock className="w-5 h-5" strokeWidth={2} />
-          )}
+          {achievement.unlocked ? glyph : <Lock className="w-5 h-5 text-ink-disabled" strokeWidth={2} />}
         </div>
         <div className="min-w-0 flex-1">
           <div

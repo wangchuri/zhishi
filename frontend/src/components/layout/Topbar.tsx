@@ -1,30 +1,31 @@
 import { useState, useRef, useEffect } from "react"
-import { Search, PanelRight, Server, Menu, Wifi, WifiOff, Maximize, Minimize2 } from "lucide-react"
+import { PanelRight, Server, Menu, Wifi, WifiOff, Maximize, Minimize2 } from "lucide-react"
 import { useLocation, useNavigate } from "react-router-dom"
 import { useUI } from "@/context/UIContext"
 import { useAuth } from "@/context/AuthContext"
+import { useTinaCrisis } from "@/context/TinaCrisisContext"
 import { useFullscreen } from "@/hooks/useFullscreen"
 import { cn } from "@/lib/utils"
 
 const titleMap: Record<string, string> = {
   "/": "首页",
-  "/chat": "AI 对话",
+  "/chat": "Tina",
   "/notes": "笔记",
-  "/knowledge": "知识库管理",
-  "/knowledge/upload": "上传到知识库",
+  "/knowledge/upload": "上传资料",
+  "/quiz": "资料",
   "/graph": "知识图谱",
-  "/analytics": "学习分析",
+  "/tasks": "任务",
+  "/analytics": "进度",
   "/path": "学习路径",
-  "/reminders": "智能提醒",
-  "/profile": "个人学习画像",
+  "/profile": "学习画像",
   "/settings": "设置",
   "/settings/diagnostics": "诊断与修复",
-  "/companion": "伴学",
 }
 
 function resolveTitle(pathname: string): string {
   if (titleMap[pathname]) return titleMap[pathname]
-  if (pathname.startsWith("/companion/doc/")) return "伴学阅读"
+  if (pathname.startsWith("/notes/")) return "笔记"
+  if (pathname.startsWith("/companion/doc/")) return "阅读"
   return "知拾"
 }
 
@@ -33,6 +34,7 @@ export function Topbar() {
   const navigate = useNavigate()
   const { rightPanelOpen, toggleRightPanel, toggleMobileMenu } = useUI()
   const { user, server } = useAuth()
+  const { active: crisisLocked } = useTinaCrisis()
   const { isFs, toggle } = useFullscreen()
   const [menuOpen, setMenuOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
@@ -52,7 +54,8 @@ export function Topbar() {
 
   return (
     <header
-      className="h-16 shrink-0 border-b border-line bg-header-glass flex items-center gap-3 px-4 md:px-6"
+      data-no-tip
+      className="relative z-[55] h-16 shrink-0 border-b border-line bg-header-glass flex items-center gap-3 px-4 md:px-6"
       style={{ height: "calc(4rem + env(safe-area-inset-top))", paddingTop: "env(safe-area-inset-top)" }}
     >
       {/* 平板端：汉堡菜单 */}
@@ -64,25 +67,11 @@ export function Topbar() {
         <Menu className="w-5 h-5" strokeWidth={2} />
       </button>
 
-      {/* 左侧：页面标题（品牌名只在侧栏） */}
       <div className="flex items-center shrink-0 min-w-0">
         <span className="text-title-s text-ink truncate">{title}</span>
       </div>
 
-      {/* 中间：搜索框 */}
-      <div className="flex-1 max-w-[560px] mx-auto">
-        <div className="relative group">
-          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-[18px] h-[18px] text-ink-disabled group-focus-within:text-sea transition-colors" strokeWidth={2} />
-          <input
-            type="text"
-            placeholder="搜索笔记、文档、标签或向 Tina 提问..."
-            className="w-full h-10 pl-11 pr-16 rounded-[4px] bg-paper-2 border border-line text-body text-ink placeholder:text-ink-disabled focus:outline-none focus:border-sea focus:bg-paper focus:ring-1 focus:ring-sea-subtle transition-all"
-          />
-          <kbd className="absolute right-3 top-1/2 -translate-y-1/2 hidden sm:flex items-center gap-0.5 px-1.5 h-5 rounded-[4px] border border-line bg-paper text-small text-ink-disabled">
-            ⌘ K
-          </kbd>
-        </div>
-      </div>
+      <div className="flex-1" />
 
       {/* 右侧：操作 */}
       <div className="flex items-center gap-2 shrink-0">
@@ -106,12 +95,17 @@ export function Topbar() {
         <button
           onClick={toggleRightPanel}
           className={cn(
-            "inline-flex items-center justify-center w-10 h-10 rounded-[4px] transition-colors",
-            rightPanelOpen ? "text-sea bg-sea-subtle" : "text-ink-soft hover:bg-sea-subtle hover:text-sea",
+            "inline-flex items-center justify-center gap-1.5 h-9 px-2.5 sm:px-3 rounded-full border transition-colors",
+            rightPanelOpen
+              ? "text-paper bg-sea border-sea"
+              : "text-ink-soft border-line bg-paper hover:text-sea hover:border-sea/40 hover:bg-sea-subtle",
           )}
-          aria-label="切换右侧面板"
+          aria-label="今日状态"
+          aria-expanded={rightPanelOpen}
+          title={rightPanelOpen ? "关闭今日状态" : "打开今日状态"}
         >
-          <PanelRight className="w-[18px] h-[18px]" strokeWidth={2} />
+          <PanelRight className="w-4 h-4" strokeWidth={2} />
+          <span className="hidden sm:inline text-caption font-medium">今日状态</span>
         </button>
 
         <div className="w-px h-6 bg-line mx-1" />
@@ -142,7 +136,11 @@ export function Topbar() {
                 {server.message && <div className="text-caption text-ink-disabled mt-0.5">{server.message}</div>}
               </div>
               <button
-                onClick={() => { setMenuOpen(false); navigate("/settings") }}
+                onClick={() => {
+                  if (crisisLocked) return
+                  setMenuOpen(false)
+                  navigate("/settings")
+                }}
                 className="w-full flex items-center gap-2.5 px-3 py-2.5 text-small text-ink-soft hover:text-sea hover:bg-sea-subtle transition-colors"
               >
                 <Server className="w-4 h-4" strokeWidth={2} />
