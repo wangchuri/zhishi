@@ -1,7 +1,15 @@
 # ─── Node / Frontend ───────────────────────
 node_modules/
 frontend/dist/
+frontend/electron/dist/
+!frontend/electron/dist/package.json
 *.tsbuildinfo
+
+# 误放 / 临时脚本
+frontend/6.0
+_tmp_*
+_tmp*.py
+_tmp*.txt
 
 # ─── Flutter（若后续加入 zhishi_app）────────
 **/.dart_tool/
@@ -10,7 +18,7 @@ frontend/dist/
 **/.packages
 **/.pub-cache/
 **/.pub/
-
+.workbuddy/
 # ─── Python ───────────────────────────────
 __pycache__/
 *.py[cod]
@@ -25,10 +33,10 @@ htmlcov/
 .coverage
 .coverage.*
 coverage.xml
-
+design/
 # Python 打包产物（勿与 frontend/dist 混淆时用 frontend/dist/ 已单独列出）
 build/
-dist/
+/dist/
 
 # 虚拟环境
 env/
@@ -55,16 +63,28 @@ Desktop.ini
 .env.*
 !.env.example
 !backend/.env.example
+!backend/tina.env.example
 *.env.local
 backend/tina.env
 backend/.env
 assets/config/llm_config.json
 assets/config/dify_config.json
 
+# ─── 局域网自签 HTTPS 证书（make_cert.py 生成）──────────
+backend/certs/
+
 # ─── 日志 ──────────────────────────────────
 *.log
 logs/
 backend/logs/
+zhishi-backend.log
+.cursor/*.log
+frontend/_vite_out.log
+_electron_dev.log
+
+# MinerU 解析临时目录、本地测书
+backend/output/
+test_docs/
 
 # ─── 本地运行时数据 ────────────────────────
 storage/
@@ -80,7 +100,10 @@ data/*.db
 data/*.db-journal
 data/*.db-wal
 data/*.db-shm
-releases/
+# ─── 桌面打包产物 ─────────────────────────
+desktop/
+frontend/release/
+
 # ─── LEKT 本地编译产物（按需提交则注释掉）──
 # backend/*.pyd
 # backend/logic_matrix.npy
@@ -89,3 +112,4 @@ releases/
 *.zip
 *.rar
 *.7z
+

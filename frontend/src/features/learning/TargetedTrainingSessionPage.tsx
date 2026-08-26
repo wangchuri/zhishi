@@ -12,6 +12,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { analyticsApi, quizApi, trainingApi } from "@/lib/api"
+import { formatAccuracy, splitTagLabels } from "@/lib/utils"
 import { TutorPanel } from "@/features/tutor/TutorPanel"
 import { TrainingTutorPanel } from "@/features/learning/TrainingTutorPanel"
 import { QuizQuestionInput } from "@/features/quiz/QuizQuestionInput"
@@ -45,6 +46,7 @@ export function TargetedTrainingSessionPage() {
   const [selectedOption, setSelectedOption] = useState<string | null>(null)
   const [textAnswer, setTextAnswer] = useState("")
   const [blankAnswers, setBlankAnswers] = useState<string[]>([])
+  const [customAnswers, setCustomAnswers] = useState<Record<string, string>>({})
   const [submitting, setSubmitting] = useState(false)
   const [lastResult, setLastResult] = useState<QuizAnswerResult | null>(null)
   const [questionStartTime, setQuestionStartTime] = useState(Date.now())
@@ -62,13 +64,14 @@ export function TargetedTrainingSessionPage() {
     }
     setTextAnswer("")
     setSelectedOption(null)
+    setCustomAnswers({})
   }, [currentQuestion?.question_id])
 
   const exitToReport = useCallback(() => {
     if (reportId) {
       navigate(`/training/targeted/report/${reportId}`)
     } else {
-      navigate("/training/targeted")
+      navigate("/analytics")
     }
   }, [navigate, reportId])
 
@@ -133,8 +136,8 @@ export function TargetedTrainingSessionPage() {
   const submitAnswerCore = async (opts?: { requestAiGrade?: boolean }) => {
     if (!session || !currentQuestion) return
     const qtype = currentQuestion.question_type || "single_choice"
-    const payload = buildUserAnswerPayload(qtype, selectedOption, textAnswer, blankAnswers)
-    if (!opts?.requestAiGrade && !canSubmitAnswer(qtype, selectedOption, textAnswer, blankAnswers)) {
+    const payload = buildUserAnswerPayload(qtype, selectedOption, textAnswer, blankAnswers, customAnswers)
+    if (!opts?.requestAiGrade && !canSubmitAnswer(qtype, selectedOption, textAnswer, blankAnswers, customAnswers)) {
       return
     }
 
@@ -308,10 +311,12 @@ export function TargetedTrainingSessionPage() {
                     key={t.tag}
                     className="rounded-lg border border-line-soft px-3 py-2 text-small"
                   >
-                    <div className="font-medium text-ink-primary truncate">{t.tag}</div>
+                    <div className="font-medium text-ink-primary truncate">
+                      {splitTagLabels(t.tag).join(" · ")}
+                    </div>
                     <div className="text-ink-tertiary mt-0.5">
                       错 {t.wrong_count} · 对 {t.correct_count}
-                      {t.accuracy_rate != null && ` · ${t.accuracy_rate}%`}
+                      {t.accuracy_rate != null && ` · ${formatAccuracy(t.accuracy_rate)}`}
                     </div>
                   </li>
                 ))}
@@ -322,7 +327,7 @@ export function TargetedTrainingSessionPage() {
             <ul className="space-y-1.5">
               {tagStats.slice(0, 12).map((t) => (
                 <li key={t.tag} className="flex justify-between text-caption text-ink-secondary">
-                  <span className="truncate mr-2">{t.tag}</span>
+                  <span className="truncate mr-2">{splitTagLabels(t.tag).join(" · ")}</span>
                   <span className="shrink-0 text-danger">{t.wrong_count} 错</span>
                 </li>
               ))}
@@ -347,11 +352,13 @@ export function TargetedTrainingSessionPage() {
                   selectedOption={selectedOption}
                   textAnswer={textAnswer}
                   blankAnswers={blankAnswers}
+                  customAnswers={customAnswers}
                   lastResult={lastResult}
                   submitting={submitting}
                   onSelectOption={setSelectedOption}
                   onTextAnswerChange={setTextAnswer}
                   onBlankAnswersChange={setBlankAnswers}
+                  onCustomAnswersChange={setCustomAnswers}
                 />
 
                 {!lastResult ? (
@@ -365,7 +372,8 @@ export function TargetedTrainingSessionPage() {
                           currentQuestion.question_type,
                           selectedOption,
                           textAnswer,
-                          blankAnswers
+                          blankAnswers,
+                          customAnswers
                         )
                       }
                     >

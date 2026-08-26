@@ -1,0 +1,20 @@
+# 知拾本地配置
+# 说明：本机自用单用户，无需鉴权。相对路径均以 backend/ 为基准。
+
+# 本地存储（原始上传文件、解析产物、缩略图等）
+storage_dir: ./storage
+
+# 图床路径：markdown 中所有图片（images/*.png 等）都会落盘到这个位置
+image_base_dir: ./storage/images
+
+# 数据库
+database_url: sqlite:///./data/zhishi.db
+
+# 处理
+# 学习路径等后台任务并发，默认 1
+max_concurrency: 1
+
+# 出题：同时运行的页 Agent 数（每页一个 Agent，超出排队）
+question_gen_max_concurrency: 3
+# 单次出题最多页数
+question_gen_max_pages: 30

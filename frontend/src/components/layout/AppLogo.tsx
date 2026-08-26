@@ -1,6 +1,6 @@
 import { cn } from "@/lib/utils"
 
-const logoSrc = `${import.meta.env.BASE_URL}logo.png`
+const logoSrc = `${import.meta.env.BASE_URL}logo.png?v=3`
 
 const sizeMap = {
   sm: "w-8 h-8",
@@ -18,7 +18,7 @@ export function AppLogo({ size = "md", className }: AppLogoProps) {
     <img
       src={logoSrc}
       alt="知拾"
-      className={cn(sizeMap[size], "object-contain shrink-0", className)}
+      className={cn(sizeMap[size], "object-cover rounded-[8px] shrink-0", className)}
     />
   )
 }

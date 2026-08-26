@@ -28,6 +28,12 @@ export interface Note {
   hasAISummary: boolean
   organized: boolean
   category?: string
+  /** 后端 note 字段（tip 等来源） */
+  content_md?: string
+  document_id?: string | null
+  note_type?: string
+  created_at?: string
+  page_number?: number
 }
 
 /** 知识库文档 */
@@ -70,17 +76,6 @@ export interface PathTask {
   prerequisites: string[]
   reason: string
   suggestion: string[]
-}
-
-/** 智能提醒 */
-export interface Reminder {
-  id: string
-  title: string
-  type: "review" | "task" | "doc" | "longterm"
-  time: string
-  done: boolean
-  repeat?: boolean
-  related?: string
 }
 
 /** 图谱节点 */
@@ -152,6 +147,7 @@ export interface Question {
   source_type?: string
   document_id?: string | null
   collection_id?: string | null
+  chapter_id?: string | null
   created_at?: string
   user_answer_status?: "correct" | "wrong" | "unknown" | null
   attempt_count?: number
@@ -167,7 +163,14 @@ export interface QuestionListResult {
   correct_count?: number
   wrong_count?: number
   unknown_count?: number
+  best_streak?: number
 }
+export interface AnswerParam {
+  key: string
+  label: string
+  type: "text" | "number" | "textarea"
+}
+
 export interface QuizSessionQuestion {
   question_id: string
   order_index: number
@@ -175,6 +178,8 @@ export interface QuizSessionQuestion {
   question_type: string
   options?: QuestionOption[]
   source_type?: string
+  html_content?: string | null
+  answer_params?: string | null
 }
 
 /** 刷题会话 */
@@ -183,6 +188,7 @@ export interface QuizSession {
   title?: string | null
   status: "active" | "completed" | string
   document_id?: string | null
+  document_name?: string | null
   collection_id?: string | null
   total_questions: number
   answered_count: number
@@ -204,6 +210,8 @@ export interface QuizAnswerResult {
   answered_count: number
   total_questions: number
   session_status: string
+  current_streak?: number
+  completed_tasks?: Array<{ id: string; title: string }>
 }
 
 /** 错题回顾项 */
@@ -302,6 +310,68 @@ export interface TagStatsResult {
   by_question_type: TagStats[]
 }
 
+/** 学习时长（活跃心跳 + 刷题时长，今日 + 累计） */
+export interface ActivityStats {
+  today_active_seconds: number
+  total_active_seconds: number
+  today_quiz_seconds: number
+  total_quiz_seconds: number
+  due_review_count: number
+  unorganized_doc_count: number
+}
+
+/** 打卡热力图单日 */
+export interface HeatmapDay {
+  date: string
+  seconds: number
+}
+
+/** 打卡统计（累计天数 / 连续 / 热力图） */
+export interface StreakStats {
+  active_days: number
+  current_streak: number
+  best_streak: number
+  heatmap: HeatmapDay[]
+}
+
+/** 成就 */
+export interface Achievement {
+  id: string
+  name: string
+  description: string
+  icon: string
+  target: number
+  progress: number
+  unlocked: boolean
+  unlocked_at?: string | null
+}
+
+export interface AchievementList {
+  achievements: Achievement[]
+  newly_unlocked: string[]
+}
+
+/** 学习计划 */
+export interface StudyPlan {
+  id: string
+  title: string
+  goal?: string | null
+  task_count: number
+  done_count: number
+  created_at?: string | null
+}
+
+export interface PlanTask {
+  id: string
+  plan_id: string
+  title: string
+  due_date?: string | null
+  done: boolean
+  position: number
+  completed_at?: string | null
+  created_at?: string | null
+}
+
 /** 学习报告 */
 export interface LearningReport {
   id: string
@@ -383,6 +453,7 @@ export interface DocumentPage {
   segment_id?: string | null
   preview_mode?: "pdf" | "markdown" | "text"
   file_type?: string | null
+  question_count?: number
 }
 
 export interface DocumentPageList {
@@ -405,11 +476,28 @@ export interface DocumentContentMeta {
   file_name?: string
   content: string
   file_type?: string
-  preview_mode?: "pdf" | "text" | "markdown"
+  preview_mode?: "pdf" | "docx" | "text" | "markdown"
   has_raw_file?: boolean
+  is_scanned_pdf?: boolean
   mock?: boolean
   pdf_page_count?: number
   warning?: string
+}
+
+export interface LearningPathChapter {
+  id?: string
+  title: string
+  order: number
+  key_points: string[]
+  /** Tina 验收：true=已学过，false/缺省=未学过 */
+  learned?: boolean
+}
+
+export interface LearningPathResult {
+  document_id: string
+  status: "missing" | "pending" | "generated" | "failed" | string
+  title?: string | null
+  chapters: LearningPathChapter[]
 }
 
 export interface PageQuestionResult {
@@ -422,6 +510,21 @@ export interface PageQuestionResult {
   total_questions: number
 }
 
+/** 出题 Agent 进行中的任务 */
+export interface QuestionGenJob {
+  id: string
+  document_id: string
+  document_name: string
+  status: string
+  page_numbers: number[]
+  questions_per_page: number
+  submitted: number
+  total_cap: number
+  max_concurrency?: number
+  agents?: { id: string; page?: number; status?: string; submitted?: number }[]
+  started_at?: string
+}
+
 /** 对话消息 */
 export interface ChatMessage {
   id: string
@@ -430,6 +533,81 @@ export interface ChatMessage {
   time: string
   refs?: string[]
   citations?: Citation[]
+  reasoning_content?: string
+  /** 危机模式：助手回复用朱红 */
+  crimson?: boolean
+  /** /tina? 演出：思考默认展开，正文预换行 */
+  glitch?: boolean
+  payload?: {
+    widgets?: Array<{
+      question: {
+        question_id: string
+        stem: string
+        question_type: string
+        options?: QuestionOption[]
+        source_type?: string
+        html_content?: string | null
+        answer_params?: string | null
+        document_id?: string | null
+        document_name?: string | null
+        tags?: string[]
+      }
+      result?: QuizAnswerResult | null
+      user_answer?: string | null
+    }>
+    onboarding?: Array<{
+      type: string
+      id?: string
+      status?: string
+      goal?: string
+      nickname?: string
+      role?: string
+    }>
+  }
+}
+
+export interface DailyTaskItem {
+  id: string
+  goal_id?: string | null
+  for_date: string
+  title: string
+  description?: string | null
+  kind: "upload" | "generate" | "quiz" | "learn" | string
+  payload?: Record<string, unknown>
+  checker: string
+  status: "pending" | "completed" | "expired" | string
+  href?: string | null
+  action?: string
+  due_at?: string | null
+  completed_at?: string | null
+  expired_at?: string | null
+}
+
+export interface TodayTasksResult {
+  goal: {
+    id: string
+    text: string
+    attributes?: Record<string, unknown> | null
+    valid_until?: string | null
+    status: string
+  } | null
+  tasks: DailyTaskItem[]
+  pending_count: number
+  expired_count?: number
+  onboarding_session_id?: string | null
+  completed_tasks?: Array<{ id: string; title: string }> | null
+  day_complete?: boolean
+  refill_pending?: boolean
+}
+
+export interface TaskHistoryResult {
+  tasks: DailyTaskItem[]
+  completed_tasks?: Array<{ id: string; title: string }> | null
+}
+
+export interface RestoreTaskResult {
+  task: DailyTaskItem
+  completed_tasks?: Array<{ id: string; title: string }> | null
 }
 
 /** 页面布局配置 */

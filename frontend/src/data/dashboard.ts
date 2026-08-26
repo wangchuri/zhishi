@@ -12,7 +12,7 @@ export const greeting = {
 
 export const quickActions = [
   { id: "note", title: "新建笔记", description: "记录想法、整理资料", to: "/notes" },
-  { id: "chat", title: "AI 对话", description: "向 Tina 提问、整理文档", to: "/chat" },
+  { id: "chat", title: "Tina", description: "向 Tina 提问、整理文档", to: "/chat" },
   { id: "upload", title: "上传资料", description: "PDF、TXT、MD、DOCX", to: "/knowledge/upload" },
   { id: "graph", title: "知识图谱", description: "查看标签与知识关系", to: "/graph" },
 ]
@@ -61,6 +61,5 @@ export const tinaSuggestions = [
 
 export const rightPanelShortcuts = [
   { label: "上传资料", to: "/knowledge/upload" },
-  { label: "创建提醒", to: "/reminders" },
   { label: "查看学习路径", to: "/path" },
 ]

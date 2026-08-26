@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react"
+import { useState, useRef, useEffect, useCallback, useLayoutEffect } from "react"
 import {
   ArrowUp,
   PanelLeftClose,
@@ -6,37 +6,85 @@ import {
   Plus,
   Trash2,
   ChevronRight,
-  GraduationCap,
-  Home,
 } from "lucide-react"
-import { useSearchParams } from "react-router-dom"
+import { useSearchParams, useNavigate } from "react-router-dom"
 import { AppShell } from "@/components/layout/AppShell"
 import { ChatCitationSidebar } from "@/components/blocks/ChatCitationSidebar"
 import { Button } from "@/components/ui/button"
 import { ChatMessage as ChatMessageBlock } from "@/components/blocks/ChatMessage"
 import { chatApi, kbApi, normalizeChatHistory } from "@/lib/api"
-import type { ChatMessage, Citation, KbCollection } from "@/types"
-import { Badge } from "@/components/ui/badge"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
+import type { ChatQuestionWidget } from "@/features/chat/ChatQuestionCard"
+import type { ChatMessage, Citation } from "@/types"
 import { cn } from "@/lib/utils"
+import {
+  GLITCH_THINK,
+  SLASH_COMMANDS,
+  isGlitchCmd,
+  playTinaGlitch,
+} from "@/features/chat/tinaGlitch"
+import { parseTinaBursts, type TinaMood } from "@/features/chat/tinaBursts"
+import { TinaFacePanel } from "@/features/chat/TinaFacePanel"
+import { useTinaCrisis } from "@/context/TinaCrisisContext"
+import { remainingCrisisPages } from "@/data/nav"
+
+function latestTinaMood(msgs: ChatMessage[]): TinaMood {
+  for (let i = msgs.length - 1; i >= 0; i--) {
+    const m = msgs[i]
+    if (m.role !== "assistant" || !m.content) continue
+    const bursts = parseTinaBursts(m.content)
+    for (let j = bursts.length - 1; j >= 0; j--) {
+      if (bursts[j].mood) return bursts[j].mood as TinaMood
+    }
+  }
+  return "NORMAL"
+}
+
+/** 本会话内每发一次 /tina 切换一次脸；与其它会话互不影响 */
+function sessionTinaFaceOn(msgs: ChatMessage[]): boolean {
+  let on = false
+  for (const m of msgs) {
+    if (m.role === "user" && m.content.trim() === "/tina") on = !on
+  }
+  return on
+}
 
 interface SessionItem {
   id: string
   title: string
+  kind?: string
   updated_at?: string
   created_at?: string
+}
+
+function paintCrisis(msgs: ChatMessage[], crisis: boolean): ChatMessage[] {
+  if (!crisis) return msgs
+  return msgs.map((m) => (m.role === "assistant" ? { ...m, crimson: true } : m))
+}
+
+function mapHistoryItems(items: Array<Record<string, unknown>>): ChatMessage[] {
+  const msgs: ChatMessage[] = []
+  for (let i = 0; i < items.length; i++) {
+    const m = items[i]
+    const role = (m.role as ChatMessage["role"]) || "user"
+    const content = String(m.content || "")
+    if (role === "user" && content === "开始引导") continue
+    msgs.push({
+      id: String(m.id || `h-${i}`),
+      role,
+      content,
+      time: String(m.time || m.created_at || "—"),
+      citations: (m.citations as Citation[]) || undefined,
+      reasoning_content: m.reasoning_content ? String(m.reasoning_content) : undefined,
+      payload: (m.payload as ChatMessage["payload"]) || undefined,
+    })
+  }
+  return msgs
 }
 
 const welcomeMessage: ChatMessage = {
   id: "welcome",
   role: "assistant",
-  content: "你好！我是 Tina，你的知识管理助手。\n你可以问我课程知识、上传文档、整理笔记，或者让我帮你生成学习路径。",
+  content: "你好！我是 Tina，你的知识管理助手。\n你可以问我课程知识、让我从题库出一道题，或整理笔记、生成学习路径。",
   time: "刚刚",
 }
 
@@ -60,6 +108,10 @@ function persistHistorySidebarOpen(open: boolean) {
 
 export function ChatPage() {
   const [searchParams] = useSearchParams()
+  const navigate = useNavigate()
+  const { enableCrisis, deleted, escaping, startEscape, active } = useTinaCrisis()
+  const deletedRef = useRef(deleted)
+  deletedRef.current = deleted
 
   const [input, setInput] = useState("")
   const [messages, setMessages] = useState<ChatMessage[]>([welcomeMessage])
@@ -70,9 +122,48 @@ export function ChatPage() {
   const [citationSidebarOpen, setCitationSidebarOpen] = useState(false)
   const [activeCitation, setActiveCitation] = useState<Citation | null>(null)
   const [loadingHistory, setLoadingHistory] = useState(false)
-  const [collections, setCollections] = useState<KbCollection[]>([])
   const [collectionId, setCollectionId] = useState<string>("")
   const scrollRef = useRef<HTMLDivElement>(null)
+  const inputRef = useRef<HTMLTextAreaElement>(null)
+  const sessionIdRef = useRef<string | null>(null)
+  const streamingRef = useRef(false)
+  const pendingFollowUpRef = useRef<string | null>(null)
+  const [crisisMode, setCrisisMode] = useState(false)
+  const crisisRef = useRef(false)
+  const glitchRun = useRef(0)
+  const [slashIndex, setSlashIndex] = useState(0)
+  const [tinaPresence, setTinaPresence] = useState(false)
+  const [faceEnterKey, setFaceEnterKey] = useState(0)
+  const [faceMood, setFaceMood] = useState<TinaMood>("NORMAL")
+  const [faceUsingTool, setFaceUsingTool] = useState(false)
+  const tinaPresenceRef = useRef(false)
+
+  useEffect(() => {
+    tinaPresenceRef.current = tinaPresence
+  }, [tinaPresence])
+
+  useEffect(() => {
+    crisisRef.current = crisisMode
+  }, [crisisMode])
+
+  useEffect(() => {
+    sessionIdRef.current = sessionId
+  }, [sessionId])
+
+  // 颜文字只跟「当前会话」里的 /tina 次数走，新开对话默认没有
+  useEffect(() => {
+    const on = sessionTinaFaceOn(messages)
+    if (on && !tinaPresenceRef.current) {
+      setFaceMood("NORMAL")
+      setFaceEnterKey((k) => k + 1)
+    }
+    setTinaPresence(on)
+  }, [messages])
+
+  useEffect(() => {
+    if (!tinaPresence) return
+    setFaceMood(latestTinaMood(messages))
+  }, [messages, tinaPresence])
 
   // ─── 会话列表 ──────────────────────────────────────
 
@@ -91,26 +182,29 @@ export function ChatPage() {
     kbApi
       .listCollections()
       .then((res) => {
-        const cols = (res.collections || []) as KbCollection[]
-        setCollections(cols)
-        const defaultCol = cols.find((c) => c.is_default) || cols[0]
+        const cols = res.collections || []
+        const defaultCol = cols.find((c: { is_default?: boolean }) => c.is_default) || cols[0]
         if (defaultCol) setCollectionId(defaultCol.id)
       })
       .catch(() => {})
   }, [])
 
-  // ─── 从 Dashboard 跳转过来的自动搜索 ─────────────────
+  useLayoutEffect(() => {
+    const el = inputRef.current
+    if (!el) return
+    el.style.height = "0px"
+    el.style.height = `${Math.min(el.scrollHeight, 200)}px`
+  }, [input])
+
+  // ─── 从 Dashboard 跳转过来的自动搜索 / 打开已有会话 ───
 
   useEffect(() => {
-    const q = searchParams.get("q")
-    if (q?.trim()) {
-      // 等组件完全加载后再发送
-      const t = setTimeout(() => {
-        setInput(q.trim())
-        handleSend()
-      }, 300)
-      return () => clearTimeout(t)
-    }
+    const sid = searchParams.get("session")
+    if (!sid?.trim()) return
+    const t = window.setTimeout(() => {
+      void handleSelectSession({ id: sid.trim(), title: "" })
+    }, 0)
+    return () => window.clearTimeout(t)
   }, [])
 
   // ─── 滚动到底 ──────────────────────────────────────
@@ -122,23 +216,21 @@ export function ChatPage() {
   // ─── 切换会话 ──────────────────────────────────────
 
   const handleSelectSession = async (s: SessionItem) => {
+    if (escaping) return
     if (s.id === sessionId) return
+    glitchRun.current += 1
     setSessionId(s.id)
     setLoadingHistory(true)
     try {
       const res = await chatApi.getHistory(s.id)
-      const items = normalizeChatHistory(res)
-      const msgs: ChatMessage[] = items.map((m, i) => ({
-        id: String(m.id || `h-${i}`),
-        role: (m.role as ChatMessage["role"]) || "user",
-        content: String(m.content || ""),
-        time: String(m.time || m.created_at || "—"),
-        citations: (m.citations as Citation[]) || undefined,
-      }))
+      const msgs = mapHistoryItems(normalizeChatHistory(res))
       if (msgs.length === 0) {
+        setCrisisMode(active || Boolean(res.crisis))
         setMessages([welcomeMessage])
       } else {
-        setMessages(msgs)
+        const crisis = active || Boolean(res.crisis)
+        setCrisisMode(crisis)
+        setMessages(paintCrisis(msgs, crisis))
       }
     } catch {
       setMessages([welcomeMessage])
@@ -150,6 +242,9 @@ export function ChatPage() {
   // ─── 新建会话 ──────────────────────────────────────
 
   const handleNewSession = () => {
+    if (escaping) return
+    glitchRun.current += 1
+    if (!active) setCrisisMode(false)
     setSessionId(null)
     setMessages([welcomeMessage])
   }
@@ -171,15 +266,16 @@ export function ChatPage() {
 
   // ─── 发送消息 ──────────────────────────────────────
 
-  const handleSend = async () => {
-    const text = input.trim()
-    if (!text || isStreaming) return
+  const sendText = useCallback(async (text: string, opts?: { clearInput?: boolean }) => {
+    if (escaping) return
+    const trimmed = text.trim()
+    if (!trimmed || streamingRef.current) return
 
     const now = new Date().toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })
     const userMsg: ChatMessage = {
       id: `u-${Date.now()}`,
       role: "user",
-      content: text,
+      content: trimmed,
       time: now,
     }
 
@@ -189,28 +285,136 @@ export function ChatPage() {
       role: "assistant",
       content: "",
       time: now,
+      crimson: crisisRef.current || isGlitchCmd(trimmed),
+      glitch: isGlitchCmd(trimmed),
+      reasoning_content: crisisRef.current && !isGlitchCmd(trimmed) ? GLITCH_THINK : undefined,
     }
 
-    setMessages(prev => [...prev, userMsg, assistantMsg])
-    setInput("")
+    streamingRef.current = true
+    setMessages((prev) => [...prev, userMsg, assistantMsg])
+    if (opts?.clearInput) setInput("")
     setIsStreaming(true)
+    setFaceUsingTool(false)
+
+    if (isGlitchCmd(trimmed)) {
+      setCrisisMode(true)
+      crisisRef.current = true
+      enableCrisis()
+      const runId = ++glitchRun.current
+      const alive = () => glitchRun.current === runId
+      try {
+        const persist = chatApi.sendStream({
+          content: trimmed,
+          session_id: sessionIdRef.current ?? undefined,
+          collection_id: collectionId || undefined,
+          crisis: true,
+          onChunk: (chunk) => {
+            if (chunk.session_id && !sessionIdRef.current) {
+              const sid = String(chunk.session_id)
+              sessionIdRef.current = sid
+              setSessionId(sid)
+              loadSessions()
+            }
+          },
+        })
+        await playTinaGlitch((patch) => {
+          if (!alive()) return
+          setMessages((prev) =>
+            prev.map((m) => (m.id === assistantId ? { ...m, ...patch, crimson: true, glitch: true } : m)),
+          )
+        }, alive)
+        await persist
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : "请稍后重试"
+        if (alive()) {
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === assistantId ? { ...m, content: m.content || `❌ 发送失败：${msg}` } : m,
+            ),
+          )
+        }
+      } finally {
+        streamingRef.current = false
+        setIsStreaming(false)
+      }
+      return
+    }
 
     try {
       let messageCitations: Citation[] = []
       await chatApi.sendStream({
-        content: text,
-        session_id: sessionId ?? undefined,
+        content: trimmed,
+        session_id: sessionIdRef.current ?? undefined,
         collection_id: collectionId || undefined,
+        crisis: crisisRef.current,
+        remaining_pages: crisisRef.current
+          ? remainingCrisisPages(deletedRef.current).filter((name) => {
+              const m = trimmed.match(/^(.+)已经被删除了$/)
+              return !m || name !== m[1]
+            })
+          : undefined,
         onChunk: (chunk) => {
-          if (typeof chunk.content === "string") {
+          if (chunk.event === "tool_status") {
+            setFaceUsingTool(Boolean(chunk.using))
+          }
+          if (chunk.event === "show_question" && chunk.question && typeof chunk.question === "object") {
+            const q = chunk.question as ChatQuestionWidget["question"]
             setMessages((prev) =>
-              prev.map((m) =>
-                m.id === assistantId ? { ...m, content: m.content + chunk.content } : m
-              )
+              prev.map((m) => {
+                if (m.id !== assistantId) return m
+                const widgets = m.payload?.widgets || []
+                if (widgets.some((w) => w.question.question_id === q.question_id)) return m
+                return { ...m, payload: { ...m.payload, widgets: [...widgets, { question: q }] } }
+              })
             )
           }
-          if (chunk.session_id && !sessionId) {
-            setSessionId(String(chunk.session_id))
+          if (chunk.event === "onboarding_ui" && chunk.item && typeof chunk.item === "object") {
+            const item = chunk.item as { type: string; goal?: string }
+            setMessages((prev) => {
+              const already = prev.some((msg) =>
+                (msg.payload?.onboarding || []).some((x) => {
+                  if (item.type === "goal_card") return x.type === "goal_card" && x.goal === item.goal
+                  if (item.type === "docs_card") return x.type === "docs_card"
+                  if (item.type === "done") return x.type === "done"
+                  return false
+                })
+              )
+              if (already) return prev
+              return prev.map((m) => {
+                if (m.id !== assistantId) return m
+                const onboarding = m.payload?.onboarding || []
+                return { ...m, payload: { ...m.payload, onboarding: [...onboarding, item] } }
+              })
+            })
+          }
+          if (chunk.event === "assistant_saved" && chunk.message_id) {
+            const realId = String(chunk.message_id)
+            setMessages((prev) =>
+              prev.map((m) => (m.id === assistantId ? { ...m, id: realId } : m))
+            )
+          }
+          if (typeof chunk.content === "string") {
+            setMessages((prev) =>
+              prev.map((m) => {
+                if (m.id !== assistantId) return m
+                if (chunk.reasoning_content === true) {
+                  if (crisisRef.current) {
+                    return { ...m, reasoning_content: GLITCH_THINK, crimson: true }
+                  }
+                  return { ...m, reasoning_content: (m.reasoning_content || "") + chunk.content }
+                }
+                return {
+                  ...m,
+                  content: m.content + chunk.content,
+                  crimson: crisisRef.current || m.crimson,
+                }
+              })
+            )
+          }
+          if (chunk.session_id && !sessionIdRef.current) {
+            const sid = String(chunk.session_id)
+            sessionIdRef.current = sid
+            setSessionId(sid)
             loadSessions()
           }
           if (Array.isArray(chunk.citations) && chunk.citations.length > 0) {
@@ -231,7 +435,87 @@ export function ChatPage() {
         )
       )
     } finally {
+      streamingRef.current = false
       setIsStreaming(false)
+      setFaceUsingTool(false)
+      const queued = pendingFollowUpRef.current
+      pendingFollowUpRef.current = null
+      if (queued) void sendText(queued)
+    }
+  }, [collectionId, escaping, enableCrisis])
+
+  const sendTextRef = useRef(sendText)
+  sendTextRef.current = sendText
+
+  useEffect(() => {
+    const gone = searchParams.get("gone")
+    if (!gone?.trim() || escaping) return
+    const label = gone.trim()
+    const leftover = remainingCrisisPages(deletedRef.current).filter((name) => name !== label)
+    const t = window.setTimeout(() => {
+      if (leftover.length === 0) {
+        startEscape()
+        navigate("/chat", { replace: true })
+        return
+      }
+      const text = `${label}已经被删除了`
+      if (streamingRef.current) {
+        pendingFollowUpRef.current = text
+      } else {
+        void sendTextRef.current(text)
+      }
+      navigate("/chat", { replace: true })
+    }, 180)
+    return () => window.clearTimeout(t)
+  }, [searchParams, navigate, escaping, startEscape])
+
+  const handleSend = () => {
+    void sendText(input, { clearInput: true })
+  }
+
+  // 任务「去验收」等：带 q= 自动发一条，再清掉 URL 避免刷新重发
+  const autoQSentRef = useRef<string | null>(null)
+  useEffect(() => {
+    const q = searchParams.get("q")
+    if (!q?.trim()) return
+    const key = `${searchParams.get("task") || ""}|${q}`
+    if (autoQSentRef.current === key) return
+
+    const taskId = searchParams.get("task")?.trim() || ""
+    const text = q.trim()
+    let cancelled = false
+    const t = window.setTimeout(() => {
+      if (cancelled) return
+      // 真正发出去再记，避免 Strict Mode 清掉 timeout 后永远不发
+      autoQSentRef.current = key
+      void sendTextRef.current(text, { clearInput: true })
+      navigate(taskId ? `/chat?task=${encodeURIComponent(taskId)}` : "/chat", { replace: true })
+    }, 280)
+    return () => {
+      cancelled = true
+      window.clearTimeout(t)
+    }
+  }, [searchParams, navigate])
+
+  const handleWidgetResolved = (questionId: string, next: ChatQuestionWidget, followUp: string) => {
+    setMessages((prev) =>
+      prev.map((m) => {
+        if (!m.payload?.widgets?.some((w) => w.question.question_id === questionId)) return m
+        return {
+          ...m,
+          payload: {
+            ...m.payload,
+            widgets: m.payload.widgets.map((w) =>
+              w.question.question_id === questionId ? next : w
+            ),
+          },
+        }
+      })
+    )
+    if (streamingRef.current) {
+      pendingFollowUpRef.current = followUp
+    } else {
+      void sendText(followUp)
     }
   }
 
@@ -248,8 +532,12 @@ export function ChatPage() {
     })
   }
 
-  const selectedCollection = collections.find((c) => c.id === collectionId)
-  const zoneLabel = selectedCollection?.zone === "life" ? "生活区" : "学习区"
+  const slashQuery = input.startsWith("/") ? input.trim() : ""
+  // 只保留「指令以输入为前缀」：输入 /tina 时同时出现 /tina 与 /tina?
+  const slashHits = slashQuery
+    ? SLASH_COMMANDS.filter((c) => c.cmd.startsWith(slashQuery))
+    : []
+  const slashOpen = slashHits.length > 0 && !isStreaming && !loadingHistory
 
   // ─── 格式化时间 ────────────────────────────────────
 
@@ -286,7 +574,7 @@ export function ChatPage() {
                 <span className="text-card-title font-semibold text-ink-primary flex-1">历史会话</span>
                 <button
                   onClick={handleNewSession}
-                  className="w-7 h-7 rounded-md flex items-center justify-center text-ink-tertiary hover:text-primary hover:bg-primary-soft transition-colors"
+                  className="w-8 h-8 rounded-md flex items-center justify-center text-ink-tertiary hover:text-primary hover:bg-primary-soft transition-colors"
                   title="新建会话"
                 >
                   <Plus className="w-4 h-4" strokeWidth={2} />
@@ -295,7 +583,7 @@ export function ChatPage() {
             )}
             <button
               onClick={toggleHistorySidebar}
-              className="w-7 h-7 rounded-md flex items-center justify-center text-ink-tertiary hover:text-ink-primary hover:bg-surface-soft transition-colors shrink-0"
+              className="w-8 h-8 rounded-md flex items-center justify-center text-ink-tertiary hover:text-ink-primary hover:bg-surface-soft transition-colors shrink-0"
               title={sidebarOpen ? "折叠历史" : "展开历史"}
             >
               {sidebarOpen
@@ -325,6 +613,7 @@ export function ChatPage() {
                     )}
                   >
                     <span className="flex-1 truncate text-small">
+                      {s.kind === "onboarding" ? "引导 · " : ""}
                       {s.title || "新对话"}
                     </span>
                     <div className="flex items-center gap-1 shrink-0">
@@ -333,7 +622,7 @@ export function ChatPage() {
                       </span>
                       <button
                         onClick={(e) => handleDeleteSession(s, e)}
-                        className="w-5 h-5 rounded flex items-center justify-center opacity-0 group-hover:opacity-100 hover:bg-danger-soft hover:text-danger transition-all"
+                        className="w-8 h-8 rounded flex items-center justify-center opacity-100 can-hover:opacity-0 can-hover:group-hover:opacity-100 hover:bg-danger-soft hover:text-danger transition-all"
                         title="删除会话"
                       >
                         <Trash2 className="w-3 h-3" strokeWidth={2} />
@@ -363,6 +652,18 @@ export function ChatPage() {
 
         {/* ────── 对话主区域 ────── */}
         <div className="flex-1 flex flex-col min-w-0">
+          {tinaPresence && (
+            <div className="shrink-0 px-8 pt-1">
+              <div className="max-w-[860px] mx-auto">
+                <TinaFacePanel
+                  key={faceEnterKey}
+                  mood={faceMood}
+                  speaking={isStreaming && !faceUsingTool}
+                  usingTool={faceUsingTool}
+                />
+              </div>
+            </div>
+          )}
           <div ref={scrollRef} className="flex-1 overflow-y-auto scroll-thin px-8 py-6">
             <div className="max-w-[860px] mx-auto space-y-4">
               {loadingHistory ? (
@@ -379,9 +680,17 @@ export function ChatPage() {
                       key={m.id}
                       message={m}
                       onCitationClick={handleCitationClick}
+                      onWidgetResolved={handleWidgetResolved}
+                      onOnboardingAction={(text) => void sendText(text)}
+                      widgetsDisabled={isStreaming}
                     />
                   ))}
-                  {isStreaming && messages.length > 0 && messages[messages.length - 1].role === "assistant" && !messages[messages.length - 1].content && (
+                  {isStreaming &&
+                    messages.length > 0 &&
+                    messages[messages.length - 1].role === "assistant" &&
+                    !messages[messages.length - 1].content &&
+                    !messages[messages.length - 1].reasoning_content &&
+                    !(messages[messages.length - 1].payload?.widgets || []).length && (
                     <div className="flex items-center gap-1.5 pt-1 animate-msg-in">
                       <span className="w-1.5 h-1.5 rounded-full bg-sea animate-pulse" />
                       <span className="w-1.5 h-1.5 rounded-full bg-sea animate-pulse [animation-delay:150ms]" />
@@ -393,56 +702,78 @@ export function ChatPage() {
             </div>
           </div>
 
-          <div className="border-t border-line-soft bg-surface px-8 py-4">
+          <div className="px-8 pt-3 pb-4" style={{ paddingBottom: "calc(0.75rem + env(safe-area-inset-bottom))" }}>
             <div className="max-w-[860px] mx-auto">
-              <div className="flex flex-wrap items-center gap-2 mb-3">
-                <span className="text-small text-ink-tertiary">检索分区</span>
-                <Select value={collectionId} onValueChange={setCollectionId}>
-                  <SelectTrigger className="h-8 min-w-[180px] border-line bg-surface text-small text-ink-primary">
-                    <SelectValue placeholder="选择分区" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {collections.map((c) => (
-                      <SelectItem key={c.id} value={c.id}>
-                        {c.name} · {c.zone === "life" ? "生活区" : "学习区"}
-                      </SelectItem>
+              <div className="relative rounded-[24px] border border-line bg-surface shadow-xs focus-within:border-primary/50 focus-within:ring-2 focus-within:ring-primary/10 transition-all">
+                {slashOpen && (
+                  <div className="absolute left-0 right-0 bottom-full mb-2 rounded-[4px] border border-line bg-paper shadow-sm overflow-hidden z-20">
+                    <div className="px-3 py-1.5 text-caption text-ink-disabled border-b border-line-light">
+                      指令
+                    </div>
+                    {slashHits.map((item, i) => (
+                      <button
+                        key={item.cmd}
+                        type="button"
+                        onMouseDown={(e) => {
+                          e.preventDefault()
+                          setInput(item.cmd)
+                          setSlashIndex(0)
+                        }}
+                        className={cn(
+                          "w-full flex items-center gap-3 px-3 py-2.5 text-left text-small",
+                          i === slashIndex ? "bg-danger-soft text-danger" : "text-ink-soft hover:bg-paper-2",
+                        )}
+                      >
+                        <span className="font-mono">{item.cmd}</span>
+                        <span className="text-caption text-ink-disabled">{item.hint}</span>
+                      </button>
                     ))}
-                  </SelectContent>
-                </Select>
-                {selectedCollection && (
-                  <Badge variant={selectedCollection.zone === "life" ? "neutral" : "info"}>
-                    {selectedCollection.zone === "life" ? (
-                      <Home className="w-3 h-3 mr-1 inline" strokeWidth={2} />
-                    ) : (
-                      <GraduationCap className="w-3 h-3 mr-1 inline" strokeWidth={2} />
-                    )}
-                    当前对话将检索 {zoneLabel}
-                  </Badge>
+                  </div>
                 )}
-              </div>
-              <div className="relative rounded-lg border border-line bg-surface shadow-xs focus-within:border-primary/50 focus-within:ring-2 focus-within:ring-primary/10 transition-all">
-                <textarea
-                  value={input}
-                  onChange={(e) => setInput(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && !e.shiftKey) {
-                      e.preventDefault()
-                      handleSend()
-                    }
-                  }}
-                  placeholder="随便问点什么，或粘贴一段资料让 Tina 整理..."
-                  rows={3}
-                  className="w-full resize-none bg-transparent px-4 pt-3.5 pb-12 text-body text-ink-primary placeholder:text-ink-tertiary focus:outline-none"
-                  style={{ maxHeight: "240px", minHeight: "88px" }}
-                  disabled={isStreaming || loadingHistory}
-                />
-                <div className="absolute bottom-0 left-0 right-0 flex items-center justify-end px-3 py-2">
+                <div className="flex items-end gap-2 pl-4 pr-2 py-2">
+                  <textarea
+                    ref={inputRef}
+                    value={input}
+                    onChange={(e) => {
+                      setInput(e.target.value)
+                      setSlashIndex(0)
+                    }}
+                    onKeyDown={(e) => {
+                      if (slashOpen && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
+                        e.preventDefault()
+                        setSlashIndex((n) => {
+                          const next = e.key === "ArrowDown" ? n + 1 : n - 1
+                          return (next + slashHits.length) % slashHits.length
+                        })
+                        return
+                      }
+                      if (slashOpen && e.key === "Tab") {
+                        e.preventDefault()
+                        setInput(slashHits[slashIndex]?.cmd || slashHits[0].cmd)
+                        return
+                      }
+                      if (e.key === "Enter" && !e.shiftKey) {
+                        e.preventDefault()
+                        if (slashOpen && !isGlitchCmd(input) && input.trim() !== slashHits[slashIndex]?.cmd) {
+                          setInput(slashHits[slashIndex]?.cmd || slashHits[0].cmd)
+                          return
+                        }
+                        handleSend()
+                      }
+                    }}
+                    placeholder={tinaPresence ? "和 Tina 本体说点什么…" : "有什么想问 Tina 的…"}
+                    rows={1}
+                    className="flex-1 resize-none bg-transparent py-2 text-body text-ink-primary placeholder:text-ink-tertiary focus:outline-none leading-relaxed"
+                    style={{ maxHeight: "200px", overflowY: "auto" }}
+                    disabled={isStreaming || loadingHistory}
+                  />
                   <Button
                     variant={input.trim() && !isStreaming ? "primary" : "secondary"}
                     size="icon"
                     onClick={handleSend}
                     disabled={!input.trim() || isStreaming || loadingHistory}
                     aria-label="发送"
+                    className="shrink-0 rounded-full mb-0.5"
                   >
                     <ArrowUp className="w-[18px] h-[18px]" strokeWidth={2} />
                   </Button>

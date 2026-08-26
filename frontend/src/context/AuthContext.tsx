@@ -1,5 +1,18 @@
-import { createContext, useContext, useState, useEffect, type ReactNode } from "react"
-import { setToken, getToken, authApi } from "@/lib/api"
+import {
+  createContext,
+  useContext,
+  useState,
+  useCallback,
+  type ReactNode,
+} from "react"
+import {
+  isServerConfigured,
+  checkServerHealth,
+  clearApiBase,
+  getStoredNickname,
+  setStoredNickname,
+  profileApi,
+} from "@/lib/api"
 
 interface User {
   id: number
@@ -9,70 +22,91 @@ interface User {
   is_active: boolean
 }
 
+interface ServerState {
+  checked: boolean
+  ok: boolean
+  message: string
+}
+
 interface AuthState {
-  user: User | null
-  isLoading: boolean
-  login: (email: string, password: string) => Promise<void>
-  register: (email: string, password: string, nickname: string) => Promise<void>
-  logout: () => void
-  refresh: () => Promise<void>
+  user: User
+  serverConfigured: boolean
+  server: ServerState
+  /** 每次运行/进入应用时调用：检测当前服务器是否正常运行 */
+  checkServer: () => Promise<boolean>
+  /** 重新配置服务器地址（跳回设置页） */
+  resetServer: () => void
+  /** 设置本地昵称（有无名称时调用） */
+  setNickname: (name: string) => void
 }
 
 const AuthContext = createContext<AuthState | null>(null)
 
-export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<User | null>(null)
-  const [isLoading, setIsLoading] = useState(true)
+const LOCAL_EMAIL = "local@zhishi.local"
 
-  // 页面刷新时从 localStorage 恢复 token，尝试获取用户信息
-  useEffect(() => {
-    const token = getToken()
-    if (token) {
-      authApi.getMe()
-        .then(u => setUser({ id: u.id, email: u.email, nickname: u.nickname, username: u.username, is_active: u.is_active }))
-        .catch(() => { setToken(null); setUser(null) })
-        .finally(() => setIsLoading(false))
-    } else {
-      setIsLoading(false)
+export function AuthProvider({ children }: { children: ReactNode }) {
+  const [serverConfigured] = useState<boolean>(() => isServerConfigured())
+  const [server, setServer] = useState<ServerState>({
+    checked: false,
+    ok: false,
+    message: "",
+  })
+  const [nickname, setNicknameState] = useState<string>(() => getStoredNickname())
+
+  const checkServer = useCallback(async (): Promise<boolean> => {
+    const result = await checkServerHealth()
+    setServer({
+      checked: true,
+      ok: result.ok,
+      message: result.message,
+    })
+    if (result.ok) {
+      try {
+        const profile = await profileApi.get()
+        if (profile?.nickname) {
+          setStoredNickname(profile.nickname)
+          setNicknameState(profile.nickname)
+        }
+      } catch {
+        /* 档案接口未就绪时仍用本地昵称 */
+      }
+    }
+    return result.ok
+  }, [])
+
+  const resetServer = useCallback(() => {
+    clearApiBase()
+    window.location.href = "/setup"
+  }, [])
+
+  const setNickname = useCallback((name: string) => {
+    setStoredNickname(name)
+    setNicknameState(getStoredNickname())
+    const trimmed = (name || "").trim()
+    if (trimmed) {
+      void profileApi.put({ nickname: trimmed }).catch(() => {})
     }
   }, [])
 
-  const login = async (email: string, password: string) => {
-    const res = await authApi.login(email, password)
-    setToken(res.access_token)
-    const me = await authApi.getMe()
-    setUser({ id: me.id, email: me.email, nickname: me.nickname, username: me.username, is_active: me.is_active })
-  }
-
-  const register = async (email: string, password: string, nickname: string) => {
-    const res = await authApi.register(email, password, nickname)
-    if (res.access_token) {
-      setToken(res.access_token)
-      const me = await authApi.getMe()
-      setUser({ id: me.id, email: me.email, nickname: me.nickname, username: me.username, is_active: me.is_active })
-    } else {
-      // 注册成功但 Redis 不可用，需手动登录
-      throw new Error(res.message || "注册成功，请登录")
-    }
-  }
-
-  const logout = () => {
-    setToken(null)
-    setUser(null)
-  }
-
-  const refresh = async () => {
-    if (!getToken()) return
-    try {
-      const me = await authApi.getMe()
-      setUser({ id: me.id, email: me.email, nickname: me.nickname, username: me.username, is_active: me.is_active })
-    } catch {
-      logout()
-    }
+  const user: User = {
+    id: 1,
+    email: LOCAL_EMAIL,
+    nickname: nickname || "学习者",
+    username: "local",
+    is_active: true,
   }
 
   return (
-    <AuthContext.Provider value={{ user, isLoading, login, register, logout, refresh }}>
+    <AuthContext.Provider
+      value={{
+        user,
+        serverConfigured,
+        server,
+        checkServer,
+        resetServer,
+        setNickname,
+      }}
+    >
       {children}
     </AuthContext.Provider>
   )

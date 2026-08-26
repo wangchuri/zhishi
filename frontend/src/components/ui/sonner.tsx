@@ -1,35 +1,35 @@
-import {
-  CircleCheckIcon,
-  InfoIcon,
-  Loader2Icon,
-  OctagonXIcon,
-  TriangleAlertIcon,
-} from "lucide-react"
-import { useTheme } from "next-themes"
+import { Check } from "lucide-react"
 import { Toaster as Sonner, type ToasterProps } from "sonner"
 
+/** 纸本风 Toaster：默认右上，浅纸底 + 海色描边 */
 const Toaster = ({ ...props }: ToasterProps) => {
-  const { theme = "system" } = useTheme()
-
   return (
     <Sonner
-      theme={theme as ToasterProps["theme"]}
+      theme="light"
+      position="top-right"
       className="toaster group"
+      gap={10}
+      offset={16}
       icons={{
-        success: <CircleCheckIcon className="size-4" />,
-        info: <InfoIcon className="size-4" />,
-        warning: <TriangleAlertIcon className="size-4" />,
-        error: <OctagonXIcon className="size-4" />,
-        loading: <Loader2Icon className="size-4 animate-spin" />,
+        success: <Check className="size-3.5 text-sea" strokeWidth={2.5} />,
       }}
-      style={
-        {
-          "--normal-bg": "var(--popover)",
-          "--normal-text": "var(--popover-foreground)",
-          "--normal-border": "var(--border)",
-          "--border-radius": "var(--radius)",
-        } as React.CSSProperties
-      }
+      toastOptions={{
+        classNames: {
+          toast:
+            "group toast !bg-paper !text-ink !border-line !shadow-[0_8px_28px_-12px_rgba(20,33,43,0.18)] " +
+            "!rounded-2xl !font-[inherit] !gap-3 !px-4 !py-3.5",
+          title: "!text-ink !text-body !font-medium !font-display",
+          description: "!text-ink-soft !text-caption",
+          success: "!border-sea/30 !bg-paper",
+          error: "!border-danger/35 !bg-paper",
+          warning: "!border-line !bg-paper",
+          info: "!border-line !bg-paper",
+          closeButton:
+            "!bg-paper-2 !border-line !text-ink-soft hover:!bg-paper-deep hover:!text-ink",
+          actionButton: "!bg-sea !text-paper",
+          cancelButton: "!bg-paper-2 !text-ink-soft",
+        },
+      }}
       {...props}
     />
   )

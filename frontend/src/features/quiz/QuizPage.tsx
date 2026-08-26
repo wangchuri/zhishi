@@ -9,7 +9,9 @@ import {
   HelpCircle,
   Loader2,
   Play,
+  Search,
   Trash2,
+  X,
 } from "lucide-react"
 import { AppShell } from "@/components/layout/AppShell"
 import { PageHeader } from "@/components/blocks/PageHeader"
@@ -31,6 +33,7 @@ import {
 } from "@/components/ui/alert-dialog"
 import { StatCard } from "@/components/ui/stat-card"
 import { questionsApi, quizApi } from "@/lib/api"
+import { notifyCompletedTasks } from "@/lib/taskNotify"
 import { useKbDocuments } from "@/hooks/useKbDocuments"
 import type {
   KnowledgeDoc,
@@ -42,7 +45,8 @@ import type {
 } from "@/types"
 import { QuizReviewPanel } from "./QuizReviewPanel"
 import { QuizQuestionInput } from "./QuizQuestionInput"
-import { QuizAnswerFeedback, getSubmitButtonLabel } from "./QuizAnswerFeedback"
+import { QuizAnswerFeedback, QuizAnswerFeedbackActions, getSubmitButtonLabel } from "./QuizAnswerFeedback"
+import { StreakCelebrationDialog } from "./StreakCelebrationDialog"
 import {
   QUESTION_TYPE_LABEL,
   buildUserAnswerPayload,
@@ -110,6 +114,7 @@ export function QuizPage() {
   const [selectedOption, setSelectedOption] = useState<string | null>(null)
   const [textAnswer, setTextAnswer] = useState("")
   const [blankAnswers, setBlankAnswers] = useState<string[]>([])
+  const [customAnswers, setCustomAnswers] = useState<Record<string, string>>({})
   const [submitting, setSubmitting] = useState(false)
   const [lastResult, setLastResult] = useState<QuizAnswerResult | null>(null)
   const [reviewItems, setReviewItems] = useState<QuizReviewItem[]>([])
@@ -120,9 +125,61 @@ export function QuizPage() {
   } | null>(null)
   const [questionListData, setQuestionListData] = useState<QuestionListResult | null>(null)
   const [loadingQuestions, setLoadingQuestions] = useState(false)
+  const [searchKeyword, setSearchKeyword] = useState("")
   const [questionStartTime, setQuestionStartTime] = useState(Date.now())
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [deletingQuestions, setDeletingQuestions] = useState(false)
+  const [streakDialog, setStreakDialog] = useState<{ open: boolean; streak: number }>({ open: false, streak: 0 })
+
+  // 如果 URL 中有 session_id，直接加载该会话（从 /quiz/doc/:docId 跳转过来）
+  const sessionIdFromUrl = searchParams.get("session_id")
+  useEffect(() => {
+    if (!sessionIdFromUrl) return
+    quizApi
+      .getSession(sessionIdFromUrl)
+      .then((res) => {
+        const s = res as unknown as QuizSession
+        setSession(s)
+        setCurrentIndex(s.answered_count) // 跳转到已答位置
+        setPhase("quiz")
+      })
+      .catch(() => {
+        setSetupAlert("会话加载失败，请重新选择资料开始练习")
+      })
+  }, [sessionIdFromUrl])
+
+  const questionIdsFromUrl = searchParams.get("question_ids")
+  useEffect(() => {
+    if (sessionIdFromUrl || !questionIdsFromUrl) return
+    const ids = questionIdsFromUrl.split(",").map((s) => s.trim()).filter(Boolean)
+    if (!ids.length) return
+    const documentId = searchParams.get("document_id") || undefined
+    const taskId = searchParams.get("task_id") || undefined
+    let cancelled = false
+    quizApi
+      .createSession({
+        document_id: documentId,
+        question_ids: ids,
+        title: "今日任务",
+        resume: true,
+        task_id: taskId,
+      })
+      .then((res) => {
+        if (cancelled) return
+        const s = res as unknown as QuizSession
+        setSession(s)
+        setCurrentIndex(s.answered_count)
+        setPhase("quiz")
+        // 换成 session_id，刷新/再进都续刷，不再新建
+        navigate(`/quiz/session?session_id=${encodeURIComponent(s.id)}`, { replace: true })
+      })
+      .catch(() => {
+        if (!cancelled) setSetupAlert("任务题目加载失败，请从首页再进一次")
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [questionIdsFromUrl, sessionIdFromUrl, searchParams, navigate])
 
   const selectedDocument = documents.find((d) => d.id === selectedDocumentId)
   const isLifeZone = selectedCollection?.zone === "life"
@@ -137,10 +194,10 @@ export function QuizPage() {
     }
   }, [])
 
-  const loadQuestionList = useCallback(async (documentId: string) => {
+  const loadQuestionList = useCallback(async (documentId: string, keyword?: string) => {
     setLoadingQuestions(true)
     try {
-      const res = (await questionsApi.list({ document_id: documentId })) as QuestionListResult
+      const res = (await questionsApi.list({ document_id: documentId, keyword })) as QuestionListResult
       const items = res.questions || []
       const data: QuestionListResult = {
         ...res,
@@ -156,6 +213,23 @@ export function QuizPage() {
       setLoadingQuestions(false)
     }
   }, [])
+
+  // 搜索防抖
+  const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  useEffect(() => {
+    if (!selectedDocumentId || isLifeZone) {
+      setQuestionListData(null)
+      return
+    }
+    if (searchTimerRef.current) clearTimeout(searchTimerRef.current)
+    const timer = setTimeout(() => {
+      void loadQuestionList(selectedDocumentId, searchKeyword.trim() || undefined)
+    }, 300)
+    searchTimerRef.current = timer
+    return () => {
+      if (searchTimerRef.current) clearTimeout(searchTimerRef.current)
+    }
+  }, [selectedDocumentId, searchKeyword, isLifeZone, loadQuestionList])
 
   useEffect(() => {
     if (loadingDocuments || documents.length === 0 || selectedCollection?.zone === "life") return
@@ -187,14 +261,6 @@ export function QuizPage() {
       setSelectedDocumentId(urlDocId)
     }
   }, [documents, searchParams])
-
-  useEffect(() => {
-    if (!selectedDocumentId || isLifeZone) {
-      setQuestionListData(null)
-      return
-    }
-    loadQuestionList(selectedDocumentId)
-  }, [selectedDocumentId, isLifeZone, loadQuestionList])
 
   // ── 轮询文档出题状态，显示顶部横幅 ──
   const generatingDoc = useMemo(() => {
@@ -287,11 +353,11 @@ export function QuizPage() {
     }
     setTextAnswer("")
     setSelectedOption(null)
+    setCustomAnswers({})
   }, [currentQuestion?.question_id])
 
   const docReadyForQuiz =
     selectedDocument &&
-    selectedDocument.question_gen_status === "completed" &&
     (selectedDocument.questionCount ?? 0) > 0
 
   const canStartQuiz =
@@ -370,6 +436,11 @@ export function QuizPage() {
 
   const finishSession = async (sessionId: string) => {
     try {
+      await quizApi.completeSession(sessionId)
+    } catch {
+      /* ignore */
+    }
+    try {
       const res = await quizApi.getResults(sessionId)
       setResultsSummary({
         correct: Number(res.correct_count) || 0,
@@ -404,8 +475,8 @@ export function QuizPage() {
   const submitAnswerCore = async (opts?: { requestAiGrade?: boolean }) => {
     if (!session || !currentQuestion || submitting) return
     const qtype = currentQuestion.question_type || "single_choice"
-    const payload = buildUserAnswerPayload(qtype, selectedOption, textAnswer, blankAnswers)
-    if (!opts?.requestAiGrade && !canSubmitAnswer(qtype, selectedOption, textAnswer, blankAnswers)) {
+    const payload = buildUserAnswerPayload(qtype, selectedOption, textAnswer, blankAnswers, customAnswers)
+    if (!opts?.requestAiGrade && !canSubmitAnswer(qtype, selectedOption, textAnswer, blankAnswers, customAnswers)) {
       return
     }
 
@@ -420,7 +491,11 @@ export function QuizPage() {
         request_ai_grade: opts?.requestAiGrade,
       })
       const result = res as unknown as QuizAnswerResult
+      notifyCompletedTasks(result)
       setLastResult(result)
+      if (result.status === "correct" && (result.current_streak ?? 0) >= 3) {
+        setStreakDialog({ open: true, streak: result.current_streak ?? 0 })
+      }
       setSession((prev) =>
         prev
           ? {
@@ -460,6 +535,7 @@ export function QuizPage() {
         time_spent_seconds: timeSpent,
       })
       const result = res as unknown as QuizAnswerResult
+      notifyCompletedTasks(result)
       setSession((prev) =>
         prev
           ? {
@@ -470,13 +546,34 @@ export function QuizPage() {
           : prev
       )
       addReviewItem(result, currentQuestion.stem, "我不会")
-      // "我不会" 不展示答案，直接跳到下一题，由 Tutor 窗口进行辅导
-      await advanceOrFinish(result)
-      // advanceOrFinish 会切换 currentIndex → TutorPanel 重新挂载，
-      // 延时发送消息确保新面板已就绪
-      setTimeout(() => {
-        tutorPanelRef.current?.sendMessage("我不会做这道题，请给我一些提示")
-      }, 100)
+      // "我不会" 不展示答案，由 Tutor 窗口进行辅导，
+      // 设置 lastResult 让反馈面板显示「已标记「我不会」」
+      setLastResult(result)
+      // 发送辅导消息到当前题的 TutorPanel
+      tutorPanelRef.current?.sendMessage("我不会做这道题，请给我一些提示")
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "标记失败"
+      if (isSessionExpiredError(msg)) handleSessionExpired()
+      else setError(msg)
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  const handleMarkAsUnknown = async () => {
+    if (!session || !currentQuestion || submitting) return
+    setSubmitting(true)
+    setError(null)
+    try {
+      const res = await quizApi.submitAnswer(session.id, {
+        question_id: currentQuestion.question_id,
+        status: "unknown",
+      })
+      const result = res as unknown as QuizAnswerResult
+      notifyCompletedTasks(result)
+      setLastResult(result)
+      addReviewItem(result, currentQuestion.stem, "我不会")
+      tutorPanelRef.current?.sendMessage("这道题我做错了，请帮我讲解一下")
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "标记失败"
       if (isSessionExpiredError(msg)) handleSessionExpired()
@@ -504,8 +601,8 @@ export function QuizPage() {
         title="题库页"
         subtitle="按知识库文档浏览题目，选中后开始练习，答题时可随时使用 AI 辅导"
       >
-        <Button variant="secondary" size="md" onClick={() => navigate("/question-gen")}>
-          前往出题
+        <Button variant="secondary" size="md" onClick={() => navigate("/quiz")}>
+          返回资料
         </Button>
       </PageHeader>
 
@@ -536,7 +633,7 @@ export function QuizPage() {
               icon={Brain}
               title="暂无知识库分区"
               description="请先在知识库上传学习区文档并等待分段完成"
-              primaryAction={{ label: "去知识库", onClick: () => navigate("/knowledge") }}
+              primaryAction={{ label: "去资料", onClick: () => navigate("/quiz") }}
             />
           ) : (
             <>
@@ -546,8 +643,8 @@ export function QuizPage() {
                   <AlertTitle>暂时无法开始练习</AlertTitle>
                   <AlertDescription className="text-ink-secondary">
                     {setupAlert}{" "}
-                    <Link to="/knowledge" className="text-primary hover:underline">
-                      前往知识库查看文档状态
+                    <Link to="/quiz" className="text-primary hover:underline">
+                      前往资料查看文档状态
                     </Link>
                   </AlertDescription>
                 </Alert>
@@ -564,7 +661,7 @@ export function QuizPage() {
                   onDocumentSelect={handleDocumentSelect}
                   emptyTitle="该分区还没有文档"
                   emptyDescription="上传资料并完成分段后，可在此刷题练习"
-                  emptyAction={{ label: "去知识库", onClick: () => navigate("/knowledge") }}
+                  emptyAction={{ label: "去资料", onClick: () => navigate("/quiz") }}
                 />
 
                 <div className="flex flex-col min-h-0">
@@ -648,10 +745,30 @@ export function QuizPage() {
                           )}
 
                           <div className="flex-1 min-h-0 flex flex-col p-4">
-                            <div className="flex items-center justify-between mb-3 shrink-0">
+                            <div className="flex items-center justify-between mb-2 shrink-0">
                               <div className="text-small font-medium text-ink-primary">题目列表</div>
                               {loadingQuestions && (
                                 <Loader2 className="w-4 h-4 animate-spin text-ink-tertiary" />
+                              )}
+                            </div>
+                            <div className="relative mb-3 shrink-0">
+                              <Search className="w-4 h-4 text-ink-tertiary absolute left-3 top-1/2 -translate-y-1/2" />
+                              <input
+                                type="text"
+                                value={searchKeyword}
+                                onChange={(e) => setSearchKeyword(e.target.value)}
+                                placeholder="搜索题目（按题干关键词）"
+                                className="w-full h-9 pl-9 pr-8 rounded-lg border border-line-soft bg-surface-soft text-small text-ink-primary placeholder:text-ink-tertiary focus:outline-none focus:ring-2 focus:ring-primary/30"
+                              />
+                              {searchKeyword && (
+                                <button
+                                  type="button"
+                                  onClick={() => setSearchKeyword("")}
+                                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-ink-tertiary hover:text-ink-primary"
+                                  aria-label="清除搜索"
+                                >
+                                  <X className="w-4 h-4" />
+                                </button>
                               )}
                             </div>
                             {!loadingQuestions && questionListData && questionListData.questions.length > 0 ? (
@@ -669,6 +786,8 @@ export function QuizPage() {
                                   </li>
                                 ))}
                               </ul>
+                            ) : !loadingQuestions && questionListData && searchKeyword.trim() ? (
+                              <p className="text-caption text-ink-tertiary">没有匹配的题目</p>
                             ) : !loadingQuestions && docReadyForQuiz ? (
                               <p className="text-caption text-ink-tertiary">暂无题目详情</p>
                             ) : !loadingQuestions ? (
@@ -687,10 +806,15 @@ export function QuizPage() {
       )}
 
       {phase === "quiz" && session && currentQuestion && (
-        <div className="grid grid-cols-1 lg:grid-cols-[1fr_340px] gap-6 lg:h-[calc(100vh-12rem)] min-h-0">
-          <div className="bg-surface border border-line-soft rounded-lg shadow-xs p-6 overflow-y-auto scroll-thin min-h-0">
-            <div className="flex items-center justify-between mb-6">
-              <div className="flex items-center gap-2">
+        <div
+          className="grid grid-cols-1 lg:grid-cols-[1fr_340px] gap-6 lg:h-[calc(100dvh-12rem)] min-h-0"
+          data-tip-doc={selectedDocumentId || undefined}
+          data-tip-doc-name={selectedDocument?.name || undefined}
+        >
+          <div className="bg-surface border border-line-soft rounded-lg shadow-xs flex flex-col min-h-0 overflow-hidden">
+            {/* 题目状态头 */}
+            <div className="flex items-center justify-between gap-3 px-6 py-4 border-b border-line-soft shrink-0">
+              <div className="flex items-center gap-2 flex-wrap">
                 <Badge variant="neutral">
                   第 {currentIndex + 1} / {session.total_questions} 题
                 </Badge>
@@ -708,55 +832,74 @@ export function QuizPage() {
                   </Badge>
                 )}
               </div>
-              <span className="text-small text-ink-tertiary truncate max-w-[50%]">
+              <span className="text-small text-ink-tertiary truncate max-w-[40%]">
                 {selectedDocument?.name || session.title}
               </span>
             </div>
 
-            <QuizQuestionInput
-              question={currentQuestion}
-              selectedOption={selectedOption}
-              textAnswer={textAnswer}
-              blankAnswers={blankAnswers}
-              lastResult={lastResult}
-              submitting={submitting}
-              onSelectOption={setSelectedOption}
-              onTextAnswerChange={setTextAnswer}
-              onBlankAnswersChange={setBlankAnswers}
-            />
-
-            {!lastResult ? (
-              <div className="flex flex-wrap items-center gap-3">
-                <Button
-                  variant="primary"
-                  size="md"
-                  onClick={handleSubmitAnswer}
-                  disabled={
-                    submitting ||
-                    !canSubmitAnswer(
-                      currentQuestion.question_type,
-                      selectedOption,
-                      textAnswer,
-                      blankAnswers
-                    )
-                  }
-                >
-                  {getSubmitButtonLabel(submitting, currentQuestion.question_type)}
-                </Button>
-                <Button variant="secondary" size="md" onClick={handleUnknown} disabled={submitting}>
-                  <HelpCircle className="w-4 h-4" strokeWidth={2} />
-                  我不会
-                </Button>
-              </div>
-            ) : (
-              <QuizAnswerFeedback
+            {/* 题干滚动区：只滚动题目/反馈内容 */}
+            <div className="flex-1 min-h-0 overflow-y-auto scroll-thin p-6">
+              <QuizQuestionInput
                 question={currentQuestion}
+                selectedOption={selectedOption}
+                textAnswer={textAnswer}
+                blankAnswers={blankAnswers}
+                customAnswers={customAnswers}
                 lastResult={lastResult}
                 submitting={submitting}
-                onNext={handleNextAfterReview}
-                onAiReview={handleAiReview}
+                onSelectOption={setSelectedOption}
+                onTextAnswerChange={setTextAnswer}
+                onBlankAnswersChange={setBlankAnswers}
+                onCustomAnswersChange={setCustomAnswers}
               />
-            )}
+
+              {lastResult && (
+                <div className="mt-6">
+                  <QuizAnswerFeedback
+                    question={currentQuestion}
+                    lastResult={lastResult}
+                  />
+                </div>
+              )}
+            </div>
+
+            {/* 操作栏常驻：提交/下一题 不随内容滚出视口 */}
+            <div className="shrink-0 border-t border-line-soft px-6 py-4">
+              {!lastResult ? (
+                <div className="flex flex-wrap items-center gap-3">
+                  <Button
+                    variant="primary"
+                    size="md"
+                    onClick={handleSubmitAnswer}
+                    disabled={
+                      submitting ||
+                      !canSubmitAnswer(
+                        currentQuestion.question_type,
+                        selectedOption,
+                        textAnswer,
+                        blankAnswers,
+                        customAnswers
+                      )
+                    }
+                  >
+                    {getSubmitButtonLabel(submitting, currentQuestion.question_type)}
+                  </Button>
+                  <Button variant="secondary" size="md" onClick={handleUnknown} disabled={submitting}>
+                    <HelpCircle className="w-4 h-4" strokeWidth={2} />
+                    我不会
+                  </Button>
+                </div>
+              ) : (
+                <QuizAnswerFeedbackActions
+                  question={currentQuestion}
+                  lastResult={lastResult}
+                  submitting={submitting}
+                  onNext={handleNextAfterReview}
+                  onAiReview={handleAiReview}
+                  onMarkUnknown={handleMarkAsUnknown}
+                />
+              )}
+            </div>
           </div>
 
           <div className="flex flex-col min-h-0 h-[420px] lg:h-full overflow-hidden">
@@ -836,6 +979,12 @@ export function QuizPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <StreakCelebrationDialog
+        open={streakDialog.open}
+        streak={streakDialog.streak}
+        onClose={() => setStreakDialog((s) => ({ ...s, open: false }))}
+      />
     </AppShell>
   )
 }

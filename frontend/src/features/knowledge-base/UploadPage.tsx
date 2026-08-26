@@ -8,6 +8,7 @@ import {
   Loader2,
   FileUp,
   XCircle,
+  Package,
 } from "lucide-react"
 import { AppShell } from "@/components/layout/AppShell"
 import { RightPanel } from "@/components/layout/RightPanel"
@@ -19,6 +20,7 @@ import { TimelineStep } from "@/components/blocks/TimelineStep"
 import { cn } from "@/lib/utils"
 import { SegmentedTabs } from "@/components/ui/segmented-tabs"
 import { kbApi } from "@/lib/api"
+import { notifyCompletedTasks } from "@/lib/taskNotify"
 import { toast } from "sonner"
 import type { KbCollection } from "@/types"
 
@@ -68,16 +70,23 @@ export function UploadPage() {
   const [tasks, setTasks] = useState<UploadTask[]>([])
   const [uploading, setUploading] = useState(false)
   const [maxUploadSize, setMaxUploadSize] = useState("")
-  const [showDemoWarning, setShowDemoWarning] = useState(false)
   const [collections, setCollections] = useState<KbCollection[]>([])
   const [selectedCollectionId, setSelectedCollectionId] = useState("")
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const importInputRef = useRef<HTMLInputElement>(null)
+  const [importing, setImporting] = useState(false)
+  const [importResult, setImportResult] = useState<{
+    fileName: string
+    status: "success" | "duplicate" | "error"
+    imported?: number
+    reused?: number
+    message?: string
+  } | null>(null)
 
   useEffect(() => {
     kbApi.getConfig()
       .then((res) => {
         setMaxUploadSize(res.max_upload_size_display || "")
-        setShowDemoWarning(!res.use_oss && (res.max_upload_size ?? 0) > 0)
       })
       .catch(() => {})
     kbApi
@@ -96,13 +105,13 @@ export function UploadPage() {
     uploadMethods.find((m) => m.id === active)?.accept ?? ".pdf,.txt,.md,.docx,.csv,.json,.html,.htm"
 
   const pollStatus = useCallback(async (task: UploadTask) => {
-    const maxPolls = 60 // 最多轮询 60 次（约 2 分钟）
+    const maxPolls = 900 // OCR/MinerU 可能很久，约 30 分钟
     let polls = 0
 
     const poll = async () => {
       if (polls >= maxPolls) {
         setTasks((prev) =>
-          prev.map((t) => (t.id === task.id ? { ...t, status: "error" as const, errorMessage: "索引超时" } : t))
+          prev.map((t) => (t.id === task.id ? { ...t, status: "error" as const, errorMessage: "解析超时，可刷新页面查看是否已完成" } : t))
         )
         return
       }
@@ -110,6 +119,7 @@ export function UploadPage() {
 
       try {
         const res = await kbApi.getDocumentStatus(task.id)
+        notifyCompletedTasks(res)
         const status = res.status
         const ocrStatus = res.ocr_status as string | undefined
 
@@ -177,7 +187,7 @@ export function UploadPage() {
         const items = (res.documents || []) as Array<Record<string, unknown>>
         const processing = items.filter((d) => {
           const ocr = String(d.ocr_status || "") === "processing"
-          const indexing = String(d.indexing_status || "") === "processing"
+          const indexing = String(d.status || d.indexing_status || "") === "processing"
           const segment = String(d.segment_status || "") === "processing"
           return ocr || indexing || segment
         })
@@ -237,6 +247,11 @@ export function UploadPage() {
         // 判断是否为图片（需要 OCR）
         const isImage = /\.(png|jpg|jpeg|webp|bmp)$/i.test(file.name)
 
+        // 判断是否为 PDF：询问用户是否扫描件（自动判断不可靠时人工确认）
+        const isPdf = /\.pdf$/i.test(file.name)
+        const forceScanned =
+          isPdf && window.confirm(`「${file.name}」是扫描件吗？\n\n确定 → 走 OCR 扫描件识别\n取消 → 按普通 PDF 处理`)
+
         // 添加临时任务
         const tempId = `uploading-${Date.now()}-${file.name}`
         setTasks((prev) => [
@@ -252,7 +267,8 @@ export function UploadPage() {
         }
 
         try {
-          const res = await kbApi.upload(file, selectedCollectionId || undefined)
+          const res = await kbApi.upload(file, selectedCollectionId || undefined, forceScanned)
+          notifyCompletedTasks(res)
 
           if (res.warning) {
             toast.warning(res.warning, { duration: 8000 })
@@ -279,7 +295,10 @@ export function UploadPage() {
             documentId: res.document_id,
             fileName: res.file_name || file.name,
             fileSize: file.size,
-            status: res.ocr_status === "processing" ? "ocr" : "indexing",
+            status:
+              res.ocr_processed || res.ocr_status === "processing"
+                ? "ocr"
+                : "indexing",
             ocrCurrentPage: Number(res.ocr_current_page ?? 0),
             ocrTotalPages: Number(res.ocr_total_pages ?? 0),
           }
@@ -320,6 +339,55 @@ export function UploadPage() {
       }
     },
     [handleFiles]
+  )
+
+  const handleImport = useCallback(
+    async (file: File) => {
+      if (!file) return
+      setImporting(true)
+      setImportResult(null)
+      try {
+        const res = await kbApi.importPackage(file, selectedCollectionId || undefined)
+        if (res.status === "duplicate") {
+          setImportResult({
+            fileName: file.name,
+            status: "duplicate",
+            reused: res.reused_questions,
+          })
+          toast.info(`《${file.name}》已导入过，跳过`)
+        } else {
+          setImportResult({
+            fileName: file.name,
+            status: "success",
+            imported: res.imported_questions,
+            reused: res.reused_questions,
+          })
+          toast.success(`书本导入成功（含 ${res.imported_questions ?? 0} 题，复用 ${res.reused_questions ?? 0} 题）`)
+        }
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : "导入失败"
+        setImportResult({
+          fileName: file.name,
+          status: "error",
+          message: msg,
+        })
+        toast.error(msg)
+      } finally {
+        setImporting(false)
+      }
+    },
+    [selectedCollectionId]
+  )
+
+  const onImportInputChange = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0]
+      if (file) {
+        void handleImport(file)
+        e.target.value = ""
+      }
+    },
+    [handleImport]
   )
 
   const completedCount = tasks.filter((t) => t.status === "completed").length
@@ -393,8 +461,8 @@ export function UploadPage() {
         </div>
       </div>
 
-      {/* 上传方式卡片 */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+      {/* 上传方式卡片 + 导入卡片 */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 mb-8">
         {uploadMethods.map((m) => (
           <button
             key={m.id}
@@ -418,7 +486,80 @@ export function UploadPage() {
             <div className="text-small text-ink-tertiary">{m.desc}</div>
           </button>
         ))}
+
+        {/* 导入书本包卡片 */}
+        <button
+          type="button"
+          onClick={() => importInputRef.current?.click()}
+          disabled={importing}
+          className={cn(
+            "text-left bg-surface border rounded-lg p-5 transition-all duration-160",
+            "border-line-soft shadow-xs hover:-translate-y-0.5 hover:shadow-md hover:border-primary/30",
+            importing && "opacity-70"
+          )}
+        >
+          <div className="w-11 h-11 rounded-md flex items-center justify-center mb-3 bg-primary-soft text-primary">
+            {importing ? (
+              <Loader2 className="w-5 h-5 animate-spin" strokeWidth={2} />
+            ) : (
+              <Package className="w-5 h-5" strokeWidth={2} />
+            )}
+          </div>
+          <div className="text-card-title font-semibold text-ink-primary mb-1">
+            {importing ? "导入中..." : "导入书本包"}
+          </div>
+          <div className="text-small text-ink-tertiary">
+            {importing ? "合并数据库 + 向量化中..." : "分享的 zip 包，直接复用题库"}
+          </div>
+        </button>
       </div>
+
+      {/* 导入结果 */}
+      {importResult && (
+        <div
+          className={cn(
+            "mb-8 rounded-lg border px-4 py-3 text-body",
+            importResult.status === "success"
+              ? "border-success/30 bg-success-soft text-ink"
+              : importResult.status === "duplicate"
+                ? "border-warning/30 bg-warning-soft text-ink"
+                : "border-danger/30 bg-danger-soft text-danger"
+          )}
+        >
+          <div className="flex items-start gap-2">
+            {importResult.status === "success" ? (
+              <CheckCircle2 className="w-4 h-4 mt-0.5 text-success shrink-0" strokeWidth={2} />
+            ) : importResult.status === "duplicate" ? (
+              <FileUp className="w-4 h-4 mt-0.5 text-warning shrink-0" strokeWidth={2} />
+            ) : (
+              <XCircle className="w-4 h-4 mt-0.5 shrink-0" strokeWidth={2} />
+            )}
+            <div>
+              <div className="font-medium">《{importResult.fileName}》</div>
+              {importResult.status === "success" && (
+                <div className="text-small text-ink-soft">
+                  导入成功：新建 {importResult.imported ?? 0} 题，复用 {importResult.reused ?? 0} 题。书本已分段并完成向量化。
+                </div>
+              )}
+              {importResult.status === "duplicate" && (
+                <div className="text-small text-ink-soft">该书已在你的知识库中（复用 {importResult.reused ?? 0} 题），已跳过。</div>
+              )}
+              {importResult.status === "error" && (
+                <div className="text-small">{importResult.message || "导入失败"}</div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 导入文件选择器 */}
+      <input
+        ref={importInputRef}
+        type="file"
+        accept=".zip"
+        className="hidden"
+        onChange={onImportInputChange}
+      />
 
       {/* 隐藏的文件选择器 */}
       <input
@@ -461,16 +602,8 @@ export function UploadPage() {
             </div>
             <div className="text-caption text-ink-tertiary">
               支持 {SUPPORTED_LABEL}
+              {maxUploadSize && ` · 单文件最大 ${maxUploadSize}`}
             </div>
-            {showDemoWarning && (
-              <div className="mt-3 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-warning-soft text-warning text-caption">
-                <svg className="w-3.5 h-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-                  <path d="M12 9v4M12 17h.01" />
-                  <circle cx="12" cy="12" r="10" />
-                </svg>
-                演示环境限制：单个文件不超过 {maxUploadSize}
-              </div>
-            )}
           </>
         )}
       </div>

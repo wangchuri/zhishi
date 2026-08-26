@@ -1,0 +1,596 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>知拾 · 出题 Agent 题型效果预览</title>
+<style>
+  /* ===== 知拾设计令牌 ===== */
+  :root {
+    --ink: #14212B;
+    --ink-soft: #2A3A47;
+    --ink-disabled: #8C9398;
+    --paper: #F3EFE6;
+    --paper-2: #E8E2D4;
+    --paper-deep: #DDD5C5;
+    --sea: #1F5C5A;
+    --sea-bright: #2F8A86;
+    --sea-subtle: rgba(31, 92, 90, 0.08);
+    --ember: #C45C26;
+    --ember-subtle: rgba(196, 92, 38, 0.08);
+    --mist: #C5D0C8;
+    --line: rgba(20, 33, 43, 0.12);
+    --line-light: rgba(20, 33, 43, 0.06);
+    --success: #2C7A5A;
+    --success-soft: rgba(44, 122, 90, 0.08);
+    --danger: #A0352B;
+    --danger-soft: rgba(160, 53, 43, 0.08);
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background-color: var(--paper);
+    background-image:
+      radial-gradient(ellipse at 50% 0%, rgba(31, 92, 90, 0.04) 0%, transparent 60%),
+      linear-gradient(180deg, #EFE9DC 0%, #F3EFE6 40%, #EBE6DB 100%);
+    background-attachment: fixed;
+    color: var(--ink);
+    font-family: 'Outfit', 'PingFang SC', 'Microsoft YaHei', 'Noto Sans SC', sans-serif;
+    -webkit-font-smoothing: antialiased;
+    line-height: 1.6;
+    padding: 32px 20px 80px;
+  }
+
+  .page {
+    max-width: 760px;
+    margin: 0 auto;
+  }
+
+  .page-header {
+    text-align: center;
+    margin-bottom: 40px;
+  }
+
+  .page-header h1 {
+    font-family: 'Fraunces', 'Songti SC', 'Noto Serif SC', '宋体', serif;
+    font-size: 28px;
+    line-height: 1.2;
+    letter-spacing: -0.02em;
+    margin: 0 0 8px;
+  }
+
+  .page-header .subtitle {
+    color: var(--ink-soft);
+    font-size: 13px;
+  }
+
+  .type-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: var(--sea-subtle);
+    color: var(--sea);
+    font-size: 12px;
+    font-weight: 600;
+    padding: 3px 10px;
+    border-radius: 999px;
+    margin-bottom: 14px;
+  }
+
+  .tool-badge {
+    font-family: monospace;
+    background: var(--paper-deep);
+    color: var(--ink-soft);
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 11px;
+  }
+
+  /* ===== 题目卡片 ===== */
+  .question-card {
+    background: var(--paper-2);
+    border: 1px solid var(--line-light);
+    border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(20, 33, 43, 0.06);
+    padding: 28px;
+    margin-bottom: 32px;
+    animation: page-in 300ms ease-out both;
+  }
+
+  @keyframes page-in {
+    from { opacity: 0; transform: translateY(6px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  .stem {
+    font-size: 17px;
+    font-weight: 600;
+    line-height: 1.4;
+    margin: 0 0 20px;
+  }
+
+  .stem .blank-highlight {
+    display: inline-block;
+    min-width: 6rem;
+    max-width: 12rem;
+    border-bottom: 2px solid var(--sea);
+    padding: 0 4px;
+    margin: 0 4px;
+    color: var(--sea);
+    font-weight: 600;
+  }
+
+  /* ===== 单选题选项 ===== */
+  .option-list { display: flex; flex-direction: column; gap: 10px; margin-bottom: 20px; }
+
+  .option-btn {
+    width: 100%;
+    text-align: left;
+    background: transparent;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 12px 16px;
+    font-size: 15px;
+    font-family: inherit;
+    color: var(--ink);
+    cursor: pointer;
+    transition: all 0.15s ease-out;
+  }
+
+  .option-btn:hover {
+    border-color: rgba(31, 92, 90, 0.3);
+    background: rgba(31, 92, 90, 0.03);
+  }
+
+  .option-btn.selected {
+    border-color: var(--sea);
+    background: var(--sea-subtle);
+  }
+
+  .option-btn.correct {
+    border-color: var(--success);
+    background: var(--success-soft);
+  }
+
+  .option-btn.wrong {
+    border-color: var(--danger);
+    background: var(--danger-soft);
+  }
+
+  .option-key {
+    font-weight: 600;
+    margin-right: 8px;
+  }
+
+  /* ===== 表单输入 ===== */
+  .input, .textarea {
+    width: 100%;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--paper);
+    padding: 12px 14px;
+    font-size: 15px;
+    font-family: inherit;
+    color: var(--ink);
+    outline: none;
+    transition: box-shadow 0.15s ease-out, border-color 0.15s ease-out;
+  }
+
+  .input:focus, .textarea:focus {
+    border-color: var(--sea);
+    box-shadow: 0 0 0 2px rgba(31, 92, 90, 0.12);
+  }
+
+  .textarea { min-height: 120px; resize: vertical; }
+
+  .inline-blank-input {
+    display: inline-block;
+    width: 8rem;
+    border: 1px solid var(--line);
+    border-bottom: 2px solid var(--sea);
+    border-radius: 4px;
+    background: var(--paper);
+    padding: 6px 10px;
+    font-size: 15px;
+    font-family: inherit;
+    color: var(--sea);
+    outline: none;
+    margin: 0 4px;
+    vertical-align: baseline;
+  }
+
+  .inline-blank-input:focus {
+    box-shadow: 0 0 0 2px rgba(31, 92, 90, 0.12);
+  }
+
+  .fill-list { display: flex; flex-direction: column; gap: 10px; margin-bottom: 20px; }
+
+  .fill-row { display: flex; align-items: center; gap: 12px; }
+  .fill-label { font-size: 12px; color: var(--ink-disabled); width: 48px; flex-shrink: 0; }
+
+  .custom-answers {
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--paper);
+    padding: 16px;
+  }
+
+  .custom-answers h4 {
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 600;
+    margin: 0 0 12px;
+    letter-spacing: 0;
+  }
+
+  .field { margin-bottom: 12px; }
+  .field label { display: block; font-size: 13px; color: var(--ink-soft); margin-bottom: 4px; }
+
+  .iframe-box {
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    overflow: hidden;
+    margin-bottom: 16px;
+    background: #fff;
+  }
+
+  .iframe-box iframe { display: block; width: 100%; height: 320px; border: none; }
+
+  /* ===== 操作按钮 ===== */
+  .actions { display: flex; gap: 10px; }
+
+  .btn-check, .btn-reset {
+    border-radius: 999px;
+    padding: 8px 20px;
+    font-size: 14px;
+    font-weight: 500;
+    font-family: inherit;
+    cursor: pointer;
+    transition: all 0.15s ease-out;
+  }
+
+  .btn-check {
+    background: var(--ink);
+    color: var(--paper);
+    border: none;
+  }
+
+  .btn-check:hover { background: var(--sea); }
+
+  .btn-reset {
+    background: transparent;
+    color: var(--ink);
+    border: 1px solid var(--line);
+  }
+
+  .btn-reset:hover { border-color: var(--sea); color: var(--sea); }
+
+  /* ===== 答题结果反馈 ===== */
+  .feedback {
+    margin-top: 16px;
+    border-radius: 8px;
+    padding: 12px 16px;
+    font-size: 14px;
+    display: none;
+    animation: page-in 240ms ease-out both;
+  }
+
+  .feedback.correct { background: var(--success-soft); color: var(--success); display: block; }
+  .feedback.wrong { background: var(--danger-soft); color: var(--danger); display: block; }
+
+  .feedback .correct-answer { margin-top: 6px; color: var(--ink-soft); }
+  .feedback .correct-answer strong { color: var(--success); }
+
+  .section-note {
+    font-size: 12px;
+    color: var(--ink-disabled);
+    text-align: center;
+    margin-top: 40px;
+    line-height: 1.8;
+  }
+
+  .section-note .tool-badge { display: inline-block; margin: 0 2px; }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <div class="page-header">
+    <h1>出题 Agent · 5 种题型效果预览</h1>
+    <div class="subtitle">来源：backend/app/tools/question_gen_tools.py · 渲染：frontend/src/features/quiz/QuizQuestionInput.tsx</div>
+  </div>
+
+  <!-- ═══════════ 1. 单选题 ═══════════ -->
+  <div class="question-card">
+    <div class="type-badge">✳ 单选题 <span class="tool-badge">submit_single_choice</span></div>
+    <p class="stem">中国古代四大发明中，最早传入欧洲并推动欧洲书写材料变革的是？</p>
+
+    <div class="option-list" id="single-choice-list">
+      <button type="button" class="option-btn" data-key="A" onclick="selectChoice(this)"><span class="option-key">A.</span>指南针</button>
+      <button type="button" class="option-btn" data-key="B" onclick="selectChoice(this)"><span class="option-key">B.</span>造纸术</button>
+      <button type="button" class="option-btn" data-key="C" onclick="selectChoice(this)"><span class="option-key">C.</span>火药</button>
+      <button type="button" class="option-btn" data-key="D" onclick="selectChoice(this)"><span class="option-key">D.</span>活字印刷术</button>
+    </div>
+
+    <div class="actions">
+      <button type="button" class="btn-check" onclick="checkChoice()">提交答案</button>
+      <button type="button" class="btn-reset" onclick="resetCard('single-choice-list', 'single-feedback')">重置</button>
+    </div>
+    <div class="feedback" id="single-feedback"></div>
+  </div>
+
+  <!-- ═══════════ 2. 填空题（内联空） ═══════════ -->
+  <div class="question-card">
+    <div class="type-badge">✳ 填空题 <span class="tool-badge">submit_fill_blank</span></div>
+    <p class="stem">
+      我国第一个五年计划（1953—1957 年）优先发展
+      <span class="blank-highlight">①</span>
+      ，并在 1956 年完成对农业、手工业和
+      <span class="blank-highlight">②</span>
+      的社会主义改造。
+    </p>
+
+    <div class="fill-list">
+      <div class="fill-row">
+        <span class="fill-label">空 ①</span>
+        <input type="text" class="input" id="fb-inline-1" placeholder="请输入答案">
+      </div>
+      <div class="fill-row">
+        <span class="fill-label">空 ②</span>
+        <input type="text" class="input" id="fb-inline-2" placeholder="请输入答案">
+      </div>
+    </div>
+
+    <div class="actions">
+      <button type="button" class="btn-check" onclick="checkBlank()">提交答案</button>
+      <button type="button" class="btn-reset" onclick="resetCard('fb-inline-1', 'fill-feedback', 'fb-inline-2')">重置</button>
+    </div>
+    <div class="feedback" id="fill-feedback"></div>
+  </div>
+
+  <!-- ═══════════ 3. 简答题 ═══════════ -->
+  <div class="question-card">
+    <div class="type-badge">✳ 简答题 <span class="tool-badge">submit_short_answer</span></div>
+    <p class="stem">简述牛顿第一定律（惯性定律）的内容，并举例说明其在实际生活中的体现。</p>
+
+    <textarea class="textarea" id="short-answer-input" placeholder="请输入你的答案…"></textarea>
+
+    <div class="actions" style="margin-top:16px;">
+      <button type="button" class="btn-check" onclick="checkShortAnswer()">提交答案</button>
+      <button type="button" class="btn-reset" onclick="resetCard('short-answer-input', 'short-feedback')">重置</button>
+    </div>
+    <div class="feedback" id="short-feedback"></div>
+  </div>
+
+  <!-- ═══════════ 4. 应用题 ═══════════ -->
+  <div class="question-card">
+    <div class="type-badge">✳ 应用题 <span class="tool-badge">submit_application</span></div>
+    <p class="stem">某商场将进价为 40 元的商品按每件 60 元售出，每天可卖出 100 件。经调查发现：每降价 1 元，每天可多卖出 20 件。为了获得最大利润，每件应降价多少元？</p>
+
+    <textarea class="textarea" id="application-input" placeholder="请输入你的解题过程…"></textarea>
+
+    <div class="actions" style="margin-top:16px;">
+      <button type="button" class="btn-check" onclick="checkApplication()">提交答案</button>
+      <button type="button" class="btn-reset" onclick="resetCard('application-input', 'application-feedback')">重置</button>
+    </div>
+    <div class="feedback" id="application-feedback"></div>
+  </div>
+
+  <!-- ═══════════ 5. 自定义题（HTML） ═══════════ -->
+  <div class="question-card">
+    <div class="type-badge">✳ 自定义题 <span class="tool-badge">submit_custom_question</span></div>
+    <p class="stem">仔细观察下面的中国地形示意图，在右侧填写表格：指出图中标注的 ①②③ 三个地形区的名称。</p>
+
+    <div class="iframe-box">
+      <iframe sandbox="allow-scripts" srcdoc="
+        <!DOCTYPE html>
+        <html>
+        <head>
+        <style>
+          body { margin: 0; font-family: sans-serif; background: #faf8f2; }
+          .wrap { display: flex; height: 320px; }
+          .map-box { flex: 1; position: relative; background: #eef3ea; }
+          .map-tip { position: absolute; top: 8px; left: 10px; font-size: 12px; color: #2A3A47; opacity: .7; }
+          .region { position: absolute; text-align: center; }
+          .region .dot { width: 14px; height: 14px; margin: 0 auto; border-radius: 50%; background: #C45C26; border: 2px solid #fff; box-shadow: 0 1px 4px rgba(0,0,0,.25); }
+          .region .tag { font-size: 14px; font-weight: bold; color: #C45C26; margin-top: 4px; }
+          .region1 { left: 24%; top: 26%; }
+          .region2 { left: 32%; top: 54%; }
+          .region3 { left: 72%; top: 62%; }
+          table { border-collapse: collapse; }
+          .side { width: 230px; border-left: 1px solid #ddd5c5; padding: 12px; background: #fff; }
+          .side h4 { margin: 0 0 8px; font-size: 13px; color: #14212B; }
+          .side table { width: 100%; }
+          .side th, .side td { border: 1px solid #ddd5c5; padding: 6px 8px; font-size: 13px; text-align: center; }
+          .side th { background: #E8E2D4; color: #14212B; }
+          .side td { color: #2A3A47; background: #fff; }
+          .side .placeholder { color: #8C9398; }
+        </style>
+        </head>
+        <body>
+          <div class='wrap'>
+            <div class='map-box'>
+              <div class='map-tip'>▲ 示意简图</div>
+              <div class='region region1'><div class='dot'></div><div class='tag'>①</div></div>
+              <div class='region region2'><div class='dot'></div><div class='tag'>②</div></div>
+              <div class='region region3'><div class='dot'></div><div class='tag'>③</div></div>
+            </div>
+            <div class='side'>
+              <h4>地形区名称</h4>
+              <table>
+                <tr><th>标注</th><th>名称</th></tr>
+                <tr><td>①</td><td class='placeholder'>—</td></tr>
+                <tr><td>②</td><td class='placeholder'>—</td></tr>
+                <tr><td>③</td><td class='placeholder'>—</td></tr>
+              </table>
+            </div>
+          </div>
+        </body>
+        </html>
+      "></iframe>
+    </div>
+
+    <div class="custom-answers">
+      <h4>请填写答案</h4>
+      <div class="field">
+        <label for="custom-1">① 地形区</label>
+        <input type="text" class="input" id="custom-1" placeholder="请输入①地形区">
+      </div>
+      <div class="field">
+        <label for="custom-2">② 地形区</label>
+        <input type="text" class="input" id="custom-2" placeholder="请输入②地形区">
+      </div>
+      <div class="field">
+        <label for="custom-3">③ 地形区</label>
+        <input type="text" class="input" id="custom-3" placeholder="请输入③地形区">
+      </div>
+    </div>
+
+    <div class="actions" style="margin-top:16px;">
+      <button type="button" class="btn-check" onclick="checkCustom()">提交答案</button>
+      <button type="button" class="btn-reset" onclick="resetCard('custom-1', 'custom-feedback', 'custom-2', 'custom-3')">重置</button>
+    </div>
+    <div class="feedback" id="custom-feedback"></div>
+  </div>
+
+  <div class="section-note">
+    <span class="tool-badge">get_near_page</span> 为辅助工具：按偏移量获取相邻页码内容，补充出题上下文，不属于题型。<br>
+    全部 6 个工具注册于 <span class="tool-badge">QuestionGenTools.__init__</span>
+  </div>
+
+</div>
+
+<script>
+  /* ===== 公共工具 ===== */
+  function showFeedback(feedbackEl, status, message, correctAnswer) {
+    feedbackEl.className = 'feedback ' + status;
+    let html = message;
+    if (correctAnswer) {
+      html += '<div class="correct-answer">正确答案：<strong>' + correctAnswer + '</strong></div>';
+    }
+    feedbackEl.innerHTML = html;
+  }
+
+  function resetCard() {
+    // 清空所有传入的 input
+    for (let i = 0; i < arguments.length; i++) {
+      const el = document.getElementById(arguments[i]);
+      if (el) {
+        if (el.tagName === 'BUTTON') {
+          el.className = el.className.replace(/ selected| correct| wrong/g, '');
+        } else if (el.tagName === 'INPUT') {
+          el.value = '';
+        } else if (el.tagName === 'TEXTAREA') {
+          el.value = '';
+        }
+      }
+    }
+    // 隐藏最后一个参数前的所有反馈由调用方指定，这里直接隐藏对应反馈
+    const feedbackEl = document.getElementById('single-feedback');
+    // 通用：隐藏 page 中所有 feedback
+    document.querySelectorAll('.feedback').forEach(f => { f.className = 'feedback'; f.innerHTML = ''; });
+    // 重置单选题的选中样式
+    document.querySelectorAll('.option-btn').forEach(b => b.classList.remove('selected', 'correct', 'wrong'));
+  }
+
+  /* ===== 1. 单选题 ===== */
+  let selectedChoice = null;
+  function selectChoice(btn) {
+    document.querySelectorAll('#single-choice-list .option-btn').forEach(b => {
+      b.classList.remove('selected');
+    });
+    btn.classList.add('selected');
+    selectedChoice = btn.dataset.key;
+  }
+  function checkChoice() {
+    const fb = document.getElementById('single-feedback');
+    if (!selectedChoice) {
+      showFeedback(fb, 'wrong', '请先选择一个选项。');
+      return;
+    }
+    const buttons = document.querySelectorAll('#single-choice-list .option-btn');
+    buttons.forEach(b => {
+      if (b.dataset.key === 'B') b.classList.add('correct');
+      if (b.dataset.key === selectedChoice && selectedChoice !== 'B') b.classList.add('wrong');
+    });
+    if (selectedChoice === 'B') {
+      showFeedback(fb, 'correct', '回答正确！造纸术经阿拉伯传入欧洲，推动了书写材料变革。');
+    } else {
+      showFeedback(fb, 'wrong', '回答错误，再想想～', 'B. 造纸术');
+    }
+  }
+
+  /* ===== 2. 填空题 ===== */
+  function checkBlank() {
+    const a1 = document.getElementById('fb-inline-1').value.trim();
+    const a2 = document.getElementById('fb-inline-2').value.trim();
+    const fb = document.getElementById('fill-feedback');
+    if (!a1 || !a2) {
+      showFeedback(fb, 'wrong', '请填写所有空格。');
+      return;
+    }
+    const ok1 = /重工业/.test(a1);
+    const ok2 = /资本主义工商业/.test(a2) || /工商业/.test(a2);
+    if (ok1 && ok2) {
+      showFeedback(fb, 'correct', '回答正确！一五计划优先发展重工业，1956 年底三大改造基本完成。');
+    } else if (!ok1 && !ok2) {
+      showFeedback(fb, 'wrong', '两个空都填错了，再读读课文～', '重工业；资本主义工商业');
+    } else if (!ok1) {
+      showFeedback(fb, 'wrong', '空 ① 填错了。', '① 重工业');
+    } else {
+      showFeedback(fb, 'wrong', '空 ② 填错了。', '② 资本主义工商业');
+    }
+  }
+
+  /* ===== 3. 简答题 ===== */
+  function checkShortAnswer() {
+    const val = document.getElementById('short-answer-input').value.trim();
+    const fb = document.getElementById('short-feedback');
+    if (!val) {
+      showFeedback(fb, 'wrong', '请输入你的答案。');
+      return;
+    }
+    if (val.length < 10) {
+      showFeedback(fb, 'wrong', '答案过短，请补充完整（AI 阅卷会检查内容完整性）。');
+      return;
+    }
+    showFeedback(fb, 'correct', '已提交（AI 阅卷）。要点：一切物体在不受外力作用时，总保持静止或匀速直线运动状态；例如急刹车时人向前倾。');
+  }
+
+  /* ===== 4. 应用题 ===== */
+  function checkApplication() {
+    const val = document.getElementById('application-input').value.trim();
+    const fb = document.getElementById('application-feedback');
+    if (!val) {
+      showFeedback(fb, 'wrong', '请输入你的解题过程。');
+      return;
+    }
+    showFeedback(fb, 'correct', '已提交（AI 阅卷）。参考答案：设降价 x 元，利润 y = (20 - x)(100 + 20x)，对称轴 x = 7.5，故每件降价 7.5 元时利润最大。');
+  }
+
+  /* ===== 5. 自定义题 ===== */
+  function checkCustom() {
+    const c1 = document.getElementById('custom-1').value.trim();
+    const c2 = document.getElementById('custom-2').value.trim();
+    const c3 = document.getElementById('custom-3').value.trim();
+    const fb = document.getElementById('custom-feedback');
+    if (!c1 && !c2 && !c3) {
+      showFeedback(fb, 'wrong', '请至少填写一个答案。');
+      return;
+    }
+    const ansMap = { c1: /青藏高原/.test(c1), c2: /四川盆地/.test(c2), c3: /长江中下游平原/.test(c3) };
+    const parts = [];
+    if (ansMap.c1) parts.push('① 对'); else parts.push('① 错');
+    if (ansMap.c2) parts.push('② 对'); else parts.push('② 错');
+    if (ansMap.c3) parts.push('③ 对'); else parts.push('③ 错');
+    if (ansMap.c1 && ansMap.c2 && ansMap.c3) {
+      showFeedback(fb, 'correct', '全对！' + parts.join('，') + '。');
+    } else {
+      showFeedback(fb, 'wrong', parts.join('，') + '。', '① 青藏高原 ② 四川盆地 ③ 长江中下游平原');
+    }
+  }
+</script>
+</body>
+</html>

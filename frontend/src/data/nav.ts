@@ -4,17 +4,10 @@ import {
   MessageSquare,
   NotebookPen,
   Library,
-  Network,
   BarChart3,
-  Route,
-  Bell,
-  Brain,
-  PenLine,
-  Upload,
-  UserCircle,
   Settings,
-  Stethoscope,
-  Target,
+  ScanText,
+  ListChecks,
 } from "lucide-react"
 
 export const navGroups: NavGroup[] = [
@@ -25,33 +18,34 @@ export const navGroups: NavGroup[] = [
   {
     title: "主要",
     items: [
-      { label: "AI 对话", to: "/chat", icon: MessageSquare },
+      { label: "Tina", to: "/chat", icon: MessageSquare },
       { label: "笔记", to: "/notes", icon: NotebookPen },
-      { label: "知识库", to: "/knowledge", icon: Library },
-      { label: "题库页", to: "/quiz", icon: Brain },
-      { label: "出题页", to: "/question-gen", icon: PenLine },
-      { label: "上传资料", to: "/knowledge/upload", icon: Upload },
+      { label: "资料", to: "/quiz", icon: Library },
+      { label: "扫描件解析", to: "/doc-parse", icon: ScanText },
     ],
   },
   {
     title: "学习",
     items: [
-      { label: "知识图谱", to: "/graph", icon: Network },
-      { label: "学习分析", to: "/analytics", icon: BarChart3 },
-      { label: "针对训练", to: "/training/targeted", icon: Target },
-      { label: "学习路径", to: "/path", icon: Route },
-      { label: "智能提醒", to: "/reminders", icon: Bell },
+      { label: "任务", to: "/tasks", icon: ListChecks },
+      { label: "进度", to: "/analytics", icon: BarChart3 },
     ],
   },
   {
     title: "个人",
-    items: [
-      { label: "个人学习画像", to: "/profile", icon: UserCircle },
-      { label: "设置", to: "/settings", icon: Settings },
-      { label: "诊断与修复", to: "/settings/diagnostics", icon: Stethoscope },
-    ],
+    items: [{ label: "设置", to: "/settings", icon: Settings }],
   },
 ]
+
+export const TINA_PATH = "/chat"
+
+/** 危机彩蛋：侧栏里除 Tina 外、尚未被藏起的入口名。 */
+export function remainingCrisisPages(deleted: Set<string>): string[] {
+  return navGroups
+    .flatMap((g) => g.items)
+    .filter((item) => item.to !== TINA_PATH && !deleted.has(item.to))
+    .map((item) => item.label)
+}
 
 export const userInfo = {
   name: "啊噗",

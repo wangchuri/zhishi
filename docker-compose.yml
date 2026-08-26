@@ -1,0 +1,24 @@
+services:
+  zhishi:
+    build: .
+    image: zhishi:latest
+    container_name: zhishi
+    ports:
+      - "7777:7777"
+    environment:
+      # 也可改为 volumes 挂载 backend/tina.env
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      BASE_URL: ${BASE_URL:-https://api.deepseek.com/chat/completions}
+      MODEL_NAME: ${MODEL_NAME:-deepseek-v4-flash}
+    volumes:
+      - zhishi-data:/app/data
+      - zhishi-storage:/app/backend/storage
+      - zhishi-hf:/app/.cache/huggingface
+      # 可选：直接挂密钥文件（优先于环境变量生成）
+      # - ./backend/tina.env:/app/backend/tina.env:ro
+    restart: unless-stopped
+
+volumes:
+  zhishi-data:
+  zhishi-storage:
+  zhishi-hf:
