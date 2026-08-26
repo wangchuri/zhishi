@@ -156,6 +156,19 @@ export function MarkdownWithMath({
         remarkPlugins={[remarkGfm, remarkMath]}
         rehypePlugins={[rehypeKatex]}
         urlTransform={urlTransform}
+        components={{
+          img: ({ src, alt, ...props }) => (
+            <img
+              {...props}
+              src={src}
+              alt={alt || ""}
+              loading="lazy"
+              decoding="async"
+              data-tip-image
+              className="max-w-full h-auto rounded-md"
+            />
+          ),
+        }}
       >
         {processed}
       </ReactMarkdown>

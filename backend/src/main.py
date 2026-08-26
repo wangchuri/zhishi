@@ -1,11 +1,14 @@
 """知拾后端入口。
 
 启动：python -m src.main
+桌面打包：zhishi-backend.exe（无窗口，由 Electron 托管）
 """
 
 from __future__ import annotations
 
 import asyncio
+import logging
+import os
 import sys
 import time
 from pathlib import Path
@@ -35,13 +38,12 @@ from .api.onboarding import router as onboarding_router
 from .core.config import config
 from .core.database import SessionLocal, init_db
 from .core.errors import AppError
+from .core.paths import frontend_dist_dir, is_frozen, runtime_dir
 from .services.kb import ensure_default_collections, reset_stale_processing
-
-import logging
 
 logger = logging.getLogger(__name__)
 
-_FRONTEND_DIST = _BACKEND_DIR.parent / "frontend" / "dist"
+_FRONTEND_DIST = frontend_dist_dir()
 
 app = FastAPI(title="知拾", version="0.1.0")
 
@@ -97,7 +99,6 @@ def _on_startup() -> None:
 
 
 async def _poll_task_completion() -> None:
-    """每隔几分钟扫一次任务完成。上传/出题/刷题成功时也会立刻检查。"""
     from .services.task import evaluate
 
     while True:
@@ -125,7 +126,6 @@ _NO_CACHE_FILES = {"index.html", "sw.js", "registerSW.js", "manifest.webmanifest
 
 @app.get("/api/v1/pwa-reset", include_in_schema=False)
 def pwa_reset():
-    """旧 Service Worker 会锁住过期前端；此地址在 /api 下，SW 不会拦截。"""
     return HTMLResponse(
         content="""<!DOCTYPE html>
 <html lang="zh-CN">
@@ -150,7 +150,6 @@ def pwa_reset():
 
 
 def _mount_frontend() -> None:
-    """托管 frontend/dist：访问 7777 即打开网页版。"""
     if not _FRONTEND_DIST.is_dir() or not (_FRONTEND_DIST / "index.html").is_file():
         logger.warning("未找到前端产物 %s，跳过静态托管（请先在 frontend 执行 npm run build）", _FRONTEND_DIST)
         return
@@ -181,15 +180,52 @@ _mount_frontend()
 
 
 def main() -> None:
+    import logging
     import uvicorn
+
+    desktop = (
+        is_frozen()
+        or os.environ.get("ZHISHI_DESKTOP", "").strip().lower() in {"1", "true", "yes"}
+    )
+    reload = (
+        not desktop
+        and os.environ.get("ZHISHI_RELOAD", "1").strip().lower() not in {"0", "false", "no"}
+    )
+    host = "127.0.0.1" if desktop else "0.0.0.0"
+
+    try:
+        os.chdir(runtime_dir())
+    except OSError:
+        pass
+
+    if desktop:
+        # 同步打到文件，Electron 管道之外再留一份
+        log_path = runtime_dir() / "zhishi-backend.log"
+        try:
+            root = logging.getLogger()
+            if not any(isinstance(h, logging.FileHandler) for h in root.handlers):
+                fh = logging.FileHandler(log_path, encoding="utf-8")
+                fh.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
+                root.addHandler(fh)
+                root.setLevel(logging.INFO)
+        except OSError:
+            pass
 
     print()
     print("=============== 知拾 访问地址 ===============")
     print("  本机访问:   http://127.0.0.1:7777")
-    print("  局域网:     同一 WiFi 下用本机 IP:7777")
+    if not desktop:
+        print("  局域网:     同一 WiFi 下用本机 IP:7777")
+    if desktop:
+        print("  模式:       桌面后台（Electron 托管）")
     print("=============================================")
     print()
-    uvicorn.run("src.main:app", host="0.0.0.0", port=7777, reload=True)
+    sys.stdout.flush()
+
+    if desktop or is_frozen():
+        uvicorn.run(app, host=host, port=7777, reload=False, log_level="info")
+    else:
+        uvicorn.run("src.main:app", host=host, port=7777, reload=reload)
 
 
 if __name__ == "__main__":

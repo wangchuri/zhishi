@@ -69,7 +69,10 @@ export function clearApiBase() {
 export function getApiBase(): string {
   const stored = getStoredApiBase()
   if (stored) return stored
-  // 后端托管前端时默认同源（相对路径）；Electron/独立部署可在设置页配置服务器地址
+  // Electron 桌面壳默认连本机后端
+  const desktop = typeof window !== "undefined" ? window.zhishi?.backendUrl : ""
+  if (desktop) return normalizeApiBase(desktop)
+  // 后端托管前端时默认同源（相对路径）；独立部署可在设置页配置服务器地址
   return DEFAULT_API_BASE || ""
 }
 
@@ -93,6 +96,7 @@ export function isSameOriginHosted(): boolean {
 }
 
 export function isServerConfigured(): boolean {
+  if (typeof window !== "undefined" && window.zhishi?.isElectron) return true
   return !!getStoredApiBase() || !!DEFAULT_API_BASE || isSameOriginHosted()
 }
 
@@ -339,8 +343,9 @@ export const kbApi = {
     return request<any>("DELETE", `/api/v1/kb/documents/${docId}`)
   },
 
-  getDocumentContent(docId: string) {
-    return request<DocumentContentMeta>("GET", `/api/v1/kb/documents/${docId}/content`)
+  getDocumentContent(docId: string, opts?: { metaOnly?: boolean }) {
+    const q = opts?.metaOnly ? "?meta_only=true" : ""
+    return request<DocumentContentMeta>("GET", `/api/v1/kb/documents/${docId}/content${q}`)
   },
 
   fetchDocumentFile(docId: string) {
@@ -359,6 +364,14 @@ export const kbApi = {
     return request<DocumentPageDetail>(
       "GET",
       `/api/v1/kb/documents/${docId}/pages/${pageNumber}`
+    )
+  },
+
+  listDocumentImages(docId: string, page?: number | null) {
+    const qs = page != null && page > 0 ? `?page=${page}` : ""
+    return request<{ document_id: string; images: DocumentImageItem[] }>(
+      "GET",
+      `/api/v1/kb/documents/${encodeURIComponent(docId)}/images${qs}`,
     )
   },
 
@@ -483,9 +496,21 @@ export const docParseApi = {
 }
 
 /** 生成文档图片的完整 URL（图床式引用，供 md 图片渲染） */
+export type DocumentImageItem = {
+  file_name: string
+  page_num: number
+  url_path: string
+}
+
 export function documentImageUrl(docId: string, filename: string): string {
   const base = getApiBase().replace(/\/$/, "")
   return `${base}/api/v1/kb/documents/${encodeURIComponent(docId)}/images/${encodeURIComponent(filename)}`
+}
+
+/** 文档图床 base（MarkdownWithMath imageBaseUrl） */
+export function documentImageBase(docId: string): string {
+  const base = getApiBase().replace(/\/$/, "")
+  return `${base}/api/v1/kb/documents/${encodeURIComponent(docId)}/images`
 }
 
 // ─── Questions ─────────────────────────────────────────
@@ -594,12 +619,22 @@ export const quizApi = {
     question_ids?: string[]
     title?: string
     filter?: "all" | "undone" | "wrong" | "unknown"
+    resume?: boolean
+    task_id?: string
   }) {
     return request<any>("POST", "/api/v1/quiz/sessions", data)
   },
 
   getSession(sessionId: string) {
     return request<any>("GET", `/api/v1/quiz/sessions/${sessionId}`)
+  },
+
+  listActiveSessions() {
+    return request<{ sessions: import("@/types").QuizSession[] }>("GET", "/api/v1/quiz/active-sessions")
+  },
+
+  completeSession(sessionId: string) {
+    return request<any>("POST", `/api/v1/quiz/sessions/${sessionId}/complete`)
   },
 
   getRecentActiveSession(documentId: string) {
@@ -730,15 +765,21 @@ export type UserProfile = {
   role?: string | null
   onboarding_status: string
   has_goal: boolean
-  goal?: { id: string; text: string } | null
+  goal?: { id: string; text: string; status?: string } | null
   onboarding_session_id?: string | null
+  tina_style?: "default" | "tsundere" | string
 }
 
 export const profileApi = {
   get() {
     return request<UserProfile>("GET", "/api/v1/me/profile")
   },
-  put(data: { nickname?: string; role?: string; onboarding_status?: string }) {
+  put(data: {
+    nickname?: string
+    role?: string
+    onboarding_status?: string
+    tina_style?: string
+  }) {
     return request<UserProfile>("PUT", "/api/v1/me/profile", data)
   },
 }

@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any
 
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
 
-_PROMPTS_ROOT = Path(__file__).resolve().parent.parent.parent / "prompts"
+from .paths import resource_dir
+
+_PROMPTS_ROOT = resource_dir() / "prompts"
 
 _env = Environment(
     loader=FileSystemLoader(str(_PROMPTS_ROOT)),

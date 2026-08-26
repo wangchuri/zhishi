@@ -1,6 +1,6 @@
 import { cn } from "@/lib/utils"
 
-const logoSrc = `${import.meta.env.BASE_URL}logo.jpg`
+const logoSrc = `${import.meta.env.BASE_URL}logo.png?v=3`
 
 const sizeMap = {
   sm: "w-8 h-8",

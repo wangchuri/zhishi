@@ -78,13 +78,15 @@ def norm_chapters(chapters) -> list[dict]:
 
 
 def ensure_chapter_ids(path: dict | None, previous: dict | None = None) -> bool:
-    """给目录章节补上稳定 id。返回是否改过 path。"""
+    """给目录章节补上稳定 id，并尽量继承上一版的 learned。返回是否改过 path。"""
     if not isinstance(path, dict):
         return False
     chapters = path.get("chapters")
     if not isinstance(chapters, list):
         return False
     prev_by_title: dict[str, str] = {}
+    prev_learned_by_id: dict[str, bool] = {}
+    prev_learned_by_title: dict[str, bool] = {}
     for ch in (previous or {}).get("chapters") or []:
         if not isinstance(ch, dict):
             continue
@@ -92,19 +94,35 @@ def ensure_chapter_ids(path: dict | None, previous: dict | None = None) -> bool:
         title = str(ch.get("title") or "").strip()
         if cid and title:
             prev_by_title[title] = cid
+        learned = bool(ch.get("learned"))
+        if cid:
+            prev_learned_by_id[cid] = learned
+        if title:
+            prev_learned_by_title[title] = learned
     changed = False
     for ch in chapters:
         if not isinstance(ch, dict):
             continue
         cid = str(ch.get("id") or "").strip()
+        title = str(ch.get("title") or "").strip()
         if cid:
             if ch.get("id") != cid:
                 ch["id"] = cid
                 changed = True
-            continue
-        title = str(ch.get("title") or "").strip()
-        ch["id"] = prev_by_title.get(title) or uuid.uuid4().hex[:8]
-        changed = True
+        else:
+            ch["id"] = prev_by_title.get(title) or uuid.uuid4().hex[:8]
+            cid = ch["id"]
+            changed = True
+        if "learned" not in ch:
+            inherited = prev_learned_by_id.get(cid)
+            if inherited is None and title:
+                inherited = prev_learned_by_title.get(title)
+            if inherited is not None:
+                ch["learned"] = inherited
+                changed = True
+            else:
+                ch["learned"] = False
+                changed = True
     return changed
 
 

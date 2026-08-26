@@ -15,7 +15,7 @@ export default defineConfig({
     VitePWA({
       registerType: "autoUpdate",
       injectRegister: false,
-      includeAssets: ["logo.jpg"],
+      includeAssets: ["logo.png", "logo.jpg"],
       manifest: {
         name: "知拾",
         short_name: "知拾",
@@ -27,15 +27,15 @@ export default defineConfig({
         start_url: "/",
         icons: [
           {
-            src: "logo.jpg",
+            src: "logo.png?v=3",
             sizes: "512x512",
-            type: "image/jpeg",
+            type: "image/png",
             purpose: "any",
           },
           {
-            src: "logo.jpg",
+            src: "logo.png?v=3",
             sizes: "512x512",
-            type: "image/jpeg",
+            type: "image/png",
             purpose: "maskable",
           },
         ],

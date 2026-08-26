@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import re
+from datetime import datetime, timezone
 from typing import Optional
 
 from sqlalchemy.orm import Session
@@ -150,6 +151,8 @@ class QuizService:
         question_ids: Optional[list[str]] = None,
         title: Optional[str] = None,
         filter_mode: str = "all",
+        resume: bool = True,
+        task_id: Optional[str] = None,
     ) -> QuizSession:
         ids = self._resolve_question_ids(
             db,
@@ -160,6 +163,13 @@ class QuizService:
         )
         if not ids:
             raise AppError("没有可刷的题目（可能该文档还没有生成题目）")
+
+        if resume and question_ids:
+            existing = self.find_unfinished_by_question_ids(db, ids, document_id=document_id)
+            if existing:
+                if task_id:
+                    self.bind_quiz_task_session(db, task_id, existing.id)
+                return existing
 
         session = QuizSession(
             document_id=document_id,
@@ -174,7 +184,96 @@ class QuizService:
             db.add(QuizSessionQuestion(session_id=session.id, question_id=qid, order_index=i))
         db.commit()
         db.refresh(session)
+        if task_id:
+            self.bind_quiz_task_session(db, task_id, session.id)
         return session
+
+    def find_unfinished_by_question_ids(
+        self,
+        db: Session,
+        question_ids: list[str],
+        *,
+        document_id: Optional[str] = None,
+    ) -> Optional[QuizSession]:
+        """同一批题目、仍在进行中的会话（可续刷）。"""
+        want = {str(q).strip() for q in (question_ids or []) if str(q).strip()}
+        if not want:
+            return None
+        q = db.query(QuizSession).filter(QuizSession.status == "active")
+        if document_id:
+            q = q.filter(QuizSession.document_id == document_id)
+        for session in q.order_by(QuizSession.started_at.desc()).limit(40).all():
+            rows = (
+                db.query(QuizSessionQuestion.question_id)
+                .filter(QuizSessionQuestion.session_id == session.id)
+                .all()
+            )
+            have = {r[0] for r in rows}
+            if have != want:
+                continue
+            answered = db.query(QuizAnswer).filter(QuizAnswer.session_id == session.id).count()
+            if answered < len(have):
+                return session
+            self.complete_session(db, session)
+        return None
+
+    def bind_quiz_task_session(self, db: Session, task_id: str, session_id: str) -> None:
+        """把刷题任务入口改成 session_id，下次点任务直接续刷。"""
+        from ..models.goal import DailyTask
+        from ..services.task import USER_ID, _loads
+
+        tid = (task_id or "").strip()
+        sid = (session_id or "").strip()
+        if not tid or not sid:
+            return
+        row = (
+            db.query(DailyTask)
+            .filter(DailyTask.user_id == USER_ID, DailyTask.id == tid)
+            .first()
+        )
+        if not row or row.kind != "quiz":
+            return
+        payload = _loads(row.payload_json)
+        payload["session_id"] = sid
+        row.payload_json = json.dumps(payload, ensure_ascii=False)
+        row.href = f"/quiz/session?session_id={sid}"
+        db.commit()
+
+    def complete_session(self, db: Session, session: QuizSession) -> QuizSession:
+        if session.status != "completed":
+            session.status = "completed"
+            session.finished_at = datetime.now(timezone.utc)
+            db.commit()
+            db.refresh(session)
+        return session
+
+    def list_unfinished_sessions(self, db: Session, *, limit: int = 20) -> list[dict]:
+        """未答完的刷题会话，供续刷页展示。"""
+        from ..models import Document
+
+        rows = (
+            db.query(QuizSession)
+            .filter(QuizSession.status == "active")
+            .order_by(QuizSession.started_at.desc())
+            .limit(max(1, min(limit, 50)))
+            .all()
+        )
+        out = []
+        for session in rows:
+            data = self._session_out(db, session)
+            total = int(data.get("total_questions") or 0)
+            answered = int(data.get("answered_count") or 0)
+            if total <= 0 or answered >= total:
+                if answered >= total > 0:
+                    self.complete_session(db, session)
+                continue
+            doc_name = None
+            if session.document_id:
+                doc = db.get(Document, session.document_id)
+                doc_name = doc.display_name if doc else None
+            data["document_name"] = doc_name
+            out.append(data)
+        return out
 
     def get_session(self, db: Session, session_id: str) -> QuizSession:
         session = db.get(QuizSession, session_id)
@@ -183,12 +282,25 @@ class QuizService:
         return session
 
     def get_recent_active_by_document(self, db: Session, document_id: str) -> Optional[QuizSession]:
-        return (
+        rows = (
             db.query(QuizSession)
             .filter(QuizSession.document_id == document_id, QuizSession.status == "active")
             .order_by(QuizSession.started_at.desc())
-            .first()
+            .limit(10)
+            .all()
         )
+        for session in rows:
+            total = (
+                db.query(QuizSessionQuestion)
+                .filter(QuizSessionQuestion.session_id == session.id)
+                .count()
+            )
+            answered = db.query(QuizAnswer).filter(QuizAnswer.session_id == session.id).count()
+            if total > 0 and answered < total:
+                return session
+            if total > 0 and answered >= total:
+                self.complete_session(db, session)
+        return None
 
     def _session_out(self, db: Session, session: QuizSession) -> dict:
         rows = (
@@ -319,7 +431,39 @@ class QuizService:
             if streak > (ref.best_streak or 0):
                 ref.best_streak = streak
         ref.last_status = status
-        from datetime import datetime, timezone
+        ref.last_answered_at = datetime.now(timezone.utc)
+
+    def revise_ref_stats(
+        self,
+        db: Session,
+        question_id: str,
+        document_id: Optional[str],
+        old_status: str,
+        new_status: str,
+    ) -> None:
+        """同一会话内重判题：修正 correct/wrong/unknown 计数，不重复计 attempt。"""
+        if not document_id or old_status == new_status:
+            return
+        ref = db.query(QuestionRef).filter_by(question_id=question_id, document_id=document_id).first()
+        if not ref:
+            return
+        if old_status == "correct":
+            ref.correct_count = max(0, (ref.correct_count or 0) - 1)
+        elif old_status == "wrong":
+            ref.wrong_count = max(0, (ref.wrong_count or 0) - 1)
+        elif old_status == "unknown":
+            ref.unknown_count = max(0, (ref.unknown_count or 0) - 1)
+        if new_status == "correct":
+            ref.correct_count = (ref.correct_count or 0) + 1
+        elif new_status == "wrong":
+            ref.wrong_count = (ref.wrong_count or 0) + 1
+        elif new_status == "unknown":
+            ref.unknown_count = (ref.unknown_count or 0) + 1
+        if new_status == "correct":
+            streak = _current_streak(db, question_id)
+            if streak > (ref.best_streak or 0):
+                ref.best_streak = streak
+        ref.last_status = new_status
         ref.last_answered_at = datetime.now(timezone.utc)
 
     async def submit_answer(
@@ -368,22 +512,44 @@ class QuizService:
                         "snippet": seg.content[:200],
                     }
 
-        answer = QuizAnswer(
-            session_id=session.id,
-            question_id=question_id,
-            user_answer=user_answer,
-            status=status,
-            grade_method=grade_method,
-            string_match_status=string_match_status,
-            ai_reason=ai_reason,
-            time_spent_seconds=time_spent_seconds,
+        existing = (
+            db.query(QuizAnswer)
+            .filter_by(session_id=session.id, question_id=question_id)
+            .first()
         )
-        db.add(answer)
-
-        self.update_ref_stats(db, question_id, session.document_id, status)
+        if existing:
+            old_status = existing.status
+            existing.user_answer = user_answer
+            existing.status = status
+            existing.grade_method = grade_method
+            existing.string_match_status = string_match_status
+            existing.ai_reason = ai_reason
+            if time_spent_seconds is not None:
+                existing.time_spent_seconds = time_spent_seconds
+            existing.answered_at = datetime.now(timezone.utc)
+            self.revise_ref_stats(db, question_id, session.document_id, old_status, status)
+        else:
+            answer = QuizAnswer(
+                session_id=session.id,
+                question_id=question_id,
+                user_answer=user_answer,
+                status=status,
+                grade_method=grade_method,
+                string_match_status=string_match_status,
+                ai_reason=ai_reason,
+                time_spent_seconds=time_spent_seconds,
+            )
+            db.add(answer)
+            self.update_ref_stats(db, question_id, session.document_id, status)
 
         answered = db.query(QuizAnswer).filter(QuizAnswer.session_id == session.id).count()
         total = db.query(QuizSessionQuestion).filter(QuizSessionQuestion.session_id == session.id).count()
+
+        session_status = session.status
+        if total > 0 and answered >= total and session.status == "active":
+            session.status = "completed"
+            session.finished_at = datetime.now(timezone.utc)
+            session_status = "completed"
 
         db.commit()
 
@@ -398,7 +564,7 @@ class QuizService:
             "ai_reason": ai_reason,
             "answered_count": answered,
             "total_questions": total,
-            "session_status": session.status,
+            "session_status": session_status,
             "current_streak": _current_streak(db, question_id),
         }
 

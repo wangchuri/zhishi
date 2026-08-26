@@ -22,7 +22,22 @@ def create_session(body: quiz_schemas.QuizSessionCreate, db: Session = Depends(g
         question_ids=body.question_ids,
         title=body.title,
         filter_mode=body.filter or "all",
+        resume=body.resume if body.resume is not None else True,
+        task_id=body.task_id,
     )
+    return quiz_service._session_out(db, session)
+
+
+@router.get("/active-sessions")
+def list_active_sessions(db: Session = Depends(get_db)):
+    """未答完的刷题会话，供续刷页使用。"""
+    return {"sessions": quiz_service.list_unfinished_sessions(db)}
+
+
+@router.post("/sessions/{session_id}/complete", response_model=quiz_schemas.QuizSession)
+def complete_session(session_id: str, db: Session = Depends(get_db)):
+    session = quiz_service.get_session(db, session_id)
+    session = quiz_service.complete_session(db, session)
     return quiz_service._session_out(db, session)
 
 

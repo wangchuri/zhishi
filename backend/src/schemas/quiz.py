@@ -38,6 +38,8 @@ class QuizSessionCreate(BaseModel):
     question_ids: Optional[list[str]] = None
     title: Optional[str] = None
     filter: Optional[str] = "all"  # all/undone/wrong/unknown
+    resume: bool = True  # 同一批题有未完成会话则续刷
+    task_id: Optional[str] = None  # 今日刷题任务 id，续刷后回写 href
 
 
 class QuizAnswerSubmit(BaseModel):

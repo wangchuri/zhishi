@@ -112,7 +112,19 @@ export function QuizQuestionInput({
           {question.stem}
         </MarkdownWithMath>
         <div className="space-y-2.5 mb-6">
-        {(question.options || []).map((opt) => (
+        {(question.options || []).map((opt) => {
+          const isSelected = selectedOption === opt.key
+          const answered = !!lastResult
+          const isCorrectPick = answered && lastResult.status === "correct" && isSelected
+          const isCorrectReveal =
+            answered && lastResult.status !== "correct" && lastResult.correct_answer === opt.key
+          const isWrongPick =
+            answered &&
+            lastResult.status !== "correct" &&
+            isSelected &&
+            lastResult.correct_answer !== opt.key
+
+          return (
           <button
             key={opt.key}
             type="button"
@@ -120,14 +132,12 @@ export function QuizQuestionInput({
             onClick={() => onSelectOption(opt.key)}
             className={cn(
               "w-full text-left rounded-lg border px-4 py-3 text-body transition-colors",
-              selectedOption === opt.key
+              !answered && isSelected
                 ? "border-primary bg-primary-soft text-ink-primary"
                 : "border-line-soft hover:border-primary/30 hover:bg-surface-soft",
-              lastResult?.correct_answer === opt.key && "border-success bg-success-soft",
-              lastResult &&
-                lastResult.status !== "correct" &&
-                selectedOption === opt.key &&
-                "border-danger bg-danger-soft"
+              (isCorrectPick || isCorrectReveal) &&
+                "border-success bg-success-soft text-success ring-1 ring-success/25",
+              isWrongPick && "border-danger bg-danger-soft text-danger ring-1 ring-danger/25"
             )}
           >
             <span className="font-medium mr-2">{opt.key}.</span>
@@ -139,7 +149,8 @@ export function QuizQuestionInput({
               {opt.text}
             </MarkdownWithMath>
           </button>
-        ))}
+          )
+        })}
         </div>
       </>
     )

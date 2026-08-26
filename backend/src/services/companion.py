@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from ..core.database import SessionLocal
 from ..core.errors import NotFoundError
-from ..core.llm import create_agent, visible_assistant_delta
+from ..core.llm import create_agent, format_agent_error, visible_assistant_delta
 from ..core.prompts import render_prompt
 from ..models import CompanionMessage, CompanionSession, Document
 
@@ -109,8 +109,8 @@ class CompanionService:
                 if r:
                     reasoning += r
         except Exception as e:
-            logger.warning("伴学流式失败: %s", e)
-            full = full or f"（出错了：{e}）"
+            logger.exception("伴学流式失败")
+            full = full or f"（出错了：{format_agent_error(e)}）"
 
         self.persist_assistant(session.id, full)
         return full, reasoning or None

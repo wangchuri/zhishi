@@ -6,7 +6,7 @@ import json
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Query
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
@@ -145,12 +145,37 @@ def delete_document(doc_id: str, db: Session = Depends(get_db)):
     return kb_schemas.DeleteResult(message="已删除", doc_id=doc_id)
 
 
+def _reading_preview_mode(doc) -> str:
+    """阅读页打开方式：原 PDF / 原 DOCX / MD；扫描件 PDF 强制走解析稿。"""
+    ft = (doc.file_type or "").lower()
+    has_raw = storage.original_path(doc.id) is not None
+    if ft == "md":
+        return "markdown"
+    if ft == "pdf":
+        if getattr(doc, "is_scanned_pdf", False) or not has_raw:
+            return "markdown"
+        return "pdf"
+    if ft == "docx":
+        return "docx" if has_raw else "markdown"
+    return "markdown" if ft in ("txt",) else "text"
+
+
 @router.get("/documents/{doc_id}/content", response_model=kb_schemas.DocumentContentMeta)
-def document_content(doc_id: str, db: Session = Depends(get_db)):
+def document_content(
+    doc_id: str,
+    meta_only: bool = False,
+    db: Session = Depends(get_db),
+):
     doc = kb_service.get_document(db, doc_id)
-    content = storage.read_parsed(doc.id) or ""
-    # PDF（含扫描件）已解析为 markdown，统一按 markdown 预览，不再走 PDF 渲染
-    preview_mode = "markdown" if doc.file_type in ("pdf", "md", "docx") else "text"
+    content = "" if meta_only else (storage.read_parsed(doc.id) or "")
+    preview_mode = _reading_preview_mode(doc)
+    warning = None
+    if doc.file_type == "pdf" and getattr(doc, "is_scanned_pdf", False):
+        warning = "扫描件已打开解析稿（MD），可划选 tip；原图阅读不支持 tip。"
+    elif preview_mode == "pdf":
+        warning = "正在阅读原 PDF。浏览器 PDF 内无法划选 tip，需要 tip 请切到解析稿。"
+    elif preview_mode == "docx":
+        warning = "正在阅读 DOCX。可划选文字 tip；若排版异常可切到解析稿。"
     return kb_schemas.DocumentContentMeta(
         doc_id=doc.id,
         file_name=doc.display_name,
@@ -158,7 +183,9 @@ def document_content(doc_id: str, db: Session = Depends(get_db)):
         file_type=doc.file_type,
         preview_mode=preview_mode,
         has_raw_file=storage.original_path(doc.id) is not None,
+        is_scanned_pdf=bool(getattr(doc, "is_scanned_pdf", False)),
         pdf_page_count=doc.pdf_page_count,
+        warning=warning,
     )
 
 
@@ -168,7 +195,14 @@ def fetch_document_file(doc_id: str, db: Session = Depends(get_db)):
     content = storage.read_original(doc.id)
     if not content:
         raise HTTPException(404, "原始文件不存在")
-    return Response(content=content, media_type="application/octet-stream")
+    ft = (doc.file_type or "").lower()
+    media = {
+        "pdf": "application/pdf",
+        "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "md": "text/markdown; charset=utf-8",
+        "txt": "text/plain; charset=utf-8",
+    }.get(ft, "application/octet-stream")
+    return Response(content=content, media_type=media)
 
 
 @router.get("/documents/{doc_id}/thumbnail")
@@ -183,6 +217,29 @@ def fetch_thumbnail(doc_id: str, db: Session = Depends(get_db)):
         if png:
             return Response(content=png, media_type="image/png")
     return Response(status_code=404)
+
+
+@router.get("/documents/{doc_id}/images", response_model=kb_schemas.DocumentImageList)
+def list_document_images(
+    doc_id: str,
+    page: Optional[int] = Query(None, ge=1, description="按页筛选；不传则返回全书图片"),
+    db: Session = Depends(get_db),
+):
+    """列出文档图床中的图片（供 tip 选图）。"""
+    kb_service.get_document(db, doc_id)
+    q = db.query(DocumentImage).filter(DocumentImage.document_id == doc_id)
+    if page is not None:
+        q = q.filter(DocumentImage.page_num == page)
+    rows = q.order_by(DocumentImage.page_num, DocumentImage.image_index, DocumentImage.file_name).all()
+    items = [
+        kb_schemas.DocumentImageItem(
+            file_name=r.file_name,
+            page_num=int(r.page_num or 0),
+            url_path=f"/api/v1/kb/documents/{doc_id}/images/{r.file_name}",
+        )
+        for r in rows
+    ]
+    return kb_schemas.DocumentImageList(document_id=doc_id, images=items)
 
 
 @router.get("/documents/{doc_id}/images/{filename}")
@@ -216,15 +273,22 @@ def document_pages(doc_id: str, db: Session = Depends(get_db)):
     pages = storage.list_pages(doc.id)
     counts = question_service.page_question_counts(db, doc.id)
     items = []
-    for num, p in pages:
+    # 与 storage 拼 parsed.md 一致：页与页之间用 \n\n
+    cursor = 0
+    for i, (num, p) in enumerate(pages):
         content = p.read_text(encoding="utf-8")
+        start = cursor
+        end = start + len(content)
         items.append(kb_schemas.DocumentPage(
             page_number=num,
             title=f"第 {num} 页",
             preview=content[:200],
+            char_start=start,
+            char_end=end,
             content_length=len(content),
             question_count=counts.get(num, 0),
         ))
+        cursor = end + (2 if i < len(pages) - 1 else 0)
     has_page_markers = len(items) > 0
     if not items:
         full = storage.read_parsed(doc.id) or ""
@@ -233,6 +297,8 @@ def document_pages(doc_id: str, db: Session = Depends(get_db)):
                 page_number=1,
                 title=doc.display_name,
                 preview=full[:200],
+                char_start=0,
+                char_end=len(full),
                 content_length=len(full),
                 question_count=counts.get(1, 0),
             ))
@@ -244,6 +310,8 @@ def document_pages(doc_id: str, db: Session = Depends(get_db)):
         has_page_markers=has_page_markers,
         pages=items,
         file_type=doc.file_type,
+        preview_mode=_reading_preview_mode(doc),
+        has_raw_file=storage.original_path(doc.id) is not None,
     )
 
 
@@ -315,6 +383,7 @@ def _learning_path_out(doc_id: str, rec: DocumentLearningPath | None) -> kb_sche
             title=str(ch.get("title") or ""),
             order=order,
             key_points=[str(p) for p in (ch.get("key_points") or []) if p],
+            learned=bool(ch.get("learned")),
         ))
     chapters.sort(key=lambda c: c.order)
     return kb_schemas.LearningPathResult(

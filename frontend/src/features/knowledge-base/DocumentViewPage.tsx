@@ -52,9 +52,15 @@ export function DocumentViewPage() {
   const previewMode =
     meta?.preview_mode === "pdf" && meta?.has_raw_file
       ? "pdf"
-      : meta?.preview_mode === "markdown" || meta?.file_type === "md" || meta?.file_type === "pdf" || meta?.file_type === "docx"
-        ? "markdown"
-        : "text"
+      : meta?.preview_mode === "docx" && meta?.has_raw_file
+        ? "markdown" // 知识库「查看原文」页暂用解析稿；完整阅读请走资料「阅读」
+        : meta?.preview_mode === "markdown" ||
+            meta?.file_type === "md" ||
+            meta?.file_type === "pdf" ||
+            meta?.file_type === "docx" ||
+            meta?.is_scanned_pdf
+          ? "markdown"
+          : "text"
 
   return (
     <AppShell maxWidth={previewMode === "pdf" ? null : 960}>

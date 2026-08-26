@@ -9,6 +9,8 @@ import {
   OnboardingGoalCard,
 } from "@/features/onboarding/OnboardingCards"
 import { MarkdownWithMath, markdownProseDangerClass } from "@/components/blocks/MarkdownWithMath"
+import { ThinkingLabel } from "@/components/blocks/ThinkingLabel"
+import { hasTinaMoodMarkup, parseTinaBursts } from "@/features/chat/tinaBursts"
 import { cn } from "@/lib/utils"
 
 interface ChatMessageProps {
@@ -42,7 +44,7 @@ function ReasoningBlock({
         )}
       >
         {open ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
-        <span className="font-mono">Thinking...</span>
+        <ThinkingLabel />
       </button>
       {open && (
         <div
@@ -60,6 +62,35 @@ function ReasoningBlock({
   )
 }
 
+function TinaBurstStack({
+  content,
+  crimson,
+}: {
+  content: string
+  crimson?: boolean
+}) {
+  const bursts = parseTinaBursts(content)
+  return (
+    <div className="space-y-2.5">
+      {bursts.map((b, i) => (
+        <div
+          key={i}
+          className={cn(
+            "rounded-[12px] border px-3.5 py-2.5",
+            crimson ? "border-danger/25 bg-danger-soft/40" : "border-line-light bg-paper-2/80",
+          )}
+        >
+          {b.text ? (
+            <MarkdownWithMath proseClass={crimson ? markdownProseDangerClass : undefined}>
+              {b.text}
+            </MarkdownWithMath>
+          ) : null}
+        </div>
+      ))}
+    </div>
+  )
+}
+
 export function ChatMessage({
   message,
   className,
@@ -71,6 +102,7 @@ export function ChatMessage({
   const isUser = message.role === "user"
   const crimson = Boolean(message.crimson)
   const glitch = Boolean(message.glitch)
+  const bursty = !isUser && !glitch && hasTinaMoodMarkup(message.content || "")
 
   if (isUser) {
     return (
@@ -96,6 +128,8 @@ export function ChatMessage({
           <div className="text-danger whitespace-pre-wrap break-all leading-relaxed">
             {message.content}
           </div>
+        ) : bursty ? (
+          <TinaBurstStack content={message.content || ""} crimson={crimson} />
         ) : (
           <MarkdownWithMath proseClass={crimson ? markdownProseDangerClass : undefined}>
             {message.content}

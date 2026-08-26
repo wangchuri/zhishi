@@ -68,14 +68,9 @@ export function QuizAnswerFeedback({
 
   return (
     <div className="space-y-3">
-      <div className={cn("flex items-center gap-2 text-body font-medium", info.className)}>
-        {info.icon}
-        {info.text}
-        {lastResult.status !== "correct" && lastResult.status !== "unknown" && correctDisplay && (
-          <span className="font-normal text-ink-secondary">
-            ，参考：{correctDisplay}
-          </span>
-        )}
+      <div className={cn("flex items-start gap-2 text-body font-medium", info.className)}>
+        <span className="mt-0.5 shrink-0">{info.icon}</span>
+        <span className="min-w-0">{info.text}</span>
       </div>
 
       {lastResult.ai_reason && (
@@ -93,6 +88,17 @@ export function QuizAnswerFeedback({
             {lastResult.string_match_status === "correct" ? "正确" : "错误"}
             」，AI 已重新裁定。
           </p>
+        )}
+
+      {!isUnknown &&
+        lastResult.status !== "correct" &&
+        correctDisplay && (
+          <div className="rounded-md border border-line-soft bg-surface-soft px-3 py-2.5">
+            <p className="text-caption font-medium text-ink-tertiary mb-1.5">参考</p>
+            <div className="text-body text-ink-primary break-words">
+              <MarkdownWithMath imageBaseUrl={imageBase}>{correctDisplay}</MarkdownWithMath>
+            </div>
+          </div>
         )}
 
       {!isUnknown && lastResult.explanation && (

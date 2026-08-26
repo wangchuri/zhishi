@@ -167,10 +167,14 @@ class QuestionGenTools:
         return None
 
     def get_near_page(self, offset: int) -> str:
-        """按相对页码取一页正文。offset 是相对当前页的整数：-1 上一页，8 往后第 8 页。
-        答案、例题可能在很后面时，直接用较大的正数，不要一次拉全书。
+        """本页信息不全时，按相对当前页的偏移取一页正文（目标页 = 当前页 + offset）。
+
+        用于用户消息被截断、例题/答案在别页、正文写到「见下页」等情况。
+        offset 为非 0 整数：-1 上一页，+1 下一页，+8 往后第 8 页。
+        不是只取相邻页；需要跳远时直接用较大的 offset，不要一页一页翻完全书。
+
         Args:
-            offset: 相对当前页的页差，不能为 0
+            offset: 相对当前页的页差，不能为 0（当前页正文已在用户消息中）
         """
         blocked = self._lookup_guard()
         if blocked:
@@ -180,7 +184,7 @@ class QuestionGenTools:
         except (TypeError, ValueError):
             return "offset 必须是整数，例如 -1、1、8"
         if offset == 0:
-            return "当前页已在用户消息中，不必再取 offset=0"
+            return "当前页正文已在用户消息中；若本页信息不全，用非 0 的 offset 取偏移页，例如 +1 看下一页"
         target = self._current_page() + offset
         if target < 1:
             return f"没有第 {target} 页。"

@@ -22,8 +22,31 @@ import {
   isGlitchCmd,
   playTinaGlitch,
 } from "@/features/chat/tinaGlitch"
+import { parseTinaBursts, type TinaMood } from "@/features/chat/tinaBursts"
+import { TinaFacePanel } from "@/features/chat/TinaFacePanel"
 import { useTinaCrisis } from "@/context/TinaCrisisContext"
 import { remainingCrisisPages } from "@/data/nav"
+
+function latestTinaMood(msgs: ChatMessage[]): TinaMood {
+  for (let i = msgs.length - 1; i >= 0; i--) {
+    const m = msgs[i]
+    if (m.role !== "assistant" || !m.content) continue
+    const bursts = parseTinaBursts(m.content)
+    for (let j = bursts.length - 1; j >= 0; j--) {
+      if (bursts[j].mood) return bursts[j].mood as TinaMood
+    }
+  }
+  return "NORMAL"
+}
+
+/** 本会话内每发一次 /tina 切换一次脸；与其它会话互不影响 */
+function sessionTinaFaceOn(msgs: ChatMessage[]): boolean {
+  let on = false
+  for (const m of msgs) {
+    if (m.role === "user" && m.content.trim() === "/tina") on = !on
+  }
+  return on
+}
 
 interface SessionItem {
   id: string
@@ -109,6 +132,15 @@ export function ChatPage() {
   const crisisRef = useRef(false)
   const glitchRun = useRef(0)
   const [slashIndex, setSlashIndex] = useState(0)
+  const [tinaPresence, setTinaPresence] = useState(false)
+  const [faceEnterKey, setFaceEnterKey] = useState(0)
+  const [faceMood, setFaceMood] = useState<TinaMood>("NORMAL")
+  const [faceUsingTool, setFaceUsingTool] = useState(false)
+  const tinaPresenceRef = useRef(false)
+
+  useEffect(() => {
+    tinaPresenceRef.current = tinaPresence
+  }, [tinaPresence])
 
   useEffect(() => {
     crisisRef.current = crisisMode
@@ -117,6 +149,21 @@ export function ChatPage() {
   useEffect(() => {
     sessionIdRef.current = sessionId
   }, [sessionId])
+
+  // 颜文字只跟「当前会话」里的 /tina 次数走，新开对话默认没有
+  useEffect(() => {
+    const on = sessionTinaFaceOn(messages)
+    if (on && !tinaPresenceRef.current) {
+      setFaceMood("NORMAL")
+      setFaceEnterKey((k) => k + 1)
+    }
+    setTinaPresence(on)
+  }, [messages])
+
+  useEffect(() => {
+    if (!tinaPresence) return
+    setFaceMood(latestTinaMood(messages))
+  }, [messages, tinaPresence])
 
   // ─── 会话列表 ──────────────────────────────────────
 
@@ -158,17 +205,6 @@ export function ChatPage() {
       void handleSelectSession({ id: sid.trim(), title: "" })
     }, 0)
     return () => window.clearTimeout(t)
-  }, [])
-
-  useEffect(() => {
-    const q = searchParams.get("q")
-    if (q?.trim()) {
-      const t = setTimeout(() => {
-        setInput(q.trim())
-        handleSend()
-      }, 300)
-      return () => clearTimeout(t)
-    }
   }, [])
 
   // ─── 滚动到底 ──────────────────────────────────────
@@ -258,6 +294,7 @@ export function ChatPage() {
     setMessages((prev) => [...prev, userMsg, assistantMsg])
     if (opts?.clearInput) setInput("")
     setIsStreaming(true)
+    setFaceUsingTool(false)
 
     if (isGlitchCmd(trimmed)) {
       setCrisisMode(true)
@@ -317,6 +354,9 @@ export function ChatPage() {
             })
           : undefined,
         onChunk: (chunk) => {
+          if (chunk.event === "tool_status") {
+            setFaceUsingTool(Boolean(chunk.using))
+          }
           if (chunk.event === "show_question" && chunk.question && typeof chunk.question === "object") {
             const q = chunk.question as ChatQuestionWidget["question"]
             setMessages((prev) =>
@@ -397,6 +437,7 @@ export function ChatPage() {
     } finally {
       streamingRef.current = false
       setIsStreaming(false)
+      setFaceUsingTool(false)
       const queued = pendingFollowUpRef.current
       pendingFollowUpRef.current = null
       if (queued) void sendText(queued)
@@ -431,6 +472,30 @@ export function ChatPage() {
   const handleSend = () => {
     void sendText(input, { clearInput: true })
   }
+
+  // 任务「去验收」等：带 q= 自动发一条，再清掉 URL 避免刷新重发
+  const autoQSentRef = useRef<string | null>(null)
+  useEffect(() => {
+    const q = searchParams.get("q")
+    if (!q?.trim()) return
+    const key = `${searchParams.get("task") || ""}|${q}`
+    if (autoQSentRef.current === key) return
+
+    const taskId = searchParams.get("task")?.trim() || ""
+    const text = q.trim()
+    let cancelled = false
+    const t = window.setTimeout(() => {
+      if (cancelled) return
+      // 真正发出去再记，避免 Strict Mode 清掉 timeout 后永远不发
+      autoQSentRef.current = key
+      void sendTextRef.current(text, { clearInput: true })
+      navigate(taskId ? `/chat?task=${encodeURIComponent(taskId)}` : "/chat", { replace: true })
+    }, 280)
+    return () => {
+      cancelled = true
+      window.clearTimeout(t)
+    }
+  }, [searchParams, navigate])
 
   const handleWidgetResolved = (questionId: string, next: ChatQuestionWidget, followUp: string) => {
     setMessages((prev) =>
@@ -468,8 +533,9 @@ export function ChatPage() {
   }
 
   const slashQuery = input.startsWith("/") ? input.trim() : ""
+  // 只保留「指令以输入为前缀」：输入 /tina 时同时出现 /tina 与 /tina?
   const slashHits = slashQuery
-    ? SLASH_COMMANDS.filter((c) => c.cmd.startsWith(slashQuery) || slashQuery.startsWith(c.cmd))
+    ? SLASH_COMMANDS.filter((c) => c.cmd.startsWith(slashQuery))
     : []
   const slashOpen = slashHits.length > 0 && !isStreaming && !loadingHistory
 
@@ -586,6 +652,18 @@ export function ChatPage() {
 
         {/* ────── 对话主区域 ────── */}
         <div className="flex-1 flex flex-col min-w-0">
+          {tinaPresence && (
+            <div className="shrink-0 px-8 pt-1">
+              <div className="max-w-[860px] mx-auto">
+                <TinaFacePanel
+                  key={faceEnterKey}
+                  mood={faceMood}
+                  speaking={isStreaming && !faceUsingTool}
+                  usingTool={faceUsingTool}
+                />
+              </div>
+            </div>
+          )}
           <div ref={scrollRef} className="flex-1 overflow-y-auto scroll-thin px-8 py-6">
             <div className="max-w-[860px] mx-auto space-y-4">
               {loadingHistory ? (
@@ -683,7 +761,7 @@ export function ChatPage() {
                         handleSend()
                       }
                     }}
-                    placeholder="有什么想问 Tina 的…"
+                    placeholder={tinaPresence ? "和 Tina 本体说点什么…" : "有什么想问 Tina 的…"}
                     rows={1}
                     className="flex-1 resize-none bg-transparent py-2 text-body text-ink-primary placeholder:text-ink-tertiary focus:outline-none leading-relaxed"
                     style={{ maxHeight: "200px", overflowY: "auto" }}

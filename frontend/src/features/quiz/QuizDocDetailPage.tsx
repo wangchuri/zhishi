@@ -110,6 +110,7 @@ export function QuizDocDetailPage() {
   const [genJobs, setGenJobs] = useState<QuestionGenJob[]>([])
   const [expandedChapter, setExpandedChapter] = useState<number | null>(null)
   const [startingChapter, setStartingChapter] = useState<string | null>(null)
+  const [chapterLearnFilter, setChapterLearnFilter] = useState<"all" | "unread" | "read">("all")
   const wasGeneratingRef = useRef(false)
 
   const doc = useMemo(() => documents.find((d) => d.id === docId), [documents, docId])
@@ -350,6 +351,19 @@ export function QuizDocDetailPage() {
     return points
   }, [learningPath])
 
+  const chapterLearnStats = useMemo(() => {
+    const chapters = learningPath?.chapters || []
+    const read = chapters.filter((c) => c.learned).length
+    return { total: chapters.length, read, unread: Math.max(0, chapters.length - read) }
+  }, [learningPath])
+
+  const visibleChapters = useMemo(() => {
+    const chapters = learningPath?.chapters || []
+    if (chapterLearnFilter === "read") return chapters.filter((c) => c.learned)
+    if (chapterLearnFilter === "unread") return chapters.filter((c) => !c.learned)
+    return chapters
+  }, [learningPath, chapterLearnFilter])
+
   const accuracy = stats && stats.answered > 0 ? Math.round((stats.correct / stats.answered) * 100) : null
   const progress = stats && stats.total > 0 ? Math.round((stats.answered / stats.total) * 100) : 0
 
@@ -392,9 +406,6 @@ export function QuizDocDetailPage() {
         <Button variant="secondary" size="md" onClick={() => navigate(`/companion/doc/${doc.id}`)}>
           <BookOpen className="w-4 h-4 mr-2" />
           阅读
-        </Button>
-        <Button variant="secondary" size="md" onClick={() => navigate(`/knowledge/doc/${doc.id}?title=${encodeURIComponent(doc.name)}`)}>
-          查看原文
         </Button>
         <Button variant="secondary" size="md" onClick={() => setPreviewOpen(true)} disabled={!hasQuestions && !loadingQuestions}>
           <ListChecks className="w-4 h-4 mr-2" />
@@ -550,7 +561,11 @@ export function QuizDocDetailPage() {
         <div className="min-w-0 flex flex-col">
           <SectionHeader
             title="书本目录"
-            subtitle={learningPath?.title ? `「${learningPath.title}」· 点开看要点，可刷这一章` : "点开看要点，可刷这一章"}
+            subtitle={
+              learningPath?.title
+                ? `「${learningPath.title}」· 已读 ${chapterLearnStats.read} / 未读 ${chapterLearnStats.unread}（指看书了解过，不是刷完题）`
+                : `已读 ${chapterLearnStats.read} / 未读 ${chapterLearnStats.unread}（指看书了解过，不是刷完题）`
+            }
           >
             <Button
               variant="ghost"
@@ -570,8 +585,41 @@ export function QuizDocDetailPage() {
             </Card>
           ) : (learningPath?.chapters?.length ?? 0) > 0 ? (
             <Card className="overflow-hidden">
+              <div className="flex flex-wrap gap-1.5 px-3 py-2.5 border-b border-line-soft bg-paper-2/40">
+                {(
+                  [
+                    { key: "all", label: `全部 ${chapterLearnStats.total}` },
+                    { key: "unread", label: `未读 ${chapterLearnStats.unread}` },
+                    { key: "read", label: `已读 ${chapterLearnStats.read}` },
+                  ] as const
+                ).map((opt) => (
+                  <button
+                    key={opt.key}
+                    type="button"
+                    onClick={() => {
+                      setChapterLearnFilter(opt.key)
+                      setExpandedChapter(null)
+                    }}
+                    className={
+                      chapterLearnFilter === opt.key
+                        ? "rounded-full px-2.5 py-1 text-caption font-medium bg-sea text-paper"
+                        : "rounded-full px-2.5 py-1 text-caption font-medium bg-paper text-ink-soft border border-line hover:border-sea/35"
+                    }
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
               <div className="max-h-[420px] overflow-y-auto divide-y divide-line-soft">
-                {learningPath!.chapters.map((ch, i) => {
+                {visibleChapters.length === 0 ? (
+                  <p className="px-4 py-8 text-center text-small text-ink-soft">
+                    {chapterLearnFilter === "unread" ? "没有未读章节" : "没有已读章节"}
+                  </p>
+                ) : null}
+                {visibleChapters.map((ch) => {
+                  const i = learningPath!.chapters.findIndex(
+                    (c) => (c.id && c.id === ch.id) || c === ch,
+                  )
                   const points = splitKeyPoints(ch.key_points)
                   const open = expandedChapter === i
                   const chapterQs = ch.id ? questionsByChapter.get(ch.id) || [] : []
@@ -592,6 +640,21 @@ export function QuizDocDetailPage() {
                             <div className="min-w-0 flex-1 text-small font-medium text-ink-primary truncate">
                               {ch.title || `第 ${ch.order || i + 1} 章`}
                             </div>
+                            {ch.learned ? (
+                              <span
+                                className="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium bg-success-soft text-success border border-success/20"
+                                title="已看书了解过（不是刷完题）"
+                              >
+                                已读
+                              </span>
+                            ) : (
+                              <span
+                                className="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium bg-paper-2 text-ink-soft border border-line"
+                                title="知拾视为还没看书了解过"
+                              >
+                                未读
+                              </span>
+                            )}
                             <span className="text-caption text-ink-tertiary shrink-0">
                               {chapterQs.length} 题
                               {points.length > 0 ? ` · ${points.length} 点` : ""}

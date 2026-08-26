@@ -4,13 +4,13 @@ import { MessageSquare, Library, BarChart3, Pencil } from "lucide-react"
 import { AppShell } from "@/components/layout/AppShell"
 import { SectionHeader } from "@/components/blocks/SectionHeader"
 import { QuickActionCard } from "@/components/blocks/QuickActionCard"
-import { TaskSpine, TodayTaskCard } from "@/components/blocks/TodayTaskCard"
+import { DayCompleteCard, TaskRefillHint, TodayTaskSection } from "@/components/blocks/DayCompleteCard"
+import { TaskAgentWriting } from "@/components/blocks/TaskAgentWriting"
 import { EmptyNotes, MistRings, SageSprig, SealMark, TimeMotif } from "@/components/decor/PaperMotifs"
 import { Button } from "@/components/ui/button"
 import { useAuth } from "@/context/AuthContext"
 import { tasksApi, profileApi } from "@/lib/api"
 import { noticeTodayTasks, TASKS_EVENT } from "@/lib/taskNotify"
-import { DayCompleteCard, TaskRefillHint } from "@/components/blocks/DayCompleteCard"
 import type { TodayTasksResult } from "@/types"
 
 const quickActions = [
@@ -167,19 +167,34 @@ export function DashboardPage() {
 
       <section className="mb-8 short:mb-5">
         {goalText && !editingGoal ? (
-          <div className="relative overflow-hidden rounded-2xl border border-line bg-paper p-5 md:p-6 shadow-[0_4px_20px_-2px_rgba(20,33,43,0.05)] border-l-[3px] border-l-sea">
-            <div className="paper-grain pointer-events-none absolute inset-0 opacity-40" />
-            <SealMark className="pointer-events-none absolute -right-3 -bottom-4 w-24 h-24 text-sea/15" />
+          <div className="relative overflow-hidden rounded-3xl border border-sea/25 bg-gradient-to-br from-sea-subtle via-paper to-paper px-5 py-6 md:px-7 md:py-7 shadow-[0_10px_32px_-18px_rgba(31,92,90,0.35)]">
+            <div className="paper-grain pointer-events-none absolute inset-0 opacity-35" />
+            <div className="pointer-events-none absolute inset-x-5 top-0 h-px bg-gradient-to-r from-transparent via-sea/40 to-transparent md:inset-x-7" />
+            <MistRings className="pointer-events-none absolute -right-16 -top-16 w-48 h-48 text-sea opacity-30" />
+            <SealMark className="pointer-events-none absolute right-4 bottom-3 w-16 h-16 text-sea/20 md:right-6" label="向" />
+
             <div className="relative flex items-start justify-between gap-4">
-              <div className="min-w-0">
-                <p className="text-[11px] font-semibold tracking-wide text-sea mb-2">我的目标</p>
-                <p className="text-title-s md:text-lg font-semibold leading-relaxed text-ink">{goalText}</p>
-                <p className="text-[11px] text-ink-disabled mt-2">任务都围着这个走</p>
+              <div className="min-w-0 flex-1">
+                <div className="mb-3 inline-flex items-center gap-2">
+                  <span className="h-1.5 w-1.5 rounded-full bg-sea" />
+                  <span className="text-[11px] font-semibold tracking-[0.14em] uppercase text-sea">
+                    我的目标
+                  </span>
+                </div>
+                <p className="font-display text-[1.45rem] md:text-[1.75rem] leading-snug text-ink max-w-2xl">
+                  {goalText}
+                </p>
+                <p className="mt-3 text-caption text-ink-soft">
+                  今天的任务都围着这个方向走
+                </p>
               </div>
               <button
                 type="button"
-                onClick={() => setEditingGoal(true)}
-                className="shrink-0 h-8 px-3 rounded-full border border-line bg-paper-2 text-caption text-ink-soft hover:text-sea hover:border-sea/40 inline-flex items-center gap-1.5 transition-colors"
+                onClick={() => {
+                  setGoalDraft(goalText)
+                  setEditingGoal(true)
+                }}
+                className="shrink-0 h-9 px-3.5 rounded-full border border-sea/25 bg-paper/80 text-caption text-sea hover:bg-paper hover:border-sea/45 inline-flex items-center gap-1.5 transition-colors backdrop-blur-sm"
               >
                 <Pencil className="w-3.5 h-3.5" strokeWidth={2} />
                 修改
@@ -187,25 +202,32 @@ export function DashboardPage() {
             </div>
           </div>
         ) : (
-          <div className="relative overflow-hidden rounded-2xl border border-line bg-paper p-5">
-            <SageSprig className="pointer-events-none absolute right-3 bottom-0 w-12 h-20 text-sea/25" />
-            <p className="relative text-[11px] font-semibold tracking-wide text-sea mb-3">写下这段时间要学什么</p>
-            <div className="relative flex gap-2">
+          <div className="relative overflow-hidden rounded-3xl border border-dashed border-sea/35 bg-sea-subtle/50 px-5 py-6 md:px-7">
+            <SageSprig className="pointer-events-none absolute right-3 bottom-0 w-12 h-20 text-sea/30" />
+            <p className="relative mb-1 text-[11px] font-semibold tracking-[0.14em] uppercase text-sea">
+              写下这段时间要学什么
+            </p>
+            <p className="relative mb-4 text-caption text-ink-soft">
+              一句话就好，后面的任务都会围着它排
+            </p>
+            <div className="relative flex flex-col sm:flex-row gap-2">
               <input
                 type="text"
                 value={goalDraft}
                 onChange={(e) => setGoalDraft(e.target.value)}
-                placeholder="一句话写下你这段时间要学什么"
-                className="flex-1 h-11 px-3 rounded-xl bg-paper-2 border border-line text-body text-ink placeholder:text-ink-disabled focus:outline-none focus:border-sea"
+                placeholder="例如：备考 408，先把四门课过一轮"
+                className="flex-1 h-11 px-3.5 rounded-xl bg-paper border border-sea/20 text-body text-ink placeholder:text-ink-disabled focus:outline-none focus:border-sea"
               />
-              <Button onClick={() => void saveGoal()} disabled={savingGoal || !goalDraft.trim()}>
-                {today?.goal ? "更新" : "保存"}
-              </Button>
-              {goalText ? (
-                <Button variant="ghost" onClick={() => setEditingGoal(false)}>
-                  取消
+              <div className="flex gap-2 shrink-0">
+                <Button onClick={() => void saveGoal()} disabled={savingGoal || !goalDraft.trim()}>
+                  {today?.goal ? "更新" : "保存"}
                 </Button>
-              ) : null}
+                {goalText ? (
+                  <Button variant="ghost" onClick={() => setEditingGoal(false)}>
+                    取消
+                  </Button>
+                ) : null}
+              </div>
             </div>
           </div>
         )}
@@ -228,29 +250,23 @@ export function DashboardPage() {
           </div>
         </SectionHeader>
         {!today?.tasks?.length && !today?.refill_pending && !today?.day_complete ? (
-          <div className="relative overflow-hidden rounded-2xl border border-dashed border-line bg-paper/70 px-5 py-10 text-center">
-            <EmptyNotes className="mx-auto mb-3 w-28 h-16" />
-            <p className="text-body text-ink-soft">
-              {tasksLoading ? "正在把今天的便签写好…" : "今天的便签还是空白，保存目标或刷新后再看。"}
-            </p>
-          </div>
+          tasksLoading ? (
+            <TaskAgentWriting />
+          ) : (
+            <div className="relative overflow-hidden rounded-2xl border border-dashed border-line bg-paper/70 px-5 py-10 text-center">
+              <EmptyNotes className="mx-auto mb-3 w-28 h-16" />
+              <p className="text-body text-ink-soft">今天的便签还是空白，保存目标或刷新后再看。</p>
+            </div>
+          )
         ) : (
-          <div className="space-y-3">
+          <TodayTaskSection
+            tasks={today?.tasks || []}
+            dayComplete={today?.day_complete}
+            onGo={(task) => navigate(task.href || "/quiz")}
+          >
             {today?.day_complete ? <DayCompleteCard /> : null}
             {today?.refill_pending ? <TaskRefillHint /> : null}
-            {today?.tasks?.length ? (
-              <TaskSpine>
-                {today.tasks.map((task, i) => (
-                  <TodayTaskCard
-                    key={task.id}
-                    task={task}
-                    index={i}
-                    onGo={() => navigate(task.href || "/quiz")}
-                  />
-                ))}
-              </TaskSpine>
-            ) : null}
-          </div>
+          </TodayTaskSection>
         )}
       </section>
     </AppShell>

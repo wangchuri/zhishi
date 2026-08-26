@@ -1,0 +1,50 @@
+# Git / IDE
+.git
+.github
+.cursor
+.vscode
+.idea
+.workbuddy
+**/.pytest_cache
+**/__pycache__
+**/*.pyc
+**/.mypy_cache
+
+# Local envs & secrets (mount at runtime)
+.venv
+venv
+env
+backend/.env
+backend/tina.env
+.env
+.env.*
+!.env.example
+
+# Node / build caches
+node_modules
+frontend/node_modules
+frontend/dist
+frontend/release
+frontend/electron
+**/.tmp
+
+# Runtime data (volume-mounted)
+data
+storage
+backend/storage
+backend/logs
+backend/output
+logs
+releases
+test_docs
+resources
+design
+docs
+.build-deps
+
+# Misc
+*.log
+*.md
+!README.md
+overview.md
+_electron_dev.log

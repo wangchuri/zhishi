@@ -188,6 +188,7 @@ export interface QuizSession {
   title?: string | null
   status: "active" | "completed" | string
   document_id?: string | null
+  document_name?: string | null
   collection_id?: string | null
   total_questions: number
   answered_count: number
@@ -475,8 +476,9 @@ export interface DocumentContentMeta {
   file_name?: string
   content: string
   file_type?: string
-  preview_mode?: "pdf" | "text" | "markdown"
+  preview_mode?: "pdf" | "docx" | "text" | "markdown"
   has_raw_file?: boolean
+  is_scanned_pdf?: boolean
   mock?: boolean
   pdf_page_count?: number
   warning?: string
@@ -487,6 +489,8 @@ export interface LearningPathChapter {
   title: string
   order: number
   key_points: string[]
+  /** Tina 验收：true=已学过，false/缺省=未学过 */
+  learned?: boolean
 }
 
 export interface LearningPathResult {
@@ -568,7 +572,7 @@ export interface DailyTaskItem {
   for_date: string
   title: string
   description?: string | null
-  kind: "upload" | "generate" | "quiz" | string
+  kind: "upload" | "generate" | "quiz" | "learn" | string
   payload?: Record<string, unknown>
   checker: string
   status: "pending" | "completed" | "expired" | string

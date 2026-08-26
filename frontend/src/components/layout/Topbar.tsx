@@ -13,13 +13,13 @@ const titleMap: Record<string, string> = {
   "/notes": "笔记",
   "/knowledge/upload": "上传资料",
   "/quiz": "资料",
+  "/quiz/ongoing": "继续刷题",
   "/graph": "知识图谱",
   "/tasks": "任务",
   "/analytics": "进度",
   "/path": "学习路径",
-  "/profile": "学习画像",
+  "/profile": "设置",
   "/settings": "设置",
-  "/settings/diagnostics": "诊断与修复",
 }
 
 function resolveTitle(pathname: string): string {

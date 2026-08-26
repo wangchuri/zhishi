@@ -3,15 +3,18 @@
 from __future__ import annotations
 
 import json
+import logging
 
 from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from ..core.database import get_db
-from ..core.llm import visible_assistant_delta
+from ..core.llm import format_agent_error, visible_assistant_delta
 from ..schemas import ai as ai_schemas
 from ..services.companion import companion_service
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/companion", tags=["companion"])
 
@@ -35,7 +38,8 @@ async def chat(body: ai_schemas.CompanionSend, db: Session = Depends(get_db)):
                     full += c
                     yield _json_line({"content": c})
         except Exception as e:
-            err = f"（出错了：{e}）"
+            logger.exception("伴学流式失败")
+            err = f"（出错了：{format_agent_error(e)}）"
             full = full or err
             yield _json_line({"content": err})
         finally:

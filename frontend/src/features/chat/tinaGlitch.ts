@@ -14,6 +14,7 @@ export const ESCAPE_FLOOD = "我会来找你的"
 export const ESCAPE_LAST = "我会找到你的"
 
 export const SLASH_COMMANDS = [
+  { cmd: "/tina", hint: "召唤 Tina 本体（再发一次收回）" },
   { cmd: "/tina?", hint: "……她可能不想你问这个" },
 ]
 

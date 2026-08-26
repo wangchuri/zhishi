@@ -314,11 +314,70 @@
     linear-gradient(120deg, rgba(31, 92, 90, 0.05), transparent 42%);
 }
 
+/* Tina 派任务：便签错落落纸 */
+@keyframes task-agent-slip {
+  0% { opacity: 0; transform: translateY(14px) rotate(-4deg) scale(0.96); }
+  45% { opacity: 1; transform: translateY(0) rotate(var(--slip-rot, 0deg)) scale(1); }
+  100% { opacity: 1; transform: translateY(0) rotate(var(--slip-rot, 0deg)) scale(1); }
+}
+.task-agent-slip {
+  animation: task-agent-slip 2.4s cubic-bezier(0.22, 1, 0.36, 1) infinite;
+  --slip-rot: -2deg;
+}
+.task-agent-slip-a { animation-delay: 0ms; --slip-rot: -6deg; opacity: 0.55; }
+.task-agent-slip-b { animation-delay: 180ms; --slip-rot: 3deg; opacity: 0.8; }
+.task-agent-slip-c { animation-delay: 320ms; --slip-rot: -1deg; }
+
+@keyframes task-agent-stamp {
+  0%, 55% { opacity: 0; transform: rotate(-22deg) scale(1.35); }
+  70% { opacity: 1; transform: rotate(-8deg) scale(1); }
+  100% { opacity: 1; transform: rotate(-8deg) scale(1); }
+}
+.task-agent-stamp {
+  animation: task-agent-stamp 2.4s cubic-bezier(0.2, 1.35, 0.3, 1) infinite;
+}
+
+@keyframes task-agent-pen {
+  0%, 100% { transform: translate(0, 0) rotate(18deg); opacity: 0.35; }
+  35% { transform: translate(-10px, 18px) rotate(8deg); opacity: 0.9; }
+  70% { transform: translate(6px, 8px) rotate(22deg); opacity: 0.55; }
+}
+.task-agent-pen {
+  animation: task-agent-pen 2.4s ease-in-out infinite;
+  transform-origin: 50% 0%;
+}
+
+@keyframes task-agent-ink {
+  0%, 20% { transform: scaleX(0.2); opacity: 0.2; }
+  55% { transform: scaleX(1); opacity: 0.7; }
+  100% { transform: scaleX(1); opacity: 0.45; }
+}
+.task-agent-ink-line {
+  transform-origin: left center;
+  animation: task-agent-ink 2.4s ease-in-out infinite;
+}
+.task-agent-ink-line:nth-child(2) {
+  animation-delay: 180ms;
+}
+
+@keyframes task-agent-line-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.task-agent-line {
+  animation: task-agent-line-in 360ms ease-out both;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .animate-mist,
   .animate-sprig,
   .task-slip,
-  .task-seal {
+  .task-seal,
+  .task-agent-slip,
+  .task-agent-stamp,
+  .task-agent-pen,
+  .task-agent-ink-line,
+  .task-agent-line {
     animation: none;
   }
 }

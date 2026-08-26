@@ -1,4 +1,4 @@
-"""任务 Agent：程序给出候选人（kind/checker/页码题号），条数和数量由模型自己定。"""
+"""任务 Agent：候选人派发 + 按章节/标签检索后布置刷题/学习验收。"""
 
 from __future__ import annotations
 
@@ -37,12 +37,14 @@ async def run_task_agent(*, is_refill: bool = False) -> int:
         user = (
             "用户已经做完今天目前所有任务。根据已完成任务和学情决定要不要再派一轮。"
             "原则：清晰、具体、对用户有帮助。不要为凑数而派。今天已经够了就一条都不要派。"
-            "只调用 assign_task；candidate_id 必须来自列表；quantity 不能超过该候选人资料里实际有的量。"
+            "可用 assign_task（候选人）或 list_book_chapters / search_book_questions + assign_quiz_task / assign_learn_task。"
+            "刷题务必带具体 question_ids；学习验收用章节 id。"
         )
     else:
         user = (
             "根据目标和学情设计今天的任务。条数、每条做多少都由你决定。"
-            "只调用 assign_task；candidate_id 必须来自列表；quantity 不能超过该候选人资料里实际有的量。"
+            "可用 assign_task（候选人）或检索后 assign_quiz_task / assign_learn_task。"
+            "刷题优先 search_book_questions 再布置，确保任务里有题目 id 列表。"
             "可以一条都不派。"
         )
     try:

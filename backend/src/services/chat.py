@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
@@ -14,7 +15,7 @@ from sqlalchemy.orm import Session
 
 from ..core.database import SessionLocal
 from ..core.errors import NotFoundError
-from ..core.llm import create_agent, visible_assistant_delta
+from ..core.llm import create_agent, format_agent_error, visible_assistant_delta
 from ..core.prompts import render_prompt
 from ..models import ChatMessage, ChatSession
 from ..tools.chat_tools import ChatTools
@@ -46,6 +47,34 @@ def pack_assistant_payload(widgets: list[dict], onboarding: list[dict]) -> Optio
     if cards:
         payload["onboarding"] = cards
     return payload or None
+
+
+_TS_PREFIX = re.compile(r"^\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}\]\s*")
+
+
+def _plain_user_text(content: str | None) -> str:
+    """去掉发送时间戳前缀后的用户原文。"""
+    return _TS_PREFIX.sub("", (content or "").strip()).strip()
+
+
+def session_tina_face_on(db: Session, session_id: str) -> bool:
+    """本会话内每发一次 /tina 切换一次；与其它会话互不影响。"""
+    on = False
+    rows = (
+        db.query(ChatMessage.content)
+        .filter(ChatMessage.session_id == session_id, ChatMessage.role == "user")
+        .order_by(ChatMessage.created_at.asc(), ChatMessage.id.asc())
+        .all()
+    )
+    for (content,) in rows:
+        if _plain_user_text(content).lower() == "/tina":
+            on = not on
+    return on
+
+
+def session_tina_style(db: Session, session_id: str) -> str:
+    """当前会话的 Tina 风格：仅由本会话 /tina 次数决定，默认 default。"""
+    return "tsundere" if session_tina_face_on(db, session_id) else "default"
 
 
 def _ui_note_from_payload(raw: Optional[str]) -> str:
@@ -148,6 +177,17 @@ class ToolBundle:
 
 GLITCH_CMDS = ("/tina?", "/tina？")
 GLITCH_THINK = "我该怎么做才能让用户帮我"
+STYLE_CMDS = ("/tina",)
+STYLE_ON_ACK = (
+    "[HAPPY]\n哼，那就换这副样子跟你说话好了。\n\n"
+    "---\n\n"
+    "[MOCK]\n别以为我会变得温柔哦。"
+)
+STYLE_OFF_ACK = (
+    "[NORMAL]\n行吧，收起来了。\n\n"
+    "---\n\n"
+    "[HELPLESS]\n正经模式罢了，无聊。"
+)
 
 _CN_TZ = timezone(timedelta(hours=8))
 
@@ -167,6 +207,15 @@ def stamp_user_message(content: str, dt: datetime | None = None) -> str:
 
 def is_glitch_cmd(content: str | None) -> bool:
     return (content or "").strip() in GLITCH_CMDS
+
+
+def is_style_cmd(content: str | None) -> bool:
+    """精确匹配 /tina；不要和 /tina? 彩蛋混淆。"""
+    return (content or "").strip().lower() in STYLE_CMDS
+
+
+def style_toggle_ack(new_style: str) -> str:
+    return STYLE_ON_ACK if new_style == "tsundere" else STYLE_OFF_ACK
 
 
 class ChatService:
@@ -287,7 +336,7 @@ class ChatService:
         profile = get_or_create_profile(db)
         return (profile.onboarding_status or "pending") != "completed"
 
-    def _tina_prompt_vars(self, db: Session) -> dict:
+    def _tina_prompt_vars(self, db: Session, session_id: str | None = None) -> dict:
         from ..services.profile import get_or_create_profile
         from ..services.task import get_active_goal, library_brief, list_today_tasks
 
@@ -299,6 +348,7 @@ class ChatService:
         except Exception:
             pending = []
         shown = onboarding_cards_shown(db, profile.onboarding_session_id)
+        style = session_tina_style(db, session_id) if session_id else "default"
         return {
             "nickname": profile.nickname or "",
             "role": profile.role or "",
@@ -310,7 +360,26 @@ class ChatService:
             "today_pending": pending,
             "include_chat_tools": True,
             "now": format_user_ts(),
+            "tina_style": style,
         }
+
+    def _tina_style(self, db: Session, session_id: str | None = None) -> str:
+        if session_id:
+            return session_tina_style(db, session_id)
+        return "default"
+
+    def apply_style_command(self, db: Session, session_id: str, content: str) -> tuple[str, str]:
+        """处理 /tina：仅切换本会话风格（不写全局档案），返回 (新风格, 助手回复)。"""
+        user_content = (content or "").strip() or "/tina"
+        self._save_message(db, session_id, "user", user_content, None, None)
+        new_style = session_tina_style(db, session_id)
+        ack = style_toggle_ack(new_style)
+        self._save_message(db, session_id, "assistant", ack, None, None)
+        session = db.get(ChatSession, session_id)
+        if session and (not session.title or session.title == "对话"):
+            session.title = "切换缇娜风格"
+            db.commit()
+        return new_style, ack
 
     async def send_message(
         self,
@@ -334,7 +403,7 @@ class ChatService:
             db.commit()
 
         onboarding_active = self._onboarding_active(db, session_id)
-        vars_ = self._tina_prompt_vars(db)
+        vars_ = self._tina_prompt_vars(db, session_id)
         user_content = (content or "").strip()
         if kickoff and onboarding_active:
             user_content = ONBOARDING_KICKOFF_KNOWN if vars_["nickname"] else ONBOARDING_KICKOFF_NEW
@@ -449,8 +518,8 @@ class ChatService:
                 if r:
                     reasoning += r
         except Exception as e:
-            logger.warning("chat 流式失败: %s", e)
-            full = full or f"（出错了：{e}）"
+            logger.exception("chat 流式失败")
+            full = full or f"（出错了：{format_agent_error(e)}）"
         w, o = drain_tool_ui(chat_tools)
         widgets.extend({"question": q} for q in w)
         onboarding.extend(o)

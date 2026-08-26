@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from datetime import date, datetime
 
 from fastapi import APIRouter, Depends
@@ -10,16 +11,19 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from ..core.database import get_db
-from ..core.llm import visible_assistant_delta
+from ..core.llm import format_agent_error, is_tool_related_chunk, visible_assistant_delta
 from ..schemas import ai as ai_schemas
 from ..services.chat import (
     GLITCH_THINK,
     chat_service,
     drain_tool_ui,
     is_glitch_cmd,
+    is_style_cmd,
     pack_assistant_payload,
 )
 from ..services.profile import get_or_create_profile, profile_out
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/chat", tags=["chat"])
 
@@ -81,6 +85,27 @@ async def send(body: ai_schemas.ChatSend, db: Session = Depends(get_db)):
 
         return StreamingResponse(glitch_gen(), media_type="text/event-stream")
 
+    if is_style_cmd(body.content):
+        new_style, ack = chat_service.apply_style_command(db, session_id, body.content or "/tina")
+
+        async def style_gen():
+            yield _json_line({"event": "session", "session_id": session_id})
+            yield _json_line({
+                "event": "tina_style",
+                "tina_style": new_style,
+                "session_id": session_id,
+            })
+            yield _json_line({"content": ack, "session_id": session_id, "role": "assistant"})
+            profile = get_or_create_profile(db)
+            yield _json_line({
+                "event": "profile",
+                "profile": profile_out(db, profile),
+                "session_id": session_id,
+            })
+            yield "data: [DONE]\n\n"
+
+        return StreamingResponse(style_gen(), media_type="text/event-stream")
+
     agent, sid, user_content, tools = await chat_service.send_message(
         db, session_id, body.content, body.collection_id,
         stream=body.stream, crisis=body.crisis,
@@ -95,11 +120,27 @@ async def send(body: ai_schemas.ChatSend, db: Session = Depends(get_db)):
             widgets: list[dict] = []
             onboarding: list[dict] = []
             yield _json_line({"event": "session", "session_id": sid})
+            using_tool = False
             try:
                 async for chunk in agent.apredict(user_content):
                     for line in _emit_tool_events(tools, sid, widgets, onboarding):
                         yield line
+                    toolish = is_tool_related_chunk(chunk)
+                    if toolish and not using_tool:
+                        using_tool = True
+                        yield _json_line({
+                            "event": "tool_status",
+                            "using": True,
+                            "session_id": sid,
+                        })
                     c, r = visible_assistant_delta(chunk)
+                    if (c or r) and using_tool and not toolish:
+                        using_tool = False
+                        yield _json_line({
+                            "event": "tool_status",
+                            "using": False,
+                            "session_id": sid,
+                        })
                     if c:
                         full += c
                         yield _json_line({"content": c, "session_id": sid, "role": "assistant"})
@@ -109,9 +150,16 @@ async def send(body: ai_schemas.ChatSend, db: Session = Depends(get_db)):
                 for line in _emit_tool_events(tools, sid, widgets, onboarding):
                     yield line
             except Exception as e:
-                err = f"（出错了：{e}）"
+                logger.exception("chat 流式失败")
+                err = f"（出错了：{format_agent_error(e)}）"
                 full = full or err
                 yield _json_line({"content": err, "session_id": sid, "role": "assistant"})
+            if using_tool:
+                yield _json_line({
+                    "event": "tool_status",
+                    "using": False,
+                    "session_id": sid,
+                })
             payload = pack_assistant_payload(widgets, onboarding)
             think = GLITCH_THINK if chat_service.session_in_crisis(db, sid) else (reasoning or None)
             message_id = chat_service.persist_assistant(sid, full, think, None, payload)

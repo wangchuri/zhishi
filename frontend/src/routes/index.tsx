@@ -13,10 +13,10 @@ import { LearningAnalyticsPage } from "@/features/learning/LearningAnalyticsPage
 import { TargetedTrainingPage } from "@/features/learning/TargetedTrainingPage"
 import { ProfilePage } from "@/features/profile/ProfilePage"
 import { SettingsPage } from "@/features/settings/SettingsPage"
-import { DiagnosticsPage } from "@/features/settings/DiagnosticsPage"
 import { ServerSetupPage } from "@/features/setup/ServerSetupPage"
 import { QuizBookListPage } from "@/features/quiz/QuizBookListPage"
 import { QuizDocDetailPage } from "@/features/quiz/QuizDocDetailPage"
+import { QuizOngoingPage } from "@/features/quiz/QuizOngoingPage"
 import { QuizPage } from "@/features/quiz/QuizPage"
 import { QuestionGenDocPage } from "@/features/question-gen/QuestionGenDocPage"
 import { CompanionReadPage } from "@/features/companion/CompanionReadPage"
@@ -75,6 +75,7 @@ export function AppRoutes() {
       <Route path="/profile" element={<RequireServer><ProfilePage /></RequireServer>} />
       <Route path="/settings" element={<RequireServer><SettingsPage /></RequireServer>} />
       <Route path="/quiz" element={<RequireServer><QuizBookListPage /></RequireServer>} />
+      <Route path="/quiz/ongoing" element={<RequireServer><QuizOngoingPage /></RequireServer>} />
       <Route path="/quiz/doc/:docId" element={<RequireServer><QuizDocDetailPage /></RequireServer>} />
       <Route path="/quiz/session" element={<RequireServer><QuizPage /></RequireServer>} />
       <Route path="/question-gen" element={<Navigate to="/quiz" replace />} />
@@ -82,7 +83,7 @@ export function AppRoutes() {
       <Route path="/companion" element={<Navigate to="/quiz" replace />} />
       <Route path="/companion/doc/:docId" element={<RequireServer><CompanionReadPage /></RequireServer>} />
       <Route path="/doc-parse" element={<RequireServer><DocParsePage /></RequireServer>} />
-      <Route path="/settings/diagnostics" element={<RequireServer><DiagnosticsPage /></RequireServer>} />
+      <Route path="/settings/diagnostics" element={<Navigate to="/settings" replace />} />
       <Route path="*" element={<Navigate to={isServerConfigured() ? "/" : "/setup"} replace />} />
     </Routes>
   )

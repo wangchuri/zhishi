@@ -72,11 +72,14 @@ class ProfileOut(BaseModel):
     role: Optional[str] = None
     onboarding_status: str = "pending"
     has_goal: bool = False
+    goal: Optional[GoalOut] = None
     onboarding_session_id: Optional[str] = None
+    tina_style: str = "default"
 
 
 class ProfileUpdate(BaseModel):
     nickname: Optional[str] = None
     role: Optional[str] = None
     onboarding_status: Optional[str] = None
+    tina_style: Optional[str] = None
 

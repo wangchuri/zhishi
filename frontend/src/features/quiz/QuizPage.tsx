@@ -154,12 +154,15 @@ export function QuizPage() {
     const ids = questionIdsFromUrl.split(",").map((s) => s.trim()).filter(Boolean)
     if (!ids.length) return
     const documentId = searchParams.get("document_id") || undefined
+    const taskId = searchParams.get("task_id") || undefined
     let cancelled = false
     quizApi
       .createSession({
         document_id: documentId,
         question_ids: ids,
         title: "今日任务",
+        resume: true,
+        task_id: taskId,
       })
       .then((res) => {
         if (cancelled) return
@@ -167,6 +170,8 @@ export function QuizPage() {
         setSession(s)
         setCurrentIndex(s.answered_count)
         setPhase("quiz")
+        // 换成 session_id，刷新/再进都续刷，不再新建
+        navigate(`/quiz/session?session_id=${encodeURIComponent(s.id)}`, { replace: true })
       })
       .catch(() => {
         if (!cancelled) setSetupAlert("任务题目加载失败，请从首页再进一次")
@@ -174,7 +179,7 @@ export function QuizPage() {
     return () => {
       cancelled = true
     }
-  }, [questionIdsFromUrl, sessionIdFromUrl, searchParams])
+  }, [questionIdsFromUrl, sessionIdFromUrl, searchParams, navigate])
 
   const selectedDocument = documents.find((d) => d.id === selectedDocumentId)
   const isLifeZone = selectedCollection?.zone === "life"
@@ -430,6 +435,11 @@ export function QuizPage() {
     (questionListData?.total ?? selectedDocument?.questionCount ?? 0) > 0
 
   const finishSession = async (sessionId: string) => {
+    try {
+      await quizApi.completeSession(sessionId)
+    } catch {
+      /* ignore */
+    }
     try {
       const res = await quizApi.getResults(sessionId)
       setResultsSummary({

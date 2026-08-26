@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams } from "react-router-dom"
 import { Loader2 } from "lucide-react"
 import { AppShell } from "@/components/layout/AppShell"
 import { MarkdownWithMath } from "@/components/blocks/MarkdownWithMath"
-import { notesApi, type NoteItem } from "@/lib/api"
+import { notesApi, documentImageBase, type NoteItem } from "@/lib/api"
 
 function formatMeta(note: NoteItem): string {
   const parts: string[] = []
@@ -108,9 +108,14 @@ export function NoteDetailPage() {
             </div>
           ) : null}
           {isTip ? (
-            <blockquote className="my-2 mb-5 px-4 py-3 border-l-[3px] border-sea bg-sea-subtle/60 rounded-r-xl text-body text-ink leading-relaxed whitespace-pre-wrap">
-              {note.content_md}
-            </blockquote>
+            <div className="my-2 mb-5 px-4 py-3 border-l-[3px] border-sea bg-sea-subtle/60 rounded-r-xl [&_img]:max-h-64 [&_img]:rounded-md">
+              <MarkdownWithMath
+                proseClass="prose prose-sm max-w-none text-ink leading-relaxed"
+                imageBaseUrl={note.document_id ? documentImageBase(note.document_id) : undefined}
+              >
+                {note.content_md || ""}
+              </MarkdownWithMath>
+            </div>
           ) : (
             <MarkdownWithMath className="prose prose-sm max-w-none prose-headings:font-display prose-headings:text-ink prose-p:text-ink prose-p:leading-relaxed">
               {note.content_md || ""}

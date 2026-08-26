@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import { useNavigate } from "react-router-dom"
-import { Brain, Loader2, Library, Upload } from "lucide-react"
+import { Brain, Loader2, Library, Play, Upload } from "lucide-react"
 import { AppShell } from "@/components/layout/AppShell"
 import { PageHeader } from "@/components/blocks/PageHeader"
 import { EmptyState } from "@/components/ui/empty-state"
 import { Button } from "@/components/ui/button"
 import { useKbDocuments } from "@/hooks/useKbDocuments"
-import { questionsApi } from "@/lib/api"
+import { questionsApi, quizApi } from "@/lib/api"
 import { QuizBookCard, type BookCardStats } from "./QuizBookCard"
 import { QuestionGenJobsBanner } from "./QuestionGenJobsBanner"
 import type { QuestionGenJob } from "@/types"
@@ -26,6 +26,7 @@ export function QuizBookListPage() {
   const [loadingStats, setLoadingStats] = useState(false)
   const [genJobs, setGenJobs] = useState<QuestionGenJob[]>([])
   const [statsEpoch, setStatsEpoch] = useState(0)
+  const [ongoingCount, setOngoingCount] = useState(0)
   const hadJobsRef = useRef(false)
 
   // 只展示学习区文档
@@ -68,6 +69,21 @@ export function QuizBookListPage() {
 
     return () => { cancelled = true }
   }, [studyDocs, statsEpoch])
+
+  useEffect(() => {
+    let cancelled = false
+    quizApi
+      .listActiveSessions()
+      .then((res) => {
+        if (!cancelled) setOngoingCount((res.sessions || []).length)
+      })
+      .catch(() => {
+        if (!cancelled) setOngoingCount(0)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [statsEpoch])
 
   useEffect(() => {
     let cancelled = false
@@ -131,6 +147,20 @@ export function QuizBookListPage() {
         />
       ) : (
         <div className="space-y-6">
+          {ongoingCount > 0 ? (
+            <button
+              type="button"
+              onClick={() => navigate("/quiz/ongoing")}
+              className="w-full flex items-center gap-3 rounded-2xl border border-sea/30 bg-sea-subtle/60 px-4 py-3.5 text-left hover:border-sea/50 transition-colors"
+            >
+              <Play className="w-5 h-5 text-sea shrink-0" strokeWidth={2} />
+              <div className="min-w-0 flex-1">
+                <p className="text-body font-medium text-ink">有 {ongoingCount} 场刷题还没结束</p>
+                <p className="text-caption text-ink-soft">点这里继续上次的进度，不用从头刷</p>
+              </div>
+              <span className="text-caption text-sea shrink-0">去继续</span>
+            </button>
+          ) : null}
           <QuestionGenJobsBanner jobs={genJobs} />
           {/* 集合选择器 */}
           {collections.length > 1 && (

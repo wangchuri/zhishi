@@ -29,6 +29,7 @@ def get_or_create_profile(db: Session) -> UserProfile:
 def profile_out(db: Session, row: Optional[UserProfile] = None) -> dict[str, Any]:
     row = row or get_or_create_profile(db)
     goal = get_active_goal(db)
+    style = (row.tina_style or "default").strip() or "default"
     return {
         "user_id": row.user_id,
         "nickname": row.nickname,
@@ -37,7 +38,26 @@ def profile_out(db: Session, row: Optional[UserProfile] = None) -> dict[str, Any
         "has_goal": bool(goal and goal.text),
         "goal": goal_out(goal) if goal else None,
         "onboarding_session_id": row.onboarding_session_id,
+        "tina_style": style,
     }
+
+
+def get_tina_style(db: Session) -> str:
+    row = get_or_create_profile(db)
+    style = (row.tina_style or "default").strip() or "default"
+    return style if style in ("default", "tsundere") else "default"
+
+
+def toggle_tina_style(db: Session) -> str:
+    """在 default ↔ tsundere 之间切换，返回切换后的风格。"""
+    row = get_or_create_profile(db)
+    current = get_tina_style(db)
+    nxt = "default" if current == "tsundere" else "tsundere"
+    row.tina_style = nxt
+    row.updated_at = _now()
+    db.commit()
+    db.refresh(row)
+    return nxt
 
 
 def update_profile(
@@ -47,6 +67,7 @@ def update_profile(
     role: Optional[str] = None,
     onboarding_status: Optional[str] = None,
     onboarding_session_id: Optional[str] = None,
+    tina_style: Optional[str] = None,
 ) -> UserProfile:
     row = get_or_create_profile(db)
     if nickname is not None:
@@ -59,6 +80,9 @@ def update_profile(
         row.onboarding_status = onboarding_status
     if onboarding_session_id is not None:
         row.onboarding_session_id = onboarding_session_id
+    if tina_style is not None:
+        style = tina_style.strip() or "default"
+        row.tina_style = style if style in ("default", "tsundere") else "default"
     row.updated_at = _now()
     db.commit()
     db.refresh(row)

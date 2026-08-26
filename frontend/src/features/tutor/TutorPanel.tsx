@@ -8,6 +8,7 @@ import {
   markdownProseClass,
   markdownProseInvertClass,
 } from "@/components/blocks/MarkdownWithMath"
+import { ThinkingLabel } from "@/components/blocks/ThinkingLabel"
 import { cn } from "@/lib/utils"
 
 const SCROLL_BOTTOM_THRESHOLD = 48
@@ -23,7 +24,7 @@ function ReasoningBlock({ content }: { content: string }) {
         className="flex items-center gap-1 text-caption text-ink-tertiary hover:text-ink-secondary transition-colors"
       >
         {open ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
-        <span className="font-mono">Thinking...</span>
+        <ThinkingLabel />
       </button>
       {open && (
         <div className="mt-1 p-2 rounded bg-ink-tertiary/5 border border-line-soft text-small text-ink-soft leading-relaxed">
@@ -45,18 +46,22 @@ function TutorMessageBody({
   role: TutorMessage["role"]
   isStreamingPlaceholder?: boolean
 }) {
-  if (!content) {
+  if (!content && !reasoningContent) {
     return <span>{isStreamingPlaceholder ? "..." : ""}</span>
   }
 
   return (
     <>
       {reasoningContent && <ReasoningBlock content={reasoningContent} />}
-      <MarkdownWithMath
-        proseClass={role === "user" ? markdownProseInvertClass : markdownProseClass}
-      >
-        {content}
-      </MarkdownWithMath>
+      {content ? (
+        <MarkdownWithMath
+          proseClass={role === "user" ? markdownProseInvertClass : markdownProseClass}
+        >
+          {content}
+        </MarkdownWithMath>
+      ) : isStreamingPlaceholder ? (
+        <span>...</span>
+      ) : null}
     </>
   )
 }

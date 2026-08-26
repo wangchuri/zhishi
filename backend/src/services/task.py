@@ -14,8 +14,9 @@ from sqlalchemy.orm import Session
 from ..core.config import config
 from ..core.database import SessionLocal
 from ..core.storage import storage
-from ..models import Document, QuestionProvenance, QuestionRef, QuizAnswer
+from ..models import Document, DocumentLearningPath, GlobalQuestion, QuestionProvenance, QuestionRef, QuizAnswer
 from ..models.goal import DailyTask, Goal, UserProfile
+from ..utils import parse_tags
 
 
 USER_ID = 1
@@ -54,7 +55,20 @@ def fingerprint(checker: str, payload: dict[str, Any]) -> str:
     return hashlib.sha256(blob.encode("utf-8")).hexdigest()[:40]
 
 
-def href_for(kind: str, payload: dict[str, Any]) -> str:
+def _learn_verify_message(payload: dict[str, Any], task_id: str = "") -> str:
+    book = (payload.get("document_name") or "资料").strip() or "资料"
+    titles = [str(t).strip() for t in (payload.get("chapter_titles") or []) if str(t).strip()]
+    ch = "、".join(titles) if titles else "相关章节"
+    tid = (task_id or payload.get("task_id") or "").strip()
+    tool = f'complete_learn_task(task_id="{tid}")' if tid else "complete_learn_task"
+    return (
+        f"我今天学习了《{book}》的{ch}。"
+        f"请通过对话和提问验收我是否达到这些章节的学习目标；"
+        f"如果你认为达标了，请调用工具 {tool} 标记该任务完成。"
+    )
+
+
+def href_for(kind: str, payload: dict[str, Any], *, task_id: str | None = None) -> str:
     if kind == "upload":
         return "/knowledge/upload"
     if kind == "generate":
@@ -64,12 +78,28 @@ def href_for(kind: str, payload: dict[str, Any]) -> str:
     if kind == "quiz":
         doc = payload.get("document_id") or ""
         ids = ",".join(payload.get("question_ids") or [])
-        return f"/quiz/session?document_id={doc}&question_ids={ids}"
+        sid = (payload.get("session_id") or "").strip()
+        if sid:
+            return f"/quiz/session?session_id={sid}"
+        tid = (task_id or payload.get("task_id") or "").strip()
+        base = f"/quiz/session?document_id={doc}&question_ids={ids}"
+        return f"{base}&task_id={tid}" if tid else base
+    if kind == "learn":
+        from urllib.parse import quote
+
+        tid = (task_id or payload.get("task_id") or "").strip()
+        q = quote(_learn_verify_message(payload, tid))
+        return f"/chat?q={q}&task={tid}" if tid else f"/chat?q={q}"
     return "/quiz"
 
 
 def action_for(kind: str) -> str:
-    return {"upload": "去上传", "generate": "去出题", "quiz": "去刷题"}.get(kind, "去完成")
+    return {
+        "upload": "去上传",
+        "generate": "去出题",
+        "quiz": "去刷题",
+        "learn": "去验收",
+    }.get(kind, "去完成")
 
 
 def task_out(row: DailyTask) -> dict[str, Any]:
@@ -84,7 +114,7 @@ def task_out(row: DailyTask) -> dict[str, Any]:
         "payload": payload,
         "checker": row.checker,
         "status": row.status,
-        "href": row.href or href_for(row.kind, payload),
+        "href": row.href or href_for(row.kind, payload, task_id=row.id),
         "action": action_for(row.kind),
         "due_at": row.due_at,
         "completed_at": row.completed_at,
@@ -363,6 +393,55 @@ def set_day_closed(db: Session, closed: bool) -> None:
     db.commit()
 
 
+def _refill_round(db: Session) -> int:
+    row = _profile(db)
+    if row.task_refill_round_on != _today():
+        return 0
+    return int(row.task_refill_round or 0)
+
+
+def _bump_refill_round(db: Session) -> int:
+    row = _profile(db)
+    today = _today()
+    if row.task_refill_round_on != today:
+        row.task_refill_round = 0
+        row.task_refill_round_on = today
+    row.task_refill_round = int(row.task_refill_round or 0) + 1
+    db.commit()
+    return int(row.task_refill_round or 0)
+
+
+def _doc_display_name(db: Session, document_id: Any) -> str:
+    if not document_id:
+        return ""
+    doc = db.get(Document, str(document_id))
+    return doc.display_name if doc else ""
+
+
+def _stop_signals(
+    *,
+    usage: dict[str, int],
+    books: list[dict[str, Any]],
+    study_min: int,
+    rate7: Optional[float],
+    refill_round: int,
+) -> list[str]:
+    signals: list[str] = []
+    if study_min >= 45:
+        signals.append(f"今日已学 {study_min} 分钟")
+    if usage["assigned"] >= 3 and usage["pending"] == 0 and usage["completed"] >= usage["assigned"]:
+        signals.append(f"今日已完成 {usage['completed']} 条任务")
+    if rate7 is not None and rate7 < 0.4:
+        signals.append("近 7 天任务完成率偏低，宜减量")
+    if refill_round >= 1:
+        signals.append(f"今天已加派评估 {refill_round} 轮")
+    total_undone = sum(int(b.get("undone") or 0) for b in books)
+    missing_pages = sum(max(0, int(b.get("pages") or 0) - int(b.get("pages_with_questions") or 0)) for b in books)
+    if books and total_undone < 5 and missing_pages < 2:
+        signals.append("主要资料缺口已不大")
+    return signals
+
+
 def _task_amount(row: DailyTask) -> str:
     payload = _loads(row.payload_json)
     if row.kind == "quiz":
@@ -371,6 +450,9 @@ def _task_amount(row: DailyTask) -> str:
     if row.kind == "generate":
         n = int(payload.get("need") or len(payload.get("page_numbers") or []) or 0)
         return f"{n}页" if n else ""
+    if row.kind == "learn":
+        n = int(payload.get("need") or len(payload.get("chapter_ids") or payload.get("chapter_titles") or []) or 0)
+        return f"{n}章" if n else ""
     if row.kind == "upload":
         return "1份"
     return ""
@@ -389,11 +471,14 @@ def _today_done_items(db: Session) -> list[dict[str, str]]:
     )
     out = []
     for row in rows:
+        payload = _loads(row.payload_json)
+        doc_id = payload.get("document_id")
         out.append({
             "title": row.title,
             "kind": row.kind,
             "amount": _task_amount(row),
             "reason": (row.description or "").strip(),
+            "document_name": _doc_display_name(db, doc_id) if doc_id else "",
         })
     return out
 
@@ -417,15 +502,23 @@ def _do_refill() -> int:
         expire_overdue_tasks(db)
         if not needs_refill(db):
             return 0
+        _bump_refill_round(db)
         assigned = 0
-        try:
-            from ..agents.task_agent import run_task_agent_sync
+        agent_ok = False
+        for attempt in range(2):
+            try:
+                from ..agents.task_agent import run_task_agent_sync
 
-            assigned = run_task_agent_sync(is_refill=True)
-        except Exception:
-            logger.warning("完成后再评估失败", exc_info=True)
-            return 0
+                assigned = run_task_agent_sync(is_refill=True)
+                agent_ok = True
+                break
+            except Exception:
+                logger.warning("完成后再评估失败 (第 %s 次)", attempt + 1, exc_info=True)
         db.expire_all()
+        if not agent_ok:
+            if not collect_task_candidates(db):
+                set_day_closed(db, True)
+            return 0
         if assigned <= 0 and needs_refill(db):
             set_day_closed(db, True)
         return assigned
@@ -459,6 +552,184 @@ def start_refill_async() -> None:
 def wait_refill(timeout: float = 90) -> None:
     start_refill_async()
     _refill_idle.wait(timeout=timeout)
+
+
+def _doc_chapters(db: Session, document_id: str) -> list[dict[str, Any]]:
+    """返回 [{id, title, learned}, ...]，无目录则空。"""
+    rec = db.query(DocumentLearningPath).filter_by(document_id=document_id).first()
+    if not rec or not rec.path_json:
+        return []
+    try:
+        path = json.loads(rec.path_json)
+    except Exception:
+        return []
+    if not isinstance(path, dict):
+        return []
+    out: list[dict[str, Any]] = []
+    for ch in path.get("chapters") or []:
+        if not isinstance(ch, dict):
+            continue
+        title = str(ch.get("title") or "").strip()
+        cid = str(ch.get("id") or "").strip()
+        if not title:
+            continue
+        out.append({
+            "id": cid or title,
+            "title": title,
+            "learned": bool(ch.get("learned")),
+        })
+    return out
+
+
+def set_chapters_learned(
+    db: Session,
+    document_id: str,
+    chapter_ids: list[str],
+    *,
+    learned: bool,
+) -> tuple[int, str]:
+    """在书本目录上标记章节学过/未学。返回 (更新数量, 说明)。"""
+    doc_id = (document_id or "").strip()
+    want = {str(x).strip() for x in (chapter_ids or []) if str(x).strip()}
+    if not doc_id:
+        return 0, "缺少 document_id"
+    if not want:
+        return 0, "缺少 chapter_ids"
+    rec = db.query(DocumentLearningPath).filter_by(document_id=doc_id).first()
+    if not rec or not rec.path_json:
+        return 0, "该书还没有目录"
+    try:
+        path = json.loads(rec.path_json)
+    except Exception:
+        return 0, "目录解析失败"
+    if not isinstance(path, dict):
+        return 0, "目录格式无效"
+    chapters = path.get("chapters")
+    if not isinstance(chapters, list):
+        return 0, "目录没有章节"
+    updated = 0
+    for ch in chapters:
+        if not isinstance(ch, dict):
+            continue
+        cid = str(ch.get("id") or "").strip()
+        title = str(ch.get("title") or "").strip()
+        if cid in want or title in want:
+            ch["learned"] = bool(learned)
+            updated += 1
+    if not updated:
+        return 0, "没有匹配到章节 id/标题"
+    path["chapters"] = chapters
+    rec.path_json = json.dumps(path, ensure_ascii=False)
+    db.commit()
+    flag = "已看书了解" if learned else "未读懂"
+    return updated, f"已将 {updated} 章标为{flag}"
+
+
+def search_questions_for_doc(
+    db: Session,
+    document_id: str,
+    *,
+    chapter_id: str = "",
+    tag: str = "",
+    status: str = "all",
+    limit: int = 30,
+) -> list[dict[str, Any]]:
+    """按文档 + 可选章节/标签/作答状态检索题目（不含答案）。"""
+    document_id = (document_id or "").strip()
+    if not document_id:
+        return []
+    chapter_id = (chapter_id or "").strip()
+    tag = (tag or "").strip()
+    status_key = (status or "all").strip().lower()
+    limit = max(1, min(int(limit or 30), 50))
+
+    q = (
+        db.query(GlobalQuestion, QuestionProvenance)
+        .join(QuestionProvenance, QuestionProvenance.question_id == GlobalQuestion.id)
+        .filter(QuestionProvenance.document_id == document_id)
+    )
+    if chapter_id:
+        q = q.filter(QuestionProvenance.chapter_id == chapter_id)
+
+    rows: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for gq, prov in q.order_by(GlobalQuestion.created_at.desc()).limit(200).all():
+        if gq.id in seen:
+            continue
+        seen.add(gq.id)
+        if tag:
+            tags = parse_tags(gq.tags)
+            if tag not in tags:
+                continue
+        ref = db.query(QuestionRef).filter_by(question_id=gq.id, document_id=document_id).first()
+        last = (ref.last_status if ref else None) or ""
+        attempted = bool(ref and (ref.attempt_count or 0) > 0)
+        if status_key == "undone" and attempted:
+            continue
+        if status_key == "wrong" and last != "wrong":
+            continue
+        if status_key == "unknown" and last != "unknown":
+            continue
+        st = "未做"
+        if attempted:
+            st = {"correct": "对", "wrong": "错", "unknown": "不会"}.get(last, "已做")
+        rows.append({
+            "question_id": gq.id,
+            "stem_preview": " ".join((gq.stem or "").split())[:72],
+            "question_type": gq.question_type,
+            "tags": parse_tags(gq.tags),
+            "chapter_id": prov.chapter_id,
+            "page_number": prov.page_number,
+            "status": st,
+        })
+        if len(rows) >= limit:
+            break
+    return rows
+
+
+def complete_learn_task_by_tina(
+    db: Session,
+    task_id: str,
+    *,
+    summary: str = "",
+) -> tuple[bool, str]:
+    """Tina 验收通过后标记 learn 任务完成。返回 (ok, message)。"""
+    tid = (task_id or "").strip()
+    if not tid:
+        return False, "缺少 task_id"
+    row = (
+        db.query(DailyTask)
+        .filter(DailyTask.user_id == USER_ID, DailyTask.id == tid)
+        .first()
+    )
+    if not row:
+        return False, f"任务不存在：{tid}"
+    if row.kind != "learn":
+        return False, "只能验收「学习」类任务。"
+    if row.status == "completed":
+        return True, f"任务「{row.title}」已经完成过了。"
+    if row.status == "expired":
+        return False, "任务已超时，请先在任务页恢复后再验收。"
+    if row.status != "pending":
+        return False, f"任务状态是 {row.status}，无法验收。"
+    evidence = {
+        "by": "tina",
+        "summary": (summary or "").strip()[:500],
+        "verified_at": _now().isoformat(),
+    }
+    payload = _loads(row.payload_json)
+    doc_id = str(payload.get("document_id") or "").strip()
+    chapter_ids = [str(x).strip() for x in (payload.get("chapter_ids") or []) if str(x).strip()]
+    marked = 0
+    mark_msg = ""
+    if doc_id and chapter_ids:
+        marked, mark_msg = set_chapters_learned(db, doc_id, chapter_ids, learned=True)
+    _mark_completed(row, evidence)
+    db.commit()
+    if needs_refill(db):
+        start_refill_async()
+    extra = f" {mark_msg}。" if marked else ""
+    return True, f"已标记完成：「{row.title}」。{extra}".strip()
 
 
 def _add_task(
@@ -501,6 +772,20 @@ def _add_task(
     db.add(row)
     db.commit()
     db.refresh(row)
+    if kind == "learn":
+        payload = dict(payload)
+        payload["task_id"] = row.id
+        row.payload_json = json.dumps(payload, ensure_ascii=False)
+        row.href = href_for(kind, payload, task_id=row.id)
+        db.commit()
+        db.refresh(row)
+    elif kind == "quiz":
+        payload = dict(payload)
+        payload["task_id"] = row.id
+        row.payload_json = json.dumps(payload, ensure_ascii=False)
+        row.href = href_for(kind, payload, task_id=row.id)
+        db.commit()
+        db.refresh(row)
     return row
 
 
@@ -621,17 +906,49 @@ def collect_task_candidates(db: Session) -> list[dict[str, Any]]:
                     f"《{doc.display_name}》题 {len(stats['question_ids'])}："
                     f"未做 {len(stats['undone'])} / 不会 {len(stats['unknown'])} / "
                     f"错 {len(stats['wrong'])} / 对 {stats['correct']}；今日优先{label}，池子 {n} 道"
+                    f"（也可用 search_book_questions 按章节/标签自选后 assign_quiz_task）"
                 ),
                 min_quantity=1,
                 max_quantity=n,
-                default_quantity=n,
+                default_quantity=min(n, 10),
                 unit="题",
+            )
+
+        chapters = _doc_chapters(db, doc.id)
+        if chapters:
+            unlearned = [c for c in chapters if not c.get("learned")]
+            pool = unlearned or chapters
+            n = len(pool)
+            pick_n = min(n, 3)
+            learned_n = sum(1 for c in chapters if c.get("learned"))
+            _pack(
+                f"learn-{doc.id}",
+                "learn",
+                "tina_verify",
+                {
+                    "document_id": doc.id,
+                    "document_name": doc.display_name,
+                    "chapter_ids": [c["id"] for c in pool],
+                    "chapter_titles": [c["title"] for c in pool],
+                    "need": n,
+                },
+                f"学《{doc.display_name}》并找 Tina 验收",
+                "学完后点「去验收」，Tina 口头提问通过即完成。",
+                (
+                    f"《{doc.display_name}》目录 {len(chapters)} 章，读过 {learned_n}，未读懂 {len(unlearned)}"
+                    f"（学过=看书了解过，≠刷完题）；今日优先未读懂章，可派 1～{n} 章"
+                    f"（也可用 list_book_chapters + assign_learn_task 指定章节）"
+                ),
+                min_quantity=1,
+                max_quantity=n,
+                default_quantity=pick_n,
+                unit="章",
             )
     return out
 
 
 def apply_candidate_quantity(cand: dict[str, Any], quantity: Optional[int]) -> dict[str, Any]:
-    """按 Agent 选定的数量裁切 payload（题号/页码仍来自程序列表）。"""
+    """按 Agent 选定的数量裁切 payload（题号/页码/章节仍来自程序列表）。"""
     payload = dict(cand.get("payload") or {})
     lo = int(cand.get("min_quantity") or 1)
     hi = int(cand.get("max_quantity") or lo)
@@ -647,6 +964,22 @@ def apply_candidate_quantity(cand: dict[str, Any], quantity: Optional[int]) -> d
         pages = list(payload.get("page_numbers") or [])[:n]
         payload["page_numbers"] = pages
         payload["need"] = len(pages)
+    elif kind == "learn":
+        ids = list(payload.get("chapter_ids") or [])[:n]
+        titles = list(payload.get("chapter_titles") or [])[:n]
+        # 若 ids/titles 长度不一致，按较短对齐
+        m = min(len(ids), len(titles)) if titles else len(ids)
+        m = min(m, n) if m else min(len(ids) or len(titles), n)
+        if titles and ids:
+            payload["chapter_ids"] = ids[:m]
+            payload["chapter_titles"] = titles[:m]
+        elif ids:
+            payload["chapter_ids"] = ids[:n]
+            payload["chapter_titles"] = ids[:n]
+        else:
+            payload["chapter_titles"] = titles[:n]
+            payload["chapter_ids"] = titles[:n]
+        payload["need"] = len(payload.get("chapter_ids") or [])
     return payload
 
 
@@ -660,6 +993,8 @@ def task_agent_context(db: Session, *, is_refill: bool = False) -> dict[str, Any
         pages = _page_numbers(doc)
         have_q = _pages_with_questions(db, doc.id)
         stats = _doc_question_stats(db, doc.id)
+        chapters = _doc_chapters(db, doc.id)
+        learned_n = sum(1 for c in chapters if c.get("learned"))
         books.append({
             "document_id": doc.id,
             "name": doc.display_name,
@@ -670,6 +1005,9 @@ def task_agent_context(db: Session, *, is_refill: bool = False) -> dict[str, Any
             "unknown": len(stats["unknown"]),
             "wrong": len(stats["wrong"]),
             "correct": stats["correct"],
+            "chapter_count": len(chapters),
+            "learned_chapters": learned_n,
+            "unlearned_chapters": max(0, len(chapters) - learned_n),
         })
 
     history_rows = list_task_history(db, days=14)
@@ -678,11 +1016,11 @@ def task_agent_context(db: Session, *, is_refill: bool = False) -> dict[str, Any
         key = row.for_date.isoformat()
         bucket = by_day.setdefault(
             key,
-            {"date": key, "assigned": 0, "completed": 0, "expired": 0, "pending": 0, "items": []},
+            {"date": key, "assigned": 0, "completed": 0, "expired": 0, "pending": 0, "entries": []},
         )
         bucket["assigned"] += 1
         bucket[row.status] = bucket.get(row.status, 0) + 1
-        bucket["items"].append({"title": row.title, "kind": row.kind, "status": row.status})
+        bucket["entries"].append({"title": row.title, "kind": row.kind, "status": row.status})
     history = [by_day[k] for k in sorted(by_day.keys(), reverse=True)]
 
     last7 = [h for h in history if h["date"] >= (_today() - timedelta(days=7)).isoformat()]
@@ -693,6 +1031,7 @@ def task_agent_context(db: Session, *, is_refill: bool = False) -> dict[str, Any
 
     pending = [t for t in list_today_tasks(db) if t.status == "pending"]
     today_done = _today_done_items(db)
+    refill_round = _refill_round(db) if is_refill else 0
 
     study_min = 0
     quiz_min = 0
@@ -721,8 +1060,18 @@ def task_agent_context(db: Session, *, is_refill: bool = False) -> dict[str, Any
     except Exception:
         logger.debug("任务 Agent 附加学情读取失败", exc_info=True)
 
+    stop_signals = _stop_signals(
+        usage=usage,
+        books=books,
+        study_min=study_min,
+        rate7=rate7,
+        refill_round=refill_round,
+    )
+
     return {
         "is_refill": is_refill,
+        "refill_round": refill_round,
+        "stop_signals": stop_signals,
         "goal_text": goal.text if goal else "",
         "valid_until": str(goal.valid_until) if goal and goal.valid_until else "",
         "books": books,
@@ -801,6 +1150,9 @@ def _evidence_for(db: Session, task: DailyTask) -> Optional[dict[str, Any]]:
         return _check_generate(db, task)
     if task.checker == "quiz_n":
         return _check_quiz(db, task)
+    if task.checker == "tina_verify":
+        # 仅 Tina 工具 complete_learn_task 可完成，程序扫描不自动完成
+        return None
     return None
 
 
@@ -897,6 +1249,7 @@ def restore_task(db: Session, task_id: str) -> tuple[DailyTask, list[dict[str, s
         return row, []
     if row.status != "expired":
         raise ValueError("只有超时的任务可以恢复")
+    set_day_closed(db, False)
     row.status = "pending"
     row.expired_at = None
     row.due_at = _due_at(_today())
@@ -908,6 +1261,8 @@ def restore_task(db: Session, task_id: str) -> tuple[DailyTask, list[dict[str, s
         newly.append({"id": row.id, "title": row.title})
     db.commit()
     db.refresh(row)
+    if needs_refill(db):
+        start_refill_async()
     return row, newly
 
 

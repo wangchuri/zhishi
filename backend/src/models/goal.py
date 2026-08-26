@@ -43,6 +43,10 @@ class UserProfile(Base):
     onboarding_status: Mapped[str] = mapped_column(String(20), default="pending")
     onboarding_session_id: Mapped[str | None] = mapped_column(String(36))
     task_closed_on: Mapped[date | None] = mapped_column(Date)  # 任务 Agent 认为这天不用再派
+    task_refill_round: Mapped[int] = mapped_column(Integer, default=0)  # 今日加派评估轮次
+    task_refill_round_on: Mapped[date | None] = mapped_column(Date)
+    # Tina 说话风格：default | tsundere（/tina 切换傲娇）
+    tina_style: Mapped[str] = mapped_column(String(20), default="default")
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=_now, onupdate=_now)
 
 
@@ -58,7 +62,7 @@ class DailyTask(Base):
     for_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
     title: Mapped[str] = mapped_column(String(200), nullable=False)
     description: Mapped[str | None] = mapped_column(Text)
-    kind: Mapped[str] = mapped_column(String(20), nullable=False)  # upload/generate/quiz
+    kind: Mapped[str] = mapped_column(String(20), nullable=False)  # upload/generate/quiz/learn
     payload_json: Mapped[str] = mapped_column(Text, default="{}")
     checker: Mapped[str] = mapped_column(String(32), nullable=False)
     fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)

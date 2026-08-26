@@ -3,8 +3,7 @@ import { useNavigate } from "react-router-dom"
 import { Clock, Flame } from "lucide-react"
 import { useUI } from "@/context/UIContext"
 import { analyticsApi, tasksApi } from "@/lib/api"
-import { TodayTaskCard } from "@/components/blocks/TodayTaskCard"
-import { DayCompleteCard, TaskRefillHint } from "@/components/blocks/DayCompleteCard"
+import { DayCompleteCard, TaskRefillHint, TodayTaskSection } from "@/components/blocks/DayCompleteCard"
 import { EmptyNotes, MistRings } from "@/components/decor/PaperMotifs"
 import { TASKS_EVENT } from "@/lib/taskNotify"
 import type { ActivityStats, StreakStats, TodayTasksResult } from "@/types"
@@ -120,20 +119,15 @@ export function StatusRail() {
             <p className="text-caption text-ink-disabled">今天还没有任务</p>
           </div>
         ) : (
-          <div className="space-y-2">
-            {tasks.map((task, i) => (
-              <TodayTaskCard
-                key={task.id}
-                task={task}
-                index={i}
-                compact
-                onGo={() => {
-                  setRightPanelOpen(false)
-                  navigate(task.href || "/quiz")
-                }}
-              />
-            ))}
-          </div>
+          <TodayTaskSection
+            tasks={tasks}
+            dayComplete={today?.day_complete}
+            compact
+            onGo={(task) => {
+              setRightPanelOpen(false)
+              navigate(task.href || "/quiz")
+            }}
+          />
         )}
       </section>
     </RailOverlay>

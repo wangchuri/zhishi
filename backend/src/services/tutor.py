@@ -92,29 +92,36 @@ class TutorService:
             "updated_at": session.updated_at.isoformat() if session.updated_at else None,
         }
 
+    def ensure_agent(self, db: Session, session: TutorSession):
+        """获取或重建辅导 Agent（进程内缓存）。"""
+        agent = self.get_agent(session.id)
+        if agent is not None:
+            return agent
+
+        from ..agents.tutor_agent import build_tutor_agent
+
+        question = db.get(GlobalQuestion, session.question_id)
+        prov = db.query(QuestionProvenance).filter_by(question_id=session.question_id).first()
+        segment = db.get(DocumentSegment, session.segment_id) if session.segment_id else None
+        agent = build_tutor_agent(question, prov, segment)
+        self.cache_agent(session.id, agent)
+        return agent
+
+    def touch_session(self, db: Session, session: TutorSession) -> None:
+        session.updated_at = datetime.now(timezone.utc)
+        db.commit()
+
     async def send_message(
         self,
         db: Session,
         session: TutorSession,
         content: str,
-        *,
-        stream: bool,
-    ):
-        """发送消息。返回流式内容（若 stream）或完整回复。"""
+    ) -> tuple[str, str | None]:
+        """发送消息，消费完整流后返回 (content, reasoning_content)。"""
         from ..agents.tutor_agent import send_message as agent_send
 
-        agent = self.get_agent(session.id)
-        if agent is None:
-            from ..agents.tutor_agent import build_tutor_agent
-            question = db.get(GlobalQuestion, session.question_id)
-            prov = db.query(QuestionProvenance).filter_by(question_id=session.question_id).first()
-            segment = db.get(DocumentSegment, session.segment_id) if session.segment_id else None
-            agent = build_tutor_agent(question, prov, segment)
-            self.cache_agent(session.id, agent)
-
-        session.updated_at = datetime.now(timezone.utc)
-        db.commit()
-
+        agent = self.ensure_agent(db, session)
+        self.touch_session(db, session)
         return await agent_send(agent, content)
 
 

@@ -1,5 +1,5 @@
 import type { ReactNode } from "react"
-import { BookOpen, FileUp, Sparkles } from "lucide-react"
+import { BookOpen, FileUp, GraduationCap, Sparkles } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { SealMark } from "@/components/decor/PaperMotifs"
 import { cn } from "@/lib/utils"
@@ -9,6 +9,7 @@ const KIND = {
   upload: { label: "上传", Icon: FileUp },
   generate: { label: "出题", Icon: Sparkles },
   quiz: { label: "刷题", Icon: BookOpen },
+  learn: { label: "学习", Icon: GraduationCap },
 } as const
 
 function kindMeta(kind: string) {

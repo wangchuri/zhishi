@@ -11,13 +11,53 @@
 
 from __future__ import annotations
 
+import logging
 import os
 from pathlib import Path
 
 from tina.agent import Agent, Tools
 from tina.llm import BaseAPI
 
+logger = logging.getLogger(__name__)
+
 _BACKEND_DIR = Path(__file__).resolve().parent.parent.parent
+_TINA_PARSER_PATCHED = False
+
+
+def format_agent_error(exc: BaseException) -> str:
+    """拼给用户看的错误。TimeoutError 等 str(e) 为空，必须带上类型名。"""
+    name = type(exc).__name__
+    detail = str(exc).strip()
+    return f"{name}: {detail}" if detail else name
+
+
+def _patch_tina_null_tool_calls() -> None:
+    """DeepSeek 结束 tool_calls 时常发 null；Tina 异步解析器会拿去 for-in 而崩。"""
+    global _TINA_PARSER_PATCHED
+    if _TINA_PARSER_PATCHED:
+        return
+    try:
+        from tina.utils import output_parser as parser
+    except Exception:
+        logger.warning("未能给 Tina 解析器打上 tool_calls=null 补丁", exc_info=True)
+        return
+
+    loads = parser.json.loads
+
+    def _loads(s, *args, **kwargs):
+        data = loads(s, *args, **kwargs)
+        if isinstance(data, dict):
+            for choice in data.get("choices") or []:
+                delta = choice.get("delta") if isinstance(choice, dict) else None
+                if isinstance(delta, dict) and delta.get("tool_calls") is None:
+                    delta.pop("tool_calls", None)
+        return data
+
+    parser.json.loads = _loads
+    _TINA_PARSER_PATCHED = True
+
+
+_patch_tina_null_tool_calls()
 
 
 def create_llm(
@@ -25,7 +65,12 @@ def create_llm(
     env_path: str | None = None,
 ) -> BaseAPI:
     """创建 tina LLM 客户端，默认读取 backend/tina.env。"""
-    env = env_path or str(_BACKEND_DIR / "tina.env")
+    if env_path is None:
+        from .paths import tina_env_path
+
+        env = str(tina_env_path())
+    else:
+        env = env_path
     return BaseAPI(
         model=model,
         env_path=env if os.path.isfile(env) else None,
@@ -63,6 +108,27 @@ def visible_assistant_delta(chunk) -> tuple[str, str]:
     ):
         return "", ""
     return str(content), str(reasoning)
+
+
+def is_tool_related_chunk(chunk) -> bool:
+    """是否为工具调用相关 chunk（用于前端颜文字 ? 眼）。"""
+    if isinstance(chunk, dict):
+        role = chunk.get("role") or ""
+        return bool(
+            role == "tool"
+            or chunk.get("tool_name")
+            or chunk.get("tool_arguments")
+            or chunk.get("tool_calls")
+            or chunk.get("tool_call_id")
+        )
+    role = getattr(chunk, "role", None) or ""
+    return bool(
+        role == "tool"
+        or getattr(chunk, "tool_name", None)
+        or getattr(chunk, "tool_arguments", None)
+        or getattr(chunk, "tool_calls", None)
+        or getattr(chunk, "tool_call_id", None)
+    )
 
 
 def _last_tool_calls_assistant(messages: list[dict]) -> dict | None:
@@ -138,10 +204,16 @@ def _attach_reasoning_roundtrip(agent: Agent) -> None:
         _merge_split_assistant(messages, target)
 
     def _before_tool_calls(tool_calls) -> None:
-        _patch_last_tool_turn()
+        try:
+            _patch_last_tool_turn()
+        except Exception:
+            logger.exception("回写工具回合 reasoning 失败")
 
     def _after_tool_call(tool_name: str, tool_arguments: dict, tool_result):
-        _patch_last_tool_turn()
+        try:
+            _patch_last_tool_turn()
+        except Exception:
+            logger.exception("回写工具回合 reasoning 失败")
         return tool_name, tool_arguments, tool_result
 
     agent.add_on_stream_chunk_handler(_on_stream_chunk)

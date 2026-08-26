@@ -81,7 +81,7 @@ function App() {
             <AchievementWatcher />
             <TaskWatcher />
             <FullscreenSuggestion />
-            <Toaster richColors closeButton />
+            <Toaster closeButton />
             <TinaEscapeOverlay />
           </TinaCrisisProvider>
         </BrowserRouter>

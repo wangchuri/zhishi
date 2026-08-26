@@ -47,6 +47,20 @@ describe("QuizQuestionInput", () => {
     expect(onSelectOption).toHaveBeenCalledWith("B")
   })
 
+  it("答对后选中项显示绿色", () => {
+    render(
+      <QuizQuestionInput
+        {...baseProps}
+        question={choiceQuestion()}
+        selectedOption="A"
+        lastResult={{ status: "correct" } as QuizAnswerResult}
+      />
+    )
+    const optA = screen.getByText("A.").closest("button")!
+    expect(optA.className).toMatch(/border-success/)
+    expect(optA.className).toMatch(/bg-success-soft/)
+  })
+
   it("作答后选项被禁用", () => {
     render(
       <QuizQuestionInput

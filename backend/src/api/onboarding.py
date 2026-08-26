@@ -25,6 +25,7 @@ def put_profile(body: ProfileUpdate, db: Session = Depends(get_db)):
         nickname=body.nickname,
         role=body.role,
         onboarding_status=body.onboarding_status,
+        tina_style=body.tina_style,
     )
     return profile_out(db, row)
 

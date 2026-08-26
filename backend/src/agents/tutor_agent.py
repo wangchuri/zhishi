@@ -11,7 +11,7 @@ import json
 import logging
 from typing import Optional
 
-from ..core.llm import create_agent, visible_assistant_delta
+from ..core.llm import create_agent, format_agent_error, visible_assistant_delta
 from ..core.prompts import load_prompt, render_prompt
 from ..models import DocumentSegment, GlobalQuestion, QuestionProvenance, TutorSession
 
@@ -69,6 +69,6 @@ async def send_message(agent, content: str) -> tuple[str, Optional[str]]:
             if r:
                 reasoning += r
     except Exception as e:
-        logger.warning("tutor 消息失败: %s", e)
-        full = full or f"（辅导出错了：{e}）"
+        logger.exception("tutor 消息失败")
+        full = full or f"（辅导出错了：{format_agent_error(e)}）"
     return full, reasoning or None

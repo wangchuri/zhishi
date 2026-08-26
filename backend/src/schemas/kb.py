@@ -113,8 +113,9 @@ class DocumentContentMeta(BaseModel):
     file_name: Optional[str] = None
     content: str
     file_type: Optional[str] = None
-    preview_mode: Optional[str] = None  # pdf/text/markdown
+    preview_mode: Optional[str] = None  # pdf/docx/markdown/text
     has_raw_file: Optional[bool] = None
+    is_scanned_pdf: Optional[bool] = None
     mock: Optional[bool] = None
     pdf_page_count: Optional[int] = None
     warning: Optional[str] = None
@@ -157,6 +158,17 @@ class DocumentSegmentList(BaseModel):
     segments: list[DocumentSegment]
 
 
+class DocumentImageItem(BaseModel):
+    file_name: str
+    page_num: int = 0
+    url_path: str
+
+
+class DocumentImageList(BaseModel):
+    document_id: str
+    images: list[DocumentImageItem]
+
+
 class KbConfig(BaseModel):
     rag_backend: str = "chroma"
     use_oss: bool = False
@@ -180,6 +192,7 @@ class LearningPathChapter(BaseModel):
     title: str = ""
     order: int = 0
     key_points: list[str] = []
+    learned: bool = False
 
 
 class LearningPathResult(BaseModel):

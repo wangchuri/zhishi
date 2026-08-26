@@ -32,7 +32,7 @@ const TOOL_LABEL: Record<string, string> = {
   submit_application: "提交应用题",
   submit_custom_question: "提交自定义题",
   search_document_content: "检索选中页",
-  get_near_page: "取相邻页",
+  get_near_page: "按偏移取页",
 }
 
 export function shortToolName(raw: string): string {

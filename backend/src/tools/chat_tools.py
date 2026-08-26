@@ -67,6 +67,8 @@ class ChatTools:
         self.tools.register_tool(tool=self.get_active_goal)
         self.tools.register_tool(tool=self.list_today_tasks)
         self.tools.register_tool(tool=self.ensure_today_tasks)
+        self.tools.register_tool(tool=self.complete_learn_task)
+        self.tools.register_tool(tool=self.set_chapter_learned)
 
     def drain_ui(self) -> list[dict]:
         with self._lock:
@@ -264,7 +266,7 @@ class ChatTools:
             db.close()
 
     def list_today_tasks(self) -> str:
-        """读取今天的学习任务（含未完成结转）。完成由程序判定，不要让用户勾选。
+        """读取今天的学习任务（含未完成结转）。upload/generate/quiz 由程序判定；learn 须你验收后调用 complete_learn_task。
         """
         from ..services.task import evaluate, list_today_tasks, task_out
 
@@ -273,18 +275,21 @@ class ChatTools:
             evaluate(db)
             rows = list_today_tasks(db)
             if not rows:
-                return "今天还没有任务。打开首页或让我布置；完成由程序判定。"
+                return "今天还没有任务。打开首页或让我布置。"
             lines = []
             for t in rows:
                 data = task_out(t)
                 st = {"completed": "已完成", "expired": "已超时", "pending": "未完成"}.get(data["status"], data["status"])
-                lines.append(f"- [{st}] {data['title']} | 入口={data['href']}")
-            return "今日任务（用户不能勾选完成）：\n" + "\n".join(lines)
+                extra = ""
+                if data.get("kind") == "learn" and data["status"] == "pending":
+                    extra = f' | 验收请调 complete_learn_task(task_id="{data["id"]}")'
+                lines.append(f"- [{st}][{data.get('kind')}] {data['title']} | id={data['id']} | 入口={data['href']}{extra}")
+            return "今日任务：\n" + "\n".join(lines)
         finally:
             db.close()
 
     def ensure_today_tasks(self) -> str:
-        """让任务 Agent 按目标、资料学情和以往完成情况布置今天的任务。条数和每条做多少由任务 Agent 决定。kind 和完成规则由程序定，不要让用户勾选。用户问今天做什么、帮我派任务时调用。
+        """让任务 Agent 按目标、资料学情和以往完成情况布置今天的任务。条数和每条做多少由任务 Agent 决定。kind 和完成规则由程序定。用户问今天做什么、帮我派任务时调用。
         """
         from ..services.task import evaluate, ensure_today_tasks, list_today_tasks, task_out
 
@@ -300,7 +305,49 @@ class ChatTools:
             for t in rows:
                 data = task_out(t)
                 st = {"completed": "已完成", "expired": "已超时", "pending": "未完成"}.get(data["status"], data["status"])
-                lines.append(f"- [{st}] {data['title']}：{data.get('description') or ''} | 入口={data['href']}")
-            return "已按目标和学情布置今日任务（用户不能勾选完成）：\n" + "\n".join(lines)
+                lines.append(f"- [{st}][{data.get('kind')}] {data['title']}：{data.get('description') or ''} | 入口={data['href']}")
+            return "已按目标和学情布置今日任务：\n" + "\n".join(lines)
+        finally:
+            db.close()
+
+    def complete_learn_task(self, task_id: str, summary: str = "") -> str:
+        """验收通过后标记「学习」任务完成，并把任务里的章节标为 learned=true。仅用于 kind=learn。
+        Args:
+            task_id: 任务 id，来自 list_today_tasks 或用户消息里的 task=
+            summary: 一两句验收结论，可空
+        """
+        from ..services.task import complete_learn_task_by_tina
+
+        db = SessionLocal()
+        try:
+            ok, msg = complete_learn_task_by_tina(db, task_id, summary=summary or "")
+            return msg if ok else f"未能完成：{msg}"
+        finally:
+            db.close()
+
+    def set_chapter_learned(
+        self,
+        document_id: str,
+        chapter_ids: str,
+        learned: bool = True,
+    ) -> str:
+        """在书本目录上标记章节是否已看书了解过（不是「这一章题都做过」）。
+        learned=true 已读懂，false 未读懂。任务 Agent 会优先派未读懂的章。
+        Args:
+            document_id: 资料文档 id
+            chapter_ids: 章节 id，逗号分隔（来自 list_today_tasks / 目录）
+            learned: true=已看书了解过，false=还没读懂
+        """
+        from ..services.task import set_chapters_learned
+
+        ids = []
+        for chunk in (chapter_ids or "").replace(";", ",").replace("，", ",").replace("、", ",").split(","):
+            s = chunk.strip()
+            if s:
+                ids.append(s)
+        db = SessionLocal()
+        try:
+            n, msg = set_chapters_learned(db, document_id, ids, learned=bool(learned))
+            return msg if n else f"未更新：{msg}"
         finally:
             db.close()
