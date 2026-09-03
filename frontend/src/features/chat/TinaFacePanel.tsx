@@ -34,6 +34,8 @@ type Props = {
   speaking: boolean
   /** 正在调工具时显示 ? 眼（对齐原 HTML isUsingTool） */
   usingTool?: boolean
+  /** 正在输出思考：不说话，头顶飘问号 */
+  thinking?: boolean
   className?: string
 }
 
@@ -42,7 +44,13 @@ type Props = {
  * 眼/嘴用固定宽槽位，换字符时布局不塌（对齐原 HTML .eye / .mouth width）。
  * 每次挂载都从平静脸重置（父级用 key 控制重新进入）。
  */
-export function TinaFacePanel({ mood, speaking, usingTool = false, className }: Props) {
+export function TinaFacePanel({
+  mood,
+  speaking,
+  usingTool = false,
+  thinking = false,
+  className,
+}: Props) {
   const rootRef = useRef<HTMLDivElement>(null)
   const eyeLRef = useRef<HTMLSpanElement>(null)
   const eyeRRef = useRef<HTMLSpanElement>(null)
@@ -53,6 +61,7 @@ export function TinaFacePanel({ mood, speaking, usingTool = false, className }: 
   const moodRef = useRef(mood)
   const speakingRef = useRef(speaking)
   const usingToolRef = useRef(usingTool)
+  const thinkingRef = useRef(thinking)
   const blinkingRef = useRef(false)
 
   const mouseX = useRef(0)
@@ -69,7 +78,9 @@ export function TinaFacePanel({ mood, speaking, usingTool = false, className }: 
   const applyFace = (opts?: { keepMouth?: boolean }) => {
     const parts = usingToolRef.current
       ? TOOL_FACE
-      : MOOD_FACE[moodRef.current] || MOOD_FACE.NORMAL
+      : thinkingRef.current
+        ? MOOD_FACE.THINK
+        : MOOD_FACE[moodRef.current] || MOOD_FACE.NORMAL
     if (earLRef.current) earLRef.current.textContent = parts.prefix ? `${parts.prefix},,` : "(,,"
     if (earRRef.current) earRRef.current.textContent = ",,)"
     if (!blinkingRef.current) {
@@ -100,6 +111,11 @@ export function TinaFacePanel({ mood, speaking, usingTool = false, className }: 
     usingToolRef.current = usingTool
     applyFace()
   }, [usingTool])
+
+  useEffect(() => {
+    thinkingRef.current = thinking
+    applyFace()
+  }, [thinking])
 
   useEffect(() => {
     applyFace()
@@ -165,7 +181,7 @@ export function TinaFacePanel({ mood, speaking, usingTool = false, className }: 
     let blinkOff = 0
     const schedule = () => {
       timeout = window.setTimeout(() => {
-        if (!speakingRef.current && !usingToolRef.current) {
+        if (!speakingRef.current && !usingToolRef.current && !thinkingRef.current) {
           blinkingRef.current = true
           if (eyeLRef.current) eyeLRef.current.textContent = "-"
           if (eyeRRef.current) eyeRRef.current.textContent = "-"
@@ -184,13 +200,18 @@ export function TinaFacePanel({ mood, speaking, usingTool = false, className }: 
     }
   }, [])
 
-  // 说话口型 / 静止微动
+  // 说话口型 / 静止微动（思考时闭嘴，不张合）
   useEffect(() => {
     const id = window.setInterval(() => {
       const mouth = mouthRef.current
       if (!mouth) return
       if (usingToolRef.current) {
         mouth.textContent = TOOL_FACE.m
+        mouth.style.transform = "scale(1)"
+        return
+      }
+      if (thinkingRef.current) {
+        mouth.textContent = MOOD_FACE.THINK.m
         mouth.style.transform = "scale(1)"
         return
       }
@@ -211,13 +232,14 @@ export function TinaFacePanel({ mood, speaking, usingTool = false, className }: 
     "inline-flex items-center justify-center shrink-0 text-center will-change-transform"
   const eyeSlot = cn(slot, "w-[1.15em]")
   const mouthSlot = cn(slot, "w-[1.25em] transition-transform duration-75")
+  const showThinkMarks = thinking && !usingTool
 
   return (
     <div
       ref={rootRef}
       className={cn(
         "overflow-hidden transition-all duration-500 ease-out",
-        visible ? "max-h-36 opacity-100" : "max-h-0 opacity-0",
+        visible ? "max-h-40 opacity-100" : "max-h-0 opacity-0",
         className,
       )}
       aria-hidden
@@ -237,36 +259,54 @@ export function TinaFacePanel({ mood, speaking, usingTool = false, className }: 
               "repeating-linear-gradient(0deg, transparent, transparent 3px, currentColor 3px, currentColor 4px)",
           }}
         />
-        <div
-          className="relative flex items-center justify-center select-none font-mono tracking-tight text-ink"
-          style={{
-            fontSize: "clamp(1.75rem, 4.5vw, 2.75rem)",
-            lineHeight: 1,
-            gap: "0.12em",
-            height: "1.2em",
-          }}
-        >
-          <span
-            ref={earLRef}
-            className="inline-block whitespace-nowrap shrink-0 transition-transform duration-200"
+        <div className="relative flex items-center justify-center" style={{ height: "1.2em" }}>
+          {/* 思考时头顶飘问号；正式开口后消失，再思考再出现 */}
+          <div
+            className={cn(
+              "pointer-events-none absolute left-1/2 -translate-x-1/2 bottom-full mb-0.5 h-7 w-16",
+              "transition-opacity duration-200",
+              showThinkMarks ? "opacity-100" : "opacity-0",
+            )}
+            aria-hidden
           >
-            (,,
-          </span>
-          <span ref={eyeLRef} className={eyeSlot}>
-            ・
-          </span>
-          <span ref={mouthRef} className={mouthSlot}>
-            ω
-          </span>
-          <span ref={eyeRRef} className={eyeSlot}>
-            ・
-          </span>
-          <span
-            ref={earRRef}
-            className="inline-block whitespace-nowrap shrink-0 transition-transform duration-200"
+            {showThinkMarks ? (
+              <>
+                <span className="tina-think-q tina-think-q-a">?</span>
+                <span className="tina-think-q tina-think-q-b">?</span>
+                <span className="tina-think-q tina-think-q-c">?</span>
+              </>
+            ) : null}
+          </div>
+          <div
+            className="relative flex items-center justify-center select-none font-mono tracking-tight text-ink"
+            style={{
+              fontSize: "clamp(1.75rem, 4.5vw, 2.75rem)",
+              lineHeight: 1,
+              gap: "0.12em",
+            }}
           >
-            ,,)
-          </span>
+            <span
+              ref={earLRef}
+              className="inline-block whitespace-nowrap shrink-0 transition-transform duration-200"
+            >
+              (,,
+            </span>
+            <span ref={eyeLRef} className={eyeSlot}>
+              ・
+            </span>
+            <span ref={mouthRef} className={mouthSlot}>
+              ω
+            </span>
+            <span ref={eyeRRef} className={eyeSlot}>
+              ・
+            </span>
+            <span
+              ref={earRRef}
+              className="inline-block whitespace-nowrap shrink-0 transition-transform duration-200"
+            >
+              ,,)
+            </span>
+          </div>
         </div>
         <p className="mt-2 text-caption text-ink-tertiary tracking-wide">Tina</p>
       </div>

@@ -139,9 +139,11 @@ export function TargetedTrainingReportPage() {
       )}
 
       <Card className="p-6 mb-6">
-        <div className="max-h-[480px] overflow-y-auto scroll-thin text-body text-ink-secondary">
-          {report && <MarkdownWithMath>{report.content_md}</MarkdownWithMath>}
-        </div>
+        {report && (
+          <MarkdownWithMath className="prose-headings:font-display prose-table:text-small">
+            {report.content_md}
+          </MarkdownWithMath>
+        )}
       </Card>
 
       <div className="flex flex-wrap gap-3">

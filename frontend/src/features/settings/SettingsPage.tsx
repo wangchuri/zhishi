@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react"
 import { useNavigate } from "react-router-dom"
-import { Server, Wifi, WifiOff, UserRound, Sparkles, Terminal, Trash2, FolderOpen } from "lucide-react"
+import { Server, Wifi, WifiOff, UserRound, Sparkles, Terminal, Trash2, FolderOpen, ListTodo } from "lucide-react"
 import { toast } from "sonner"
 import { AppShell } from "@/components/layout/AppShell"
 import { PageHeader } from "@/components/blocks/PageHeader"
@@ -26,6 +26,9 @@ export function SettingsPage() {
   const [role, setRole] = useState("")
   const [goalText, setGoalText] = useState("")
   const [tinaStyle, setTinaStyle] = useState<"default" | "tsundere">("default")
+  const [taskMaxCount, setTaskMaxCount] = useState("")
+  const [taskMaxMinutes, setTaskMaxMinutes] = useState("")
+  const [savingTasks, setSavingTasks] = useState(false)
 
   const [backendLogs, setBackendLogs] = useState<string[]>([])
   const [logFile, setLogFile] = useState("")
@@ -46,6 +49,10 @@ export function SettingsPage() {
         setRole(p.role || "")
         setGoalText(p.goal?.text || "")
         setTinaStyle(p.tina_style === "tsundere" ? "tsundere" : "default")
+        setTaskMaxCount(p.task_max_daily_count && p.task_max_daily_count > 0 ? String(p.task_max_daily_count) : "")
+        setTaskMaxMinutes(
+          p.task_max_study_minutes && p.task_max_study_minutes > 0 ? String(p.task_max_study_minutes) : "",
+        )
       })
       .catch(() => {
         if (!cancelled) toast.error("加载档案失败")
@@ -106,6 +113,35 @@ export function SettingsPage() {
       toast.error(err instanceof Error ? err.message : "保存失败")
     } finally {
       setSaving(false)
+    }
+  }
+
+  const saveTaskLimits = async () => {
+    const parseLimit = (raw: string, label: string): number | null | undefined => {
+      const t = raw.trim()
+      if (!t) return 0
+      const n = Number(t)
+      if (!Number.isFinite(n) || n < 0 || !Number.isInteger(n)) {
+        toast.error(`${label}请填非负整数，留空表示不限制`)
+        return undefined
+      }
+      return n
+    }
+    const count = parseLimit(taskMaxCount, "每日任务上限")
+    if (count === undefined) return
+    const minutes = parseLimit(taskMaxMinutes, "学习时长上限")
+    if (minutes === undefined) return
+    setSavingTasks(true)
+    try {
+      await profileApi.put({
+        task_max_daily_count: count,
+        task_max_study_minutes: minutes,
+      })
+      toast.success("任务偏好已保存")
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "保存失败")
+    } finally {
+      setSavingTasks(false)
     }
   }
 
@@ -216,6 +252,55 @@ export function SettingsPage() {
                 保存风格
               </Button>
             </div>
+          </div>
+        </Card>
+
+        <Card className="overflow-hidden">
+          <div className="flex items-center gap-3 px-5 py-3.5 border-b border-line-light bg-paper-2/50">
+            <div className="w-8 h-8 rounded-md bg-sea-subtle text-sea flex items-center justify-center">
+              <ListTodo className="w-4 h-4" strokeWidth={2} />
+            </div>
+            <h3 className="text-card-title font-semibold text-ink">任务偏好</h3>
+          </div>
+          <div className="p-5 space-y-4">
+            <p className="text-small text-ink-soft">
+              给任务 Agent 设硬上限。留空表示不限制，仍由 Agent 根据目标和学情自行决定。
+            </p>
+            {loading ? (
+              <p className="text-body text-ink-soft">加载中…</p>
+            ) : (
+              <>
+                <Field label="每日最多布置几条任务">
+                  <Input
+                    type="number"
+                    min={0}
+                    inputMode="numeric"
+                    value={taskMaxCount}
+                    onChange={(e) => setTaskMaxCount(e.target.value)}
+                    placeholder="例如 3；留空不限制"
+                  />
+                </Field>
+                <Field label="今日学习满多少分钟后不再布置">
+                  <Input
+                    type="number"
+                    min={0}
+                    inputMode="numeric"
+                    value={taskMaxMinutes}
+                    onChange={(e) => setTaskMaxMinutes(e.target.value)}
+                    placeholder="例如 90；留空不限制"
+                  />
+                </Field>
+                <div className="flex justify-end">
+                  <Button
+                    variant="secondary"
+                    disabled={loading || savingTasks}
+                    onClick={() => void saveTaskLimits()}
+                  >
+                    {savingTasks ? "保存中…" : "保存任务偏好"}
+                  </Button>
+                </div>
+              </>
+            )}
           </div>
         </Card>
 

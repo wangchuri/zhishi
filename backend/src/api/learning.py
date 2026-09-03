@@ -129,7 +129,10 @@ def _training_out(db: Session, training: TrainingPlan, session: QuizSession) -> 
     }
 
 
-@router.get("/training/targeted/reports/{report_id}/active-session", response_model=l_schemas.TargetedTrainingActiveSession)
+@router.get(
+    "/training/targeted/reports/{report_id}/active-session",
+    response_model=Optional[l_schemas.TargetedTrainingActiveSession],
+)
 def active_session(report_id: str, db: Session = Depends(get_db)):
     training = db.query(TrainingPlan).filter(TrainingPlan.report_id == report_id, TrainingPlan.quiz_session_id.isnot(None)).first()
     if not training or not training.quiz_session_id:

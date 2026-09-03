@@ -13,7 +13,7 @@ import { cn } from "@/lib/utils"
 
 const SCROLL_BOTTOM_THRESHOLD = 48
 
-function ReasoningBlock({ content }: { content: string }) {
+function ReasoningBlock({ content, active = false }: { content: string; active?: boolean }) {
   const [open, setOpen] = useState(false)
 
   return (
@@ -24,7 +24,7 @@ function ReasoningBlock({ content }: { content: string }) {
         className="flex items-center gap-1 text-caption text-ink-tertiary hover:text-ink-secondary transition-colors"
       >
         {open ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
-        <ThinkingLabel />
+        <ThinkingLabel active={active} />
       </button>
       {open && (
         <div className="mt-1 p-2 rounded bg-ink-tertiary/5 border border-line-soft text-small text-ink-soft leading-relaxed">
@@ -52,7 +52,9 @@ function TutorMessageBody({
 
   return (
     <>
-      {reasoningContent && <ReasoningBlock content={reasoningContent} />}
+      {reasoningContent && (
+        <ReasoningBlock content={reasoningContent} active={Boolean(isStreamingPlaceholder && !content)} />
+      )}
       {content ? (
         <MarkdownWithMath
           proseClass={role === "user" ? markdownProseInvertClass : markdownProseClass}

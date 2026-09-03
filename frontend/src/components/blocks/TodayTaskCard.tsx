@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button"
 import { SealMark } from "@/components/decor/PaperMotifs"
 import { cn } from "@/lib/utils"
 import type { DailyTaskItem } from "@/types"
+import { taskDayISO } from "@/lib/taskDay"
 
 const KIND = {
   upload: { label: "上传", Icon: FileUp },
@@ -14,13 +15,6 @@ const KIND = {
 
 function kindMeta(kind: string) {
   return KIND[kind as keyof typeof KIND] || { label: "任务", Icon: BookOpen }
-}
-
-function localISODate(d = new Date()) {
-  const y = d.getFullYear()
-  const m = String(d.getMonth() + 1).padStart(2, "0")
-  const day = String(d.getDate()).padStart(2, "0")
-  return `${y}-${m}-${day}`
 }
 
 export function TodayTaskCard({
@@ -41,7 +35,7 @@ export function TodayTaskCard({
   const done = task.status === "completed"
   const expired = task.status === "expired"
   const restored =
-    task.status === "pending" && (task.for_date || "").slice(0, 10) < localISODate()
+    task.status === "pending" && (task.for_date || "").slice(0, 10) < taskDayISO()
   const meta = kindMeta(task.kind)
   const Icon = meta.Icon
   const n = String(index + 1).padStart(2, "0")

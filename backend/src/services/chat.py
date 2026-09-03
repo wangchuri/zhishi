@@ -18,31 +18,118 @@ from ..core.errors import NotFoundError
 from ..core.llm import create_agent, format_agent_error, visible_assistant_delta
 from ..core.prompts import render_prompt
 from ..models import ChatMessage, ChatSession
-from ..tools.chat_tools import ChatTools
+from ..tools.chat_tools import ChatTools, format_question_for_agent
 
 logger = logging.getLogger(__name__)
 
 ONBOARDING_UI_TYPES = frozenset({"rail", "profile", "goal_card", "docs_card", "done"})
+ONBOARDING_BLOCK_TYPES = frozenset({"goal_card", "docs_card", "done"})
 
 
-def drain_tool_ui(tools) -> tuple[list[dict], list[dict]]:
-    """把工具 drain_ui 分成出题卡片和引导卡片。"""
+def _append_text_block(blocks: list[dict], text: str) -> None:
+    if not text:
+        return
+    if blocks and blocks[-1].get("type") == "text":
+        blocks[-1]["content"] += text
+    else:
+        blocks.append({"type": "text", "content": text})
+
+
+def _append_tip_block(blocks: list[dict], tip: dict) -> None:
+    blocks.append({"type": "tip", "tip": tip})
+
+
+def _append_widget_block(blocks: list[dict], widget: dict) -> None:
+    blocks.append({"type": "widget", "widget": widget})
+
+
+def _append_onboarding_block(blocks: list[dict], item: dict) -> None:
+    if item.get("type") not in ONBOARDING_BLOCK_TYPES:
+        return
+    blocks.append({"type": "onboarding", "item": item})
+
+
+def _append_plot_block(blocks: list[dict], plot: dict) -> None:
+    blocks.append({"type": "plot", "plot": plot})
+
+
+def _append_canvas_block(blocks: list[dict], canvas: dict) -> None:
+    blocks.append({"type": "canvas", "canvas": canvas})
+
+
+def _merge_tool_ui(
+    widgets: list[dict],
+    tips: list[dict],
+    onboarding: list[dict],
+    plots: list[dict],
+    canvases: list[dict],
+    blocks: list[dict],
+    questions: list[dict],
+    tip_items: list[dict],
+    items: list[dict],
+    plot_items: list[dict],
+    canvas_items: list[dict],
+) -> None:
+    for q in questions:
+        widget = {"question": q}
+        widgets.append(widget)
+        _append_widget_block(blocks, widget)
+    for tip in tip_items:
+        tips.append(tip)
+        _append_tip_block(blocks, tip)
+    for plot in plot_items:
+        plots.append(plot)
+        _append_plot_block(blocks, plot)
+    for canvas in canvas_items:
+        canvases.append(canvas)
+        _append_canvas_block(blocks, canvas)
+    for item in items:
+        onboarding.append(item)
+        _append_onboarding_block(blocks, item)
+
+
+def drain_tool_ui(tools) -> tuple[list[dict], list[dict], list[dict], list[dict], list[dict]]:
+    """把工具 drain_ui 分成出题、tip、函数图、HTML 画布和引导卡片。"""
     questions: list[dict] = []
+    tips: list[dict] = []
     onboarding: list[dict] = []
+    plots: list[dict] = []
+    canvases: list[dict] = []
     if tools is None or not hasattr(tools, "drain_ui"):
-        return questions, onboarding
+        return questions, tips, onboarding, plots, canvases
     for item in tools.drain_ui() or []:
-        if isinstance(item, dict) and item.get("type") in ONBOARDING_UI_TYPES:
+        if isinstance(item, dict) and item.get("_kind") == "tip":
+            tips.append({k: v for k, v in item.items() if k != "_kind"})
+        elif isinstance(item, dict) and item.get("_kind") == "plot":
+            plots.append({k: v for k, v in item.items() if k != "_kind"})
+        elif isinstance(item, dict) and item.get("_kind") == "canvas":
+            canvases.append({k: v for k, v in item.items() if k != "_kind"})
+        elif isinstance(item, dict) and item.get("type") in ONBOARDING_UI_TYPES:
             onboarding.append(item)
         elif isinstance(item, dict):
             questions.append(item)
-    return questions, onboarding
+    return questions, tips, onboarding, plots, canvases
 
 
-def pack_assistant_payload(widgets: list[dict], onboarding: list[dict]) -> Optional[dict]:
+def pack_assistant_payload(
+    widgets: list[dict],
+    onboarding: list[dict],
+    tips: Optional[list[dict]] = None,
+    blocks: Optional[list[dict]] = None,
+    plots: Optional[list[dict]] = None,
+    canvases: Optional[list[dict]] = None,
+) -> Optional[dict]:
     payload: dict = {}
+    if blocks:
+        payload["blocks"] = blocks
     if widgets:
         payload["widgets"] = widgets
+    if tips:
+        payload["tips"] = tips
+    if plots:
+        payload["plots"] = plots
+    if canvases:
+        payload["canvases"] = canvases
     cards = [item for item in onboarding if item.get("type") in {"goal_card", "docs_card", "done"}]
     if cards:
         payload["onboarding"] = cards
@@ -85,13 +172,35 @@ def _ui_note_from_payload(raw: Optional[str]) -> str:
     except json.JSONDecodeError:
         return ""
     notes: list[str] = []
-    ids = [
-        str((w.get("question") or {}).get("question_id") or "")
-        for w in (payload.get("widgets") or [])
-    ]
-    ids = [i for i in ids if i]
-    if ids:
-        notes.append(f"可答题卡片: {', '.join(ids)}")
+    for w in payload.get("widgets") or []:
+        q = w.get("question") or {}
+        qid = str(q.get("question_id") or "")
+        if not qid:
+            continue
+        notes.append(
+            "可答题卡片:\n"
+            + format_question_for_agent(
+                question_id=qid,
+                stem=str(q.get("stem") or ""),
+                question_type=str(q.get("question_type") or ""),
+                options=q.get("options"),
+                user_answer=w.get("user_answer"),
+                result=w.get("result") if isinstance(w.get("result"), dict) else None,
+            )
+        )
+    tip_ids = [str(t.get("id") or "") for t in (payload.get("tips") or [])]
+    tip_ids = [i for i in tip_ids if i]
+    if tip_ids:
+        notes.append(f"tip 卡片: {', '.join(tip_ids)}")
+    plot_titles = []
+    for p in payload.get("plots") or []:
+        exprs = p.get("expressions") or []
+        plot_titles.append(str(p.get("title") or "、".join(exprs) or p.get("id") or "函数图"))
+    if plot_titles:
+        notes.append(f"函数图画布: {', '.join(plot_titles)}")
+    canvas_titles = [str(c.get("title") or c.get("id") or "画布") for c in (payload.get("canvases") or [])]
+    if canvas_titles:
+        notes.append(f"HTML 画布: {', '.join(canvas_titles)}")
     for item in payload.get("onboarding") or []:
         kind = (item or {}).get("type")
         if kind == "goal_card":
@@ -349,6 +458,9 @@ class ChatService:
             pending = []
         shown = onboarding_cards_shown(db, profile.onboarding_session_id)
         style = session_tina_style(db, session_id) if session_id else "default"
+        from ..services.memory import memory_brief_lines
+
+        memories = memory_brief_lines(db)
         return {
             "nickname": profile.nickname or "",
             "role": profile.role or "",
@@ -358,6 +470,7 @@ class ChatService:
             "docs_card_shown": "docs_card" in shown,
             "books": library_brief(db),
             "today_pending": pending,
+            "user_memories": memories,
             "include_chat_tools": True,
             "now": format_user_ts(),
             "tina_style": style,
@@ -493,6 +606,14 @@ class ChatService:
                     w["result"] = result
                     w["user_answer"] = user_answer
             payload["widgets"] = widgets
+            for block in payload.get("blocks") or []:
+                if block.get("type") != "widget":
+                    continue
+                widget = block.get("widget") or {}
+                q = widget.get("question") or {}
+                if q.get("question_id") == question_id:
+                    widget["result"] = result
+                    widget["user_answer"] = user_answer
             msg.payload = json.dumps(payload, ensure_ascii=False)
             db.commit()
         finally:
@@ -506,25 +627,31 @@ class ChatService:
         reasoning = ""
         citations: list[dict] = []
         widgets: list[dict] = []
+        tips: list[dict] = []
         onboarding: list[dict] = []
+        plots: list[dict] = []
+        canvases: list[dict] = []
+        blocks: list[dict] = []
         try:
             async for chunk in agent.apredict(user_content):
-                w, o = drain_tool_ui(chat_tools)
-                widgets.extend({"question": q} for q in w)
-                onboarding.extend(o)
+                w, t, o, p, cv = drain_tool_ui(chat_tools)
+                _merge_tool_ui(widgets, tips, onboarding, plots, canvases, blocks, w, t, o, p, cv)
                 c, r = visible_assistant_delta(chunk)
                 if c:
                     full += c
+                    _append_text_block(blocks, c)
                 if r:
                     reasoning += r
         except Exception as e:
             logger.exception("chat 流式失败")
-            full = full or f"（出错了：{format_agent_error(e)}）"
-        w, o = drain_tool_ui(chat_tools)
-        widgets.extend({"question": q} for q in w)
-        onboarding.extend(o)
+            err = f"（出错了：{format_agent_error(e)}）"
+            if not full:
+                full = err
+                _append_text_block(blocks, err)
+        w, t, o, p, cv = drain_tool_ui(chat_tools)
+        _merge_tool_ui(widgets, tips, onboarding, plots, canvases, blocks, w, t, o, p, cv)
 
-        payload = pack_assistant_payload(widgets, onboarding)
+        payload = pack_assistant_payload(widgets, onboarding, tips, blocks, plots, canvases)
         self.persist_assistant(session_id, full, reasoning or None, citations or None, payload)
         return full, reasoning or None, citations
 

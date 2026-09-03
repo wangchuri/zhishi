@@ -39,6 +39,8 @@ def profile_out(db: Session, row: Optional[UserProfile] = None) -> dict[str, Any
         "goal": goal_out(goal) if goal else None,
         "onboarding_session_id": row.onboarding_session_id,
         "tina_style": style,
+        "task_max_daily_count": row.task_max_daily_count if (row.task_max_daily_count or 0) > 0 else None,
+        "task_max_study_minutes": row.task_max_study_minutes if (row.task_max_study_minutes or 0) > 0 else None,
     }
 
 
@@ -68,6 +70,10 @@ def update_profile(
     onboarding_status: Optional[str] = None,
     onboarding_session_id: Optional[str] = None,
     tina_style: Optional[str] = None,
+    task_max_daily_count: Optional[int] = None,
+    task_max_study_minutes: Optional[int] = None,
+    set_task_max_daily_count: bool = False,
+    set_task_max_study_minutes: bool = False,
 ) -> UserProfile:
     row = get_or_create_profile(db)
     if nickname is not None:
@@ -83,6 +89,18 @@ def update_profile(
     if tina_style is not None:
         style = tina_style.strip() or "default"
         row.tina_style = style if style in ("default", "tsundere") else "default"
+    if set_task_max_daily_count:
+        try:
+            n = int(task_max_daily_count or 0)
+        except (TypeError, ValueError):
+            n = 0
+        row.task_max_daily_count = n if n > 0 else None
+    if set_task_max_study_minutes:
+        try:
+            n = int(task_max_study_minutes or 0)
+        except (TypeError, ValueError):
+            n = 0
+        row.task_max_study_minutes = n if n > 0 else None
     row.updated_at = _now()
     db.commit()
     db.refresh(row)

@@ -20,12 +20,17 @@ def read_profile(db: Session = Depends(get_db)):
 
 @router.put("/me/profile", response_model=ProfileOut)
 def put_profile(body: ProfileUpdate, db: Session = Depends(get_db)):
+    data = body.model_dump(exclude_unset=True)
     row = update_profile(
         db,
-        nickname=body.nickname,
-        role=body.role,
-        onboarding_status=body.onboarding_status,
-        tina_style=body.tina_style,
+        nickname=data["nickname"] if "nickname" in data else None,
+        role=data["role"] if "role" in data else None,
+        onboarding_status=data.get("onboarding_status"),
+        tina_style=data.get("tina_style"),
+        task_max_daily_count=data.get("task_max_daily_count"),
+        task_max_study_minutes=data.get("task_max_study_minutes"),
+        set_task_max_daily_count="task_max_daily_count" in data,
+        set_task_max_study_minutes="task_max_study_minutes" in data,
     )
     return profile_out(db, row)
 

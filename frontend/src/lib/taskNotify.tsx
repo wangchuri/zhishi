@@ -56,11 +56,19 @@ export function seedCompletedTasks(tasks?: Array<{ id: string; status?: string; 
   seeded = true
 }
 
+/** 今日任务接口才有 pending_count；历史/单条恢复不要当整表快照广播。 */
+export function isTodayTasksSnapshot(res?: {
+  pending_count?: number
+} | null): res is { pending_count: number } {
+  return typeof res?.pending_count === "number"
+}
+
 export function noticeTodayTasks(res?: {
   tasks?: Array<{ id: string; status?: string; title?: string }>
   completed_tasks?: CompletedTaskItem[] | null
   day_complete?: boolean
   refill_pending?: boolean
+  pending_count?: number
 } | null) {
   if (!res) return
   if (!res.day_complete) dayCompleteNotified = false
@@ -82,7 +90,7 @@ export function noticeTodayTasks(res?: {
       ],
     })
   }
-  if (typeof window !== "undefined") {
+  if (typeof window !== "undefined" && isTodayTasksSnapshot(res)) {
     window.dispatchEvent(new CustomEvent(TASKS_EVENT, { detail: res }))
   }
 }

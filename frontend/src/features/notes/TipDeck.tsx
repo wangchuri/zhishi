@@ -30,15 +30,16 @@ export function TipDeck({
   onPick: (id: string) => void
 }) {
   return (
-    <div className={cn("tip-deck", expanded && "is-expanded")}>
+    <div className={cn("tip-deck", expanded ? "is-expanded" : "is-stack")}>
       {tips.map((tip, i) => {
         const quote = textPreview(tip.content_md || "")
         const hasImg = /!\[[^\]]*\]\([^)]+\)/.test(tip.content_md || "")
         const depth = Math.min(i, 3)
+        const isFront = !expanded && i === 0
         return (
           <article
             key={tip.id}
-            className={cn("tip-card", !expanded && i === 0 && "is-front")}
+            className={cn("tip-card", isFront && "is-front")}
             data-depth={depth}
             style={{ zIndex: tips.length - i }}
             onClick={() => {
@@ -48,39 +49,71 @@ export function TipDeck({
           >
             <span className="tip-card-mark">tip</span>
             <h4 className="font-display text-[15px] text-ink mb-2 leading-snug">{tip.title || "无标题"}</h4>
-            {quote ? (
-              <p className="quote text-[13px] leading-relaxed text-ink-soft flex-1 line-clamp-3">
-                「{quote}」
-              </p>
-            ) : hasImg && tip.document_id ? (
+
+            {expanded ? (
+              quote ? (
+                <p className="quote text-[13px] leading-relaxed text-ink-soft flex-1 line-clamp-3">
+                  「{quote}」
+                </p>
+              ) : hasImg && tip.document_id ? (
+                <div
+                  className="flex-1 max-h-20 overflow-hidden [&_img]:max-h-16 [&_img]:rounded-md [&_p]:my-0"
+                  data-no-tip
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <MarkdownWithMath
+                    proseClass="prose prose-sm max-w-none"
+                    imageBaseUrl={documentImageBase(tip.document_id)}
+                  >
+                    {tip.content_md || ""}
+                  </MarkdownWithMath>
+                </div>
+              ) : (
+                <p className="quote text-[13px] leading-relaxed text-ink-soft flex-1">（空）</p>
+              )
+            ) : isFront ? (
               <div
-                className="flex-1 max-h-20 overflow-hidden [&_img]:max-h-16 [&_img]:rounded-md [&_p]:my-0"
+                className="tip-card-body flex-1 overflow-y-auto scroll-thin min-h-0"
                 data-no-tip
                 onClick={(e) => e.stopPropagation()}
               >
-                <MarkdownWithMath
-                  proseClass="prose prose-sm max-w-none"
-                  imageBaseUrl={documentImageBase(tip.document_id)}
-                >
-                  {tip.content_md || ""}
-                </MarkdownWithMath>
+                {tip.content_md?.trim() ? (
+                  tip.document_id ? (
+                    <MarkdownWithMath
+                      proseClass="prose prose-sm max-w-none text-ink-soft"
+                      imageBaseUrl={documentImageBase(tip.document_id)}
+                    >
+                      {tip.content_md}
+                    </MarkdownWithMath>
+                  ) : (
+                    <p className="text-[14px] leading-relaxed text-ink-soft whitespace-pre-wrap">
+                      {tip.content_md}
+                    </p>
+                  )
+                ) : (
+                  <p className="quote text-[13px] leading-relaxed text-ink-soft">（空）</p>
+                )}
               </div>
             ) : (
-              <p className="quote text-[13px] leading-relaxed text-ink-soft flex-1">（空）</p>
+              <p className="quote text-[13px] leading-relaxed text-ink-soft flex-1 line-clamp-2 opacity-70">
+                {quote ? `「${quote}」` : "（空）"}
+              </p>
             )}
+
             {(tip.tags || []).length > 0 ? (
-              <div className="flex flex-wrap gap-1 mt-2">
-                {(tip.tags || []).slice(0, 4).map((tag) => (
+              <div className="flex flex-wrap gap-1 mt-2 shrink-0">
+                {(tip.tags || []).slice(0, expanded ? 4 : 8).map((tag) => (
                   <span key={tag} className="h-5 px-1.5 rounded-full bg-sea-subtle text-sea text-[10px] leading-5">
                     {tag}
                   </span>
                 ))}
               </div>
             ) : null}
-            <div className="flex items-center justify-between gap-2 mt-3">
+            <div className="flex items-center justify-between gap-2 mt-3 shrink-0">
               <span className="text-[11px] text-ink-disabled truncate">
                 {sourceLabel(tip)}
                 {tip.page_number != null ? ` · 第 ${tip.page_number} 页` : ""}
+                {!expanded && isFront && tips.length > 1 ? " · 点空白处下一张" : ""}
               </span>
               <button
                 type="button"

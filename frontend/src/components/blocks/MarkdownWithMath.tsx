@@ -124,8 +124,25 @@ function wrapBareLatex(text: string): string {
  *
  * 同时兼容 \(...\)、\[...\]，以及出题模型常见的裸命令（\lim / \frac）。
  */
+/** 模型常把整篇报告包进 ```markdown … ```，拆掉后才按正文渲染。 */
+export function unwrapOuterMarkdownFence(content: string): string {
+  const raw = (content || "").trim()
+  const wrapped = raw.match(/^```(?:markdown|md)?\s*\r?\n([\s\S]*?)\r?\n```\s*$/i)
+  if (wrapped) return wrapped[1].trim()
+  const openOnly = raw.match(/^```(?:markdown|md)?\s*\r?\n([\s\S]*)$/i)
+  if (openOnly) {
+    let body = openOnly[1]
+    if (body.trimEnd().endsWith("```")) {
+      body = body.trimEnd().slice(0, -3)
+    }
+    return body.trim()
+  }
+  return content
+}
+
 export function preprocessLatex(content: string): string {
-  let result = content.replace(/\\\(/g, "$").replace(/\\\)/g, "$")
+  let result = unwrapOuterMarkdownFence(content)
+  result = result.replace(/\\\(/g, "$").replace(/\\\)/g, "$")
   result = result.replace(/\\\[/g, "$$").replace(/\\\]/g, "$$")
   result = wrapBareLatex(result)
   return result

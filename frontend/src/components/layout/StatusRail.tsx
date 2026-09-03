@@ -5,7 +5,7 @@ import { useUI } from "@/context/UIContext"
 import { analyticsApi, tasksApi } from "@/lib/api"
 import { DayCompleteCard, TaskRefillHint, TodayTaskSection } from "@/components/blocks/DayCompleteCard"
 import { EmptyNotes, MistRings } from "@/components/decor/PaperMotifs"
-import { TASKS_EVENT } from "@/lib/taskNotify"
+import { isTodayTasksSnapshot, TASKS_EVENT } from "@/lib/taskNotify"
 import type { ActivityStats, StreakStats, TodayTasksResult } from "@/types"
 import { RailOverlay } from "./RailOverlay"
 
@@ -35,7 +35,7 @@ export function StatusRail() {
   useEffect(() => {
     const onTasks = (ev: Event) => {
       const res = (ev as CustomEvent<TodayTasksResult>).detail
-      if (res?.tasks) setToday(res)
+      if (isTodayTasksSnapshot(res) && res.tasks) setToday(res)
     }
     window.addEventListener(TASKS_EVENT, onTasks)
     return () => window.removeEventListener(TASKS_EVENT, onTasks)

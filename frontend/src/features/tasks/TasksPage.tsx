@@ -6,25 +6,17 @@ import { SectionHeader } from "@/components/blocks/SectionHeader"
 import { TaskSpine, TodayTaskCard } from "@/components/blocks/TodayTaskCard"
 import { EmptyNotes, MistRings } from "@/components/decor/PaperMotifs"
 import { tasksApi } from "@/lib/api"
-import { noticeTodayTasks, TASKS_EVENT } from "@/lib/taskNotify"
+import { isTodayTasksSnapshot, noticeTodayTasks, seedCompletedTasks, TASKS_EVENT } from "@/lib/taskNotify"
 import { DayCompleteCard, TaskRefillHint } from "@/components/blocks/DayCompleteCard"
 import type { DailyTaskItem, TodayTasksResult } from "@/types"
-
-function localISODate(d = new Date()) {
-  const y = d.getFullYear()
-  const m = String(d.getMonth() + 1).padStart(2, "0")
-  const day = String(d.getDate()).padStart(2, "0")
-  return `${y}-${m}-${day}`
-}
+import { previousTaskDayISO, taskDayISO } from "@/lib/taskDay"
 
 function dayLabel(iso: string) {
   const parts = iso.split("-").map(Number)
   if (parts.length < 3 || parts.some((n) => Number.isNaN(n))) return iso
   const d = new Date(parts[0], parts[1] - 1, parts[2])
-  const today = localISODate()
-  const y = new Date()
-  y.setDate(y.getDate() - 1)
-  const yesterday = localISODate(y)
+  const today = taskDayISO()
+  const yesterday = previousTaskDayISO()
   const md = `${d.getMonth() + 1}月${d.getDate()}日`
   const week = d.toLocaleDateString("zh-CN", { weekday: "short" })
   if (iso === today) return `今天 · ${md}`
@@ -47,7 +39,7 @@ export function TasksPage() {
       .then(([hist, today]) => {
         if (cancelled) return
         setTasks(hist.tasks || [])
-        noticeTodayTasks(hist)
+        seedCompletedTasks(hist.tasks)
         noticeTodayTasks(today)
         setDayComplete(Boolean(today.day_complete))
         setRefillPending(Boolean(today.refill_pending))
@@ -66,14 +58,19 @@ export function TasksPage() {
   useEffect(() => {
     const onTasks = (ev: Event) => {
       const res = (ev as CustomEvent<TodayTasksResult>).detail
-      if (!res) return
+      if (!res || !isTodayTasksSnapshot(res)) return
       setDayComplete(Boolean(res.day_complete))
       setRefillPending(Boolean(res.refill_pending))
       if (!res.tasks) return
-      const today = localISODate()
+      const today = taskDayISO()
       setTasks((prev) => {
-        const rest = prev.filter((t) => (t.for_date || "").slice(0, 10) !== today)
-        return [...res.tasks, ...rest]
+        const byId = new Map<string, DailyTaskItem>()
+        for (const t of prev) {
+          if ((t.for_date || "").slice(0, 10) === today) continue
+          byId.set(t.id, t)
+        }
+        for (const t of res.tasks) byId.set(t.id, t)
+        return [...byId.values()]
       })
     }
     window.addEventListener(TASKS_EVENT, onTasks)
@@ -151,8 +148,8 @@ export function TasksPage() {
                 ) : null}
               </SectionHeader>
               <div className="space-y-3">
-                {day === localISODate() && dayComplete ? <DayCompleteCard /> : null}
-                {day === localISODate() && refillPending ? <TaskRefillHint /> : null}
+                {day === taskDayISO() && dayComplete ? <DayCompleteCard /> : null}
+                {day === taskDayISO() && refillPending ? <TaskRefillHint /> : null}
                 <TaskSpine>
                   {items.map((task, i) => (
                     <TodayTaskCard

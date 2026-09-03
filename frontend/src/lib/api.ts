@@ -768,6 +768,10 @@ export type UserProfile = {
   goal?: { id: string; text: string; status?: string } | null
   onboarding_session_id?: string | null
   tina_style?: "default" | "tsundere" | string
+  /** 每日最多布置几条任务；空/未设 = 不限制 */
+  task_max_daily_count?: number | null
+  /** 今日学习满多少分钟后不再布置；空/未设 = 不限制 */
+  task_max_study_minutes?: number | null
 }
 
 export const profileApi = {
@@ -779,6 +783,8 @@ export const profileApi = {
     role?: string
     onboarding_status?: string
     tina_style?: string
+    task_max_daily_count?: number | null
+    task_max_study_minutes?: number | null
   }) {
     return request<UserProfile>("PUT", "/api/v1/me/profile", data)
   },

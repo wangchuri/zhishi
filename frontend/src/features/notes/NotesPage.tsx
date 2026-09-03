@@ -47,8 +47,8 @@ export function NotesPage() {
   const [tips, setTips] = useState<NoteItem[]>([])
   const [loading, setLoading] = useState(true)
   const [query, setQuery] = useState("")
-  const [expanded, setExpanded] = useState(false)
-  const [tagFilter, setTagFilter] = useState<string | null>(null)
+  const [expanded, setExpanded] = useState(true)
+  const [tagFilter, setTagFilter] = useState<string[]>([])
   const tab = location.hash === "#tips" ? "tips" : "notes"
 
   useEffect(() => {
@@ -70,15 +70,18 @@ export function NotesPage() {
 
   const setTab = (next: "notes" | "tips") => {
     navigate({ pathname: "/notes", hash: next === "tips" ? "tips" : "notes" }, { replace: true })
-    if (next !== "tips") setExpanded(false)
+    if (next === "tips") setExpanded(true)
   }
 
+  const tipMatchesFilter = (t: NoteItem) =>
+    tagFilter.length === 0 || tagFilter.every((tag) => (t.tags || []).includes(tag))
+
   const cycle = () => {
-    const shown = tagFilter ? tips.filter((t) => (t.tags || []).includes(tagFilter)) : tips
+    const shown = tips.filter(tipMatchesFilter)
     if (expanded || shown.length < 2) return
     const first = shown[0]
     const restShown = shown.slice(1)
-    const hidden = tagFilter ? tips.filter((t) => !(t.tags || []).includes(tagFilter)) : []
+    const hidden = tips.filter((t) => !tipMatchesFilter(t))
     setTips([...restShown, first, ...hidden])
   }
 
@@ -93,11 +96,17 @@ export function NotesPage() {
     setExpanded(false)
   }
 
+  const toggleTag = (tag: string) => {
+    setTagFilter((prev) =>
+      prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag],
+    )
+  }
+
   const filteredNotes = query.trim()
     ? notes.filter((n) => (n.title || "").includes(query) || (n.content_md || "").includes(query))
     : notes
   const tipTags = Array.from(new Set(tips.flatMap((t) => t.tags || [])))
-  const shownTips = tagFilter ? tips.filter((t) => (t.tags || []).includes(tagFilter)) : tips
+  const shownTips = tips.filter(tipMatchesFilter)
 
   return (
     <AppShell maxWidth={1180}>
@@ -106,7 +115,7 @@ export function NotesPage() {
           <h1 className="font-display text-[1.85rem] text-ink mb-1">{tab === "tips" ? "tip" : "笔记"}</h1>
           <p className="text-body text-ink-soft">
             {tab === "tips"
-              ? "划选收进来的短卡片。点最上面一张会抽到最底下。tag 是你自己的分类。"
+              ? "划选收进来的短卡片。可多选 tag 筛选；点一张进入大卡堆叠翻看全文。"
               : "学习报告和自己写下的长内容。"}
           </p>
         </div>
@@ -146,27 +155,34 @@ export function NotesPage() {
               <div className="flex flex-wrap gap-1.5">
                 <button
                   type="button"
-                  onClick={() => setTagFilter(null)}
+                  onClick={() => setTagFilter([])}
                   className={cn(
                     "h-7 px-2.5 rounded-full border text-[11px] font-medium",
-                    !tagFilter ? "bg-sea text-paper border-sea" : "border-line text-ink-soft bg-paper",
+                    tagFilter.length === 0
+                      ? "bg-sea text-paper border-sea"
+                      : "border-line text-ink-soft bg-paper",
                   )}
                 >
                   全部
                 </button>
-                {tipTags.map((tag) => (
-                  <button
-                    key={tag}
-                    type="button"
-                    onClick={() => setTagFilter(tag)}
-                    className={cn(
-                      "h-7 px-2.5 rounded-full border text-[11px] font-medium",
-                      tagFilter === tag ? "bg-sea text-paper border-sea" : "border-line text-ink-soft bg-paper hover:border-sea/40",
-                    )}
-                  >
-                    {tag}
-                  </button>
-                ))}
+                {tipTags.map((tag) => {
+                  const on = tagFilter.includes(tag)
+                  return (
+                    <button
+                      key={tag}
+                      type="button"
+                      onClick={() => toggleTag(tag)}
+                      className={cn(
+                        "h-7 px-2.5 rounded-full border text-[11px] font-medium",
+                        on
+                          ? "bg-sea text-paper border-sea"
+                          : "border-line text-ink-soft bg-paper hover:border-sea/40",
+                      )}
+                    >
+                      {tag}
+                    </button>
+                  )
+                })}
               </div>
               <div className="flex items-center gap-2">
                 {!expanded && (
@@ -183,7 +199,7 @@ export function NotesPage() {
                   onClick={() => setExpanded((v) => !v)}
                   className="h-8 px-3 rounded-full bg-sea text-paper text-caption font-medium"
                 >
-                  {expanded ? "收成堆叠" : "全部展开"}
+                  {expanded ? "堆叠翻看" : "全部展开"}
                 </button>
               </div>
             </div>
@@ -193,13 +209,22 @@ export function NotesPage() {
               <EmptyState
                 icon={StickyNote}
                 title="还没有 tip"
-                description="划选文字后点 tip，可以选关联资料、打自己的分类 tag。"
+                description="划选文字后点 tip，左侧改摘录，右侧选资料和 tag。"
+                size="md"
+              />
+            ) : shownTips.length === 0 ? (
+              <EmptyState
+                icon={StickyNote}
+                title="没有同时带这些 tag 的 tip"
+                description="多选是「且」关系：只显示同时包含所选 tag 的卡片。点「全部」清空筛选。"
                 size="md"
               />
             ) : (
               <>
                 <p className="text-caption text-ink-disabled mb-4">
-                  点最上面一张会抽到最底下。展开后点其中一张，会重新叠回去。
+                  {expanded
+                    ? "默认展开。点一张进入大卡堆叠，可看完整内容；点空白处或「下一张」翻牌。"
+                    : "大卡显示全文。点卡片空白处抽到下一张；「全部展开」回到列表。"}
                 </p>
                 <TipDeck
                   tips={shownTips}

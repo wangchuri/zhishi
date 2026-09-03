@@ -563,6 +563,72 @@ export interface ChatMessage {
       nickname?: string
       role?: string
     }>
+    tips?: Array<{
+      id: string
+      title?: string | null
+      content_md?: string | null
+      document_id?: string | null
+      document_name?: string | null
+      page_number?: number | null
+      tags?: string[]
+      note_type?: string
+      created_at?: string | null
+      updated_at?: string | null
+    }>
+    plots?: Array<{
+      id: string
+      title?: string | null
+      expressions: string[]
+      x_min: number
+      x_max: number
+    }>
+    canvases?: Array<{
+      id: string
+      title?: string | null
+      html: string
+    }>
+    /** 按出现顺序穿插的正文与卡片 */
+    blocks?: Array<
+      | { type: "text"; content: string }
+      | {
+          type: "tip"
+          tip: {
+            id: string
+            title?: string | null
+            content_md?: string | null
+            document_id?: string | null
+            document_name?: string | null
+            page_number?: number | null
+            tags?: string[]
+          }
+        }
+      | {
+          type: "widget"
+          widget: NonNullable<ChatMessage["payload"]>["widgets"] extends (infer W)[] | undefined ? W : never
+        }
+      | {
+          type: "onboarding"
+          item: NonNullable<ChatMessage["payload"]>["onboarding"] extends (infer O)[] | undefined ? O : never
+        }
+      | {
+          type: "plot"
+          plot: {
+            id: string
+            title?: string | null
+            expressions: string[]
+            x_min: number
+            x_max: number
+          }
+        }
+      | {
+          type: "canvas"
+          canvas: {
+            id: string
+            title?: string | null
+            html: string
+          }
+        }
+    >
   }
 }
 

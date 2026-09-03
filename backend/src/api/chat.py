@@ -15,6 +15,8 @@ from ..core.llm import format_agent_error, is_tool_related_chunk, visible_assist
 from ..schemas import ai as ai_schemas
 from ..services.chat import (
     GLITCH_THINK,
+    _append_text_block,
+    _merge_tool_ui,
     chat_service,
     drain_tool_ui,
     is_glitch_cmd,
@@ -37,18 +39,35 @@ def _json_line(data: dict) -> str:
     return f"data: {json.dumps(data, ensure_ascii=False, default=_default)}\n\n"
 
 
-def _emit_tool_events(tools, sid: str, widgets: list, onboarding: list):
-    questions, items = drain_tool_ui(tools)
+def _emit_tool_events(tools, sid: str, widgets: list, tips: list, onboarding: list, plots: list, canvases: list, blocks: list):
+    questions, tip_items, items, plot_items, canvas_items = drain_tool_ui(tools)
     lines = []
+    _merge_tool_ui(widgets, tips, onboarding, plots, canvases, blocks, questions, tip_items, items, plot_items, canvas_items)
     for q in questions:
-        widgets.append({"question": q})
         lines.append(_json_line({
             "event": "show_question",
             "question": q,
             "session_id": sid,
         }))
+    for t in tip_items:
+        lines.append(_json_line({
+            "event": "show_tip",
+            "tip": t,
+            "session_id": sid,
+        }))
+    for plot in plot_items:
+        lines.append(_json_line({
+            "event": "show_plot",
+            "plot": plot,
+            "session_id": sid,
+        }))
+    for canvas in canvas_items:
+        lines.append(_json_line({
+            "event": "show_canvas",
+            "canvas": canvas,
+            "session_id": sid,
+        }))
     for item in items:
-        onboarding.append(item)
         lines.append(_json_line({
             "event": "onboarding_ui",
             "item": item,
@@ -118,12 +137,16 @@ async def send(body: ai_schemas.ChatSend, db: Session = Depends(get_db)):
             full = ""
             reasoning = ""
             widgets: list[dict] = []
+            tips: list[dict] = []
             onboarding: list[dict] = []
+            plots: list[dict] = []
+            canvases: list[dict] = []
+            blocks: list[dict] = []
             yield _json_line({"event": "session", "session_id": sid})
             using_tool = False
             try:
                 async for chunk in agent.apredict(user_content):
-                    for line in _emit_tool_events(tools, sid, widgets, onboarding):
+                    for line in _emit_tool_events(tools, sid, widgets, tips, onboarding, plots, canvases, blocks):
                         yield line
                     toolish = is_tool_related_chunk(chunk)
                     if toolish and not using_tool:
@@ -143,16 +166,19 @@ async def send(body: ai_schemas.ChatSend, db: Session = Depends(get_db)):
                         })
                     if c:
                         full += c
+                        _append_text_block(blocks, c)
                         yield _json_line({"content": c, "session_id": sid, "role": "assistant"})
                     if r:
                         reasoning += r
                         yield _json_line({"content": r, "session_id": sid, "role": "assistant", "reasoning_content": True})
-                for line in _emit_tool_events(tools, sid, widgets, onboarding):
+                for line in _emit_tool_events(tools, sid, widgets, tips, onboarding, plots, canvases, blocks):
                     yield line
             except Exception as e:
                 logger.exception("chat 流式失败")
                 err = f"（出错了：{format_agent_error(e)}）"
-                full = full or err
+                if not full:
+                    full = err
+                    _append_text_block(blocks, err)
                 yield _json_line({"content": err, "session_id": sid, "role": "assistant"})
             if using_tool:
                 yield _json_line({
@@ -160,7 +186,7 @@ async def send(body: ai_schemas.ChatSend, db: Session = Depends(get_db)):
                     "using": False,
                     "session_id": sid,
                 })
-            payload = pack_assistant_payload(widgets, onboarding)
+            payload = pack_assistant_payload(widgets, onboarding, tips, blocks, plots, canvases)
             think = GLITCH_THINK if chat_service.session_in_crisis(db, sid) else (reasoning or None)
             message_id = chat_service.persist_assistant(sid, full, think, None, payload)
             yield _json_line({

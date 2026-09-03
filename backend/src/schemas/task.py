@@ -75,6 +75,8 @@ class ProfileOut(BaseModel):
     goal: Optional[GoalOut] = None
     onboarding_session_id: Optional[str] = None
     tina_style: str = "default"
+    task_max_daily_count: Optional[int] = None
+    task_max_study_minutes: Optional[int] = None
 
 
 class ProfileUpdate(BaseModel):
@@ -82,4 +84,6 @@ class ProfileUpdate(BaseModel):
     role: Optional[str] = None
     onboarding_status: Optional[str] = None
     tina_style: Optional[str] = None
+    task_max_daily_count: Optional[int] = None
+    task_max_study_minutes: Optional[int] = None
 

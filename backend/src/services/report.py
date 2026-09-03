@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from ..core.errors import NotFoundError
 from ..models import UserNote
 from ..services.analytics import analytics_service
-from ..services.note import note_service
+from ..services.note import note_service, unwrap_markdown_fence
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +20,7 @@ def _report_out(n: UserNote) -> dict:
     return {
         "id": n.id,
         "title": n.title or "",
-        "content_md": n.content_md or "",
+        "content_md": unwrap_markdown_fence(n.content_md or ""),
         "collection_id": n.collection_id,
         "note_type": n.note_type,
         "created_at": n.created_at.isoformat() if n.created_at else None,

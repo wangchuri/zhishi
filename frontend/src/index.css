@@ -119,6 +119,27 @@
     margin-right: auto;
   }
 
+  .prose table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.9em;
+    margin: 0.75rem 0;
+  }
+  .prose th,
+  .prose td {
+    border: 1px solid var(--line);
+    padding: 0.4rem 0.65rem;
+    text-align: left;
+    vertical-align: top;
+  }
+  .prose th {
+    background: var(--paper-2);
+    font-weight: 600;
+  }
+  .prose h1 { font-size: 1.45rem; margin: 0.4rem 0 0.8rem; }
+  .prose h2 { font-size: 1.2rem; margin: 1.25rem 0 0.5rem; }
+  .prose h3 { font-size: 1.05rem; margin: 1rem 0 0.4rem; }
+
   /* 键盘选中色 */
   ::selection {
     background: var(--sea-subtle);
@@ -247,6 +268,87 @@
 }
 .animate-msg-in {
   animation: msg-in 240ms ease-out both;
+}
+
+@keyframes stream-caret {
+  0%, 48% { opacity: 1; }
+  50%, 100% { opacity: 0; }
+}
+.stream-caret {
+  display: inline-block;
+  width: 2px;
+  height: 0.95em;
+  margin-left: 3px;
+  background: var(--sea);
+  vertical-align: -0.12em;
+  border-radius: 1px;
+  animation: stream-caret 1.05s steps(1, end) infinite;
+}
+
+@keyframes stream-ink {
+  from {
+    opacity: 0;
+    filter: blur(4px);
+  }
+  to {
+    opacity: 1;
+    filter: blur(0);
+  }
+}
+.stream-ink-char {
+  animation: stream-ink 0.38s ease-out both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .stream-ink-char { animation: none; }
+}
+
+@keyframes tina-think-float {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, 6px) scale(0.7) rotate(-8deg);
+  }
+  18% {
+    opacity: 0.9;
+  }
+  70% {
+    opacity: 0.75;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -18px) scale(1.05) rotate(10deg);
+  }
+}
+.tina-think-q {
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.85rem;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--sea);
+  animation: tina-think-float 1.7s ease-out infinite;
+  text-shadow: 0 1px 0 rgba(243, 239, 230, 0.9);
+}
+.tina-think-q-a {
+  left: 28%;
+  animation-delay: 0s;
+}
+.tina-think-q-b {
+  left: 50%;
+  font-size: 1rem;
+  animation-delay: 0.35s;
+}
+.tina-think-q-c {
+  left: 72%;
+  animation-delay: 0.7s;
+}
+@media (prefers-reduced-motion: reduce) {
+  .tina-think-q {
+    animation: none;
+    opacity: 0.7;
+    transform: translate(-50%, -6px);
+  }
 }
 
 /* 骨架屏脉动 */
@@ -385,9 +487,12 @@
 /* tip 堆叠牌 · 笔记页 */
 .tip-deck {
   position: relative;
-  width: min(100%, 420px);
-  height: 236px;
   margin-top: 8px;
+}
+.tip-deck.is-stack {
+  width: min(100%, 560px);
+  height: min(68vh, 520px);
+  min-height: 360px;
 }
 .tip-deck.is-expanded {
   width: 100%;
@@ -418,41 +523,50 @@
   min-height: 196px;
   transition: transform 0.32s ease, opacity 0.32s ease, box-shadow 0.32s ease;
 }
-.tip-deck:not(.is-expanded) .tip-card {
+.tip-deck.is-stack .tip-card {
   position: absolute;
   left: 0;
-  right: 24px;
+  right: 28px;
   top: 0;
-  bottom: 24px;
+  bottom: 28px;
   cursor: pointer;
   pointer-events: none;
+  min-height: 0;
 }
-.tip-deck:not(.is-expanded) .tip-card.is-front {
+.tip-deck.is-stack .tip-card.is-front {
   pointer-events: auto;
 }
-.tip-deck:not(.is-expanded) .tip-card[data-depth="0"] {
+.tip-deck.is-stack .tip-card[data-depth="0"] {
   transform: translate(0, 0) rotate(-0.4deg);
   z-index: 3;
 }
-.tip-deck:not(.is-expanded) .tip-card[data-depth="1"] {
-  transform: translate(10px, 12px) rotate(1.6deg);
+.tip-deck.is-stack .tip-card[data-depth="1"] {
+  transform: translate(12px, 14px) rotate(1.6deg);
   z-index: 2;
   opacity: 0.95;
 }
-.tip-deck:not(.is-expanded) .tip-card[data-depth="2"] {
-  transform: translate(20px, 22px) rotate(3.2deg);
+.tip-deck.is-stack .tip-card[data-depth="2"] {
+  transform: translate(24px, 26px) rotate(3.2deg);
   z-index: 1;
   opacity: 0.8;
 }
-.tip-deck:not(.is-expanded) .tip-card[data-depth="3"] {
-  transform: translate(20px, 22px) rotate(3.2deg) scale(0.98);
+.tip-deck.is-stack .tip-card[data-depth="3"] {
+  transform: translate(24px, 26px) rotate(3.2deg) scale(0.98);
   z-index: 0;
   opacity: 0;
   pointer-events: none;
 }
-.tip-deck:not(.is-expanded) .tip-card.is-front:hover {
+.tip-deck.is-stack .tip-card.is-front:hover {
   transform: translate(0, -4px) rotate(-0.4deg);
   box-shadow: 0 14px 32px -10px rgba(20, 33, 43, 0.18);
+}
+.tip-deck.is-stack .tip-card-body {
+  margin-bottom: 4px;
+  padding-right: 4px;
+}
+.tip-deck.is-stack .tip-card-body img {
+  max-height: 220px;
+  border-radius: 10px;
 }
 .tip-deck.is-expanded .tip-card {
   position: relative;
@@ -476,4 +590,30 @@
   display: inline-flex;
   align-items: center;
   margin-bottom: 10px;
+}
+
+/* tip 卡片 · 对话内嵌（与笔记页 tip-card 同系，无堆叠动画） */
+.tip-card.is-chat {
+  position: relative;
+  left: auto;
+  right: auto;
+  top: auto;
+  bottom: auto;
+  margin-top: 12px;
+  min-height: 0;
+  max-width: min(100%, 560px);
+  cursor: default;
+  pointer-events: auto;
+  transform: none;
+  opacity: 1;
+}
+.tip-card.is-chat .tip-card-body {
+  margin-bottom: 4px;
+  padding-right: 4px;
+  max-height: min(42vh, 360px);
+  overflow-y: auto;
+}
+.tip-card.is-chat .tip-card-body img {
+  max-height: 220px;
+  border-radius: 10px;
 }

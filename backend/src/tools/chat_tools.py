@@ -5,7 +5,9 @@
 """
 
 import json
+import re
 import threading
+import uuid
 from typing import Optional
 
 from tina import Tools
@@ -31,9 +33,78 @@ _STATUS_LABEL = {
 }
 
 
-def _stem_preview(stem: str, n: int = 72) -> str:
-    text = " ".join((stem or "").split())
+def _clip(text: str, n: int) -> str:
+    text = (text or "").strip()
     return text if len(text) <= n else text[: n - 1] + "…"
+
+
+def _stem_preview(stem: str, n: int = 72) -> str:
+    return _clip(stem, n)
+
+
+def format_options_for_agent(options) -> str:
+    if not options:
+        return ""
+    if isinstance(options, str):
+        try:
+            options = json.loads(options)
+        except json.JSONDecodeError:
+            return options.strip()
+    if not isinstance(options, list):
+        return ""
+    lines = []
+    for item in options:
+        if not isinstance(item, dict):
+            continue
+        key = str(item.get("key") or "").strip()
+        text = str(item.get("text") or "").strip()
+        if key and text:
+            lines.append(f"{key}. {text}")
+        elif text:
+            lines.append(text)
+    return "\n".join(lines)
+
+
+def format_question_for_agent(
+    *,
+    question_id: str = "",
+    stem: str = "",
+    question_type: str = "",
+    options=None,
+    user_answer: str | None = None,
+    result: dict | None = None,
+) -> str:
+    """给 Tina 看的题面：完整题干和选项。未作答不带标准答案；已作答才附判定与解析。"""
+    kind = _TYPE_LABEL.get(question_type, question_type or "")
+    parts: list[str] = []
+    head = []
+    if kind:
+        head.append(f"题型={kind}")
+    if question_id:
+        head.append(f"id={question_id}")
+    if head:
+        parts.append(" ".join(head))
+    body = _clip(stem, 2500)
+    if body:
+        parts.append(f"题干：{body}")
+    opt = format_options_for_agent(options)
+    if opt:
+        parts.append("选项：\n" + opt)
+    if result and isinstance(result, dict):
+        status = str(result.get("status") or "")
+        st = _STATUS_LABEL.get(status, status or "已作答")
+        line = f"作答结果：{st}"
+        ua = (user_answer or "").strip()
+        if ua:
+            line += f"；用户答案={_clip(ua, 400)}"
+        ca = str(result.get("correct_answer") or "").strip()
+        if ca:
+            line += f"；正确答案={_clip(ca, 400)}"
+        exp = str(result.get("explanation") or result.get("ai_reason") or "").strip()
+        if exp:
+            line += f"；解析={_clip(exp, 800)}"
+        parts.append(line)
+    return "\n".join(parts)
 
 
 def _public_question(gq: GlobalQuestion, doc_id: Optional[str], doc_name: Optional[str]) -> dict:
@@ -53,7 +124,7 @@ def _public_question(gq: GlobalQuestion, doc_id: Optional[str], doc_name: Option
 
 
 class ChatTools:
-    """对话工具包。show_question 会把可渲染题目放到 pending_ui，供 SSE 推给前端。"""
+    """对话工具包。show_question / show_tip 会把卡片放到 pending_ui，供 SSE 推给前端。"""
 
     def __init__(self, collection_id: Optional[str] = None):
         self.collection_id = collection_id
@@ -64,11 +135,19 @@ class ChatTools:
         self.tools.register_tool(tool=self.list_quiz_books)
         self.tools.register_tool(tool=self.search_questions)
         self.tools.register_tool(tool=self.show_question)
+        self.tools.register_tool(tool=self.search_tips)
+        self.tools.register_tool(tool=self.list_tips)
+        self.tools.register_tool(tool=self.show_tip)
+        self.tools.register_tool(tool=self.show_plot)
+        self.tools.register_tool(tool=self.show_canvas)
         self.tools.register_tool(tool=self.get_active_goal)
         self.tools.register_tool(tool=self.list_today_tasks)
         self.tools.register_tool(tool=self.ensure_today_tasks)
         self.tools.register_tool(tool=self.complete_learn_task)
         self.tools.register_tool(tool=self.set_chapter_learned)
+        self.tools.register_tool(tool=self.remember_about_user)
+        self.tools.register_tool(tool=self.list_user_memory)
+        self.tools.register_tool(tool=self.forget_user_memory)
 
     def drain_ui(self) -> list[dict]:
         with self._lock:
@@ -142,7 +221,7 @@ class ChatTools:
         tag: str = "",
         status: str = "all",
     ) -> str:
-        """按书/关键词/标签/作答状态检索题目，只返回摘要和 id，不含答案。document_id 与 status 必须是字符串。
+        """按书/关键词/标签/作答状态检索题目，返回完整题干、选项和 id，不含答案。document_id 与 status 必须是字符串。
         Args:
             keyword: 题干关键词，可空
             document_id: 某一本书的 id 字符串，可空
@@ -200,16 +279,24 @@ class ChatTools:
                 return "没有匹配的题目。"
             lines = []
             for gq, doc_id, ref in rows:
-                label = _TYPE_LABEL.get(gq.question_type, gq.question_type)
                 st = "未做"
                 if ref and (ref.attempt_count or 0) > 0:
                     st = _STATUS_LABEL.get(ref.last_status or "", "已做")
-                lines.append(
-                    f'- [{label}][{st}] {_stem_preview(gq.stem)} | id="{gq.id}" | book="{doc_id or "-"}"'
+                try:
+                    opts = json.loads(gq.options) if gq.options else []
+                except json.JSONDecodeError:
+                    opts = []
+                body = format_question_for_agent(
+                    question_id=gq.id,
+                    stem=gq.stem,
+                    question_type=gq.question_type,
+                    options=opts,
                 )
+                lines.append(f"- [{st}] book=\"{doc_id or '-'}\"\n{body}")
             return (
-                "检索到的题目（不含答案）。要用可答题卡片展示给用户时，调用 show_question(question_id)。\n"
-                + "\n".join(lines)
+                "检索到的题目（含完整题干和选项，不含答案）。"
+                "要用可答题卡片展示给用户时，调用 show_question(question_id)。\n\n"
+                + "\n\n".join(lines)
             )
         finally:
             db.close()
@@ -240,11 +327,229 @@ class ChatTools:
             payload = _public_question(gq, doc_id, doc_name)
             with self._lock:
                 self._pending_ui.append(payload)
-            kind = _TYPE_LABEL.get(gq.question_type, gq.question_type)
-            return (
-                f"已向用户展示可答题卡片。题型={kind} id={gq.id} "
-                f"题干={_stem_preview(gq.stem)}。等待用户作答，不要把答案或选项对错写进文字。"
+            body = format_question_for_agent(
+                question_id=gq.id,
+                stem=gq.stem,
+                question_type=gq.question_type,
+                options=payload.get("options"),
             )
+            return (
+                "已向用户展示可答题卡片。下面是完整题面（不含答案），讲解时对照这份内容，不要凭记忆改写题目。\n"
+                f"{body}\n"
+                "等待用户作答，不要把答案或选项对错写进文字。"
+            )
+        finally:
+            db.close()
+
+    def search_tips(
+        self,
+        keyword: str = "",
+        tag: str = "",
+        document_id: str = "",
+    ) -> str:
+        """检索用户保存的 tip（划选摘录）。返回总数和摘要、tip_id；要展示卡片时必须再调 show_tip。
+        Args:
+            keyword: 在标题/正文里搜，可空
+            tag: 用户自订分类 tag，可空
+            document_id: 某一本书的资料 id，可空
+        """
+        from ..services.note import note_service
+
+        keyword = "" if keyword is None else str(keyword)
+        tag = "" if tag is None else str(tag)
+        document_id = "" if document_id is None else str(document_id)
+        db = SessionLocal()
+        try:
+            if self.collection_id and document_id.strip():
+                doc = db.get(Document, document_id.strip())
+                if doc and doc.collection_id and doc.collection_id != self.collection_id:
+                    return "该 tip 不在当前检索分区。"
+            found = note_service.search_tips(
+                db,
+                keyword=keyword,
+                tag=tag,
+                document_id=document_id,
+                limit=20,
+            )
+            total = int(found.get("total") or 0)
+            rows = found.get("tips") or []
+            if total == 0:
+                return "共 0 条 tip。没有找到匹配的摘录。用户可以在阅读页划选文字收入 tip。"
+            lines = []
+            for t in rows:
+                loc = ""
+                if t.get("document_name"):
+                    loc = f"《{t['document_name']}》"
+                if t.get("page_number") is not None:
+                    loc += f" 第{t['page_number']}页"
+                tags = t.get("tags") or []
+                tag_s = f" tags={','.join(tags)}" if tags else ""
+                lines.append(
+                    f'- id="{t["tip_id"]}" | {t.get("title") or "无标题"} | {loc}{tag_s}\n'
+                    f'  {t.get("preview") or ""}'
+                )
+            shown = len(rows)
+            extra = f"，以下列出最近 {shown} 条" if total > shown else ""
+            return (
+                f"共 {total} 条 tip{extra}。数量以本句「共 N 条」为准，不要自己数列表。"
+                "要向用户展示卡片时必须调用 show_tip(tip_id)，文字描述不会弹出卡片。\n"
+                + "\n".join(lines)
+            )
+        finally:
+            db.close()
+
+    def list_tips(self, document_id: str = "") -> str:
+        """列出用户 tip 的准确总数和摘要。问「有多少条 tip」「我的 tip」时用这个，不要自己数。
+        Args:
+            document_id: 某一本书的资料 id，可空（空=全部）
+        """
+        return self.search_tips(keyword="", tag="", document_id=document_id or "")
+
+    def show_tip(self, tip_id: str) -> str:
+        """在对话里向用户展示一条 tip 卡片（摘录原文）。
+        Args:
+            tip_id: tip id，来自 search_tips
+        """
+        tid = (tip_id or "").strip()
+        if not tid:
+            return "缺少 tip_id"
+        db = SessionLocal()
+        try:
+            from ..services.note import note_service
+
+            note = note_service.get_note(db, tid)
+            if not note or note.note_type != "tip":
+                return f"tip 不存在：{tid}"
+            if note.document_id and self.collection_id:
+                doc = db.get(Document, note.document_id)
+                if doc and doc.collection_id and doc.collection_id != self.collection_id:
+                    return "该 tip 不在当前检索分区。"
+            item = note_service.note_to_item(db, note)
+            payload = {**item, "_kind": "tip"}
+            with self._lock:
+                self._pending_ui.append(payload)
+            title = item.get("title") or "摘录"
+            loc = item.get("document_name") or ""
+            page = item.get("page_number")
+            where = f"{loc} 第{page}页" if page is not None and loc else (loc or "未关联资料")
+            return (
+                f"已向用户展示 tip 卡片。标题={title} 出处={where} id={tid}。"
+                f"卡片会嵌在对话里，不要再说「已经弹出」来代替这次调用，也不要把摘录全文再抄一遍。"
+            )
+        finally:
+            db.close()
+
+    def show_plot(
+        self,
+        expression: str,
+        title: str = "",
+        x_min: str = "-10",
+        x_max: str = "10",
+    ) -> str:
+        """在右侧画布画出函数图像。用户要看函数图、对照曲线时必须调用。不要用文字假装已经画了。
+        Args:
+            expression: 关于 x 的表达式。支持嵌套、sin^2(x)、|x|、\\frac{a}{b}、if(x<0,-x,x)。多条曲线用分号分隔，最多 3 条
+            title: 图标题，可空
+            x_min: 横坐标左端，默认 -10
+            x_max: 横坐标右端，默认 10
+        """
+        raw = (expression or "").strip()
+        if not raw:
+            return "缺少 expression。请传入如 sin(x) 或 x^2。"
+        exprs = [s.strip() for s in re.split(r"[\n；;]+", raw) if s.strip()][:3]
+        if not exprs:
+            return "表达式无效。"
+        try:
+            lo = float(str(x_min).strip() or "-10")
+        except ValueError:
+            lo = -10.0
+        try:
+            hi = float(str(x_max).strip() or "10")
+        except ValueError:
+            hi = 10.0
+        if lo == hi:
+            lo, hi = lo - 1, hi + 1
+        if lo > hi:
+            lo, hi = hi, lo
+        if hi - lo > 1e6:
+            return "横坐标范围过大，请缩小 x_min / x_max。"
+        payload = {
+            "_kind": "plot",
+            "id": uuid.uuid4().hex,
+            "title": (title or "").strip() or None,
+            "expressions": exprs,
+            "x_min": lo,
+            "x_max": hi,
+        }
+        with self._lock:
+            self._pending_ui.append(payload)
+        shown = "；".join(f"y={e}" for e in exprs)
+        return (
+            f"已在右侧画布画出函数图。{shown}，x∈[{lo:g},{hi:g}]。"
+            "结合图像讲解即可，不要把图再画成 ASCII，也不要声称「已经画了」来代替这次调用。"
+        )
+
+    def show_canvas(self, html: str, title: str = "") -> str:
+        """在右侧画布显示一段自包含的 HTML/SVG/JS 图形（圆、参数方程、交互示意等）。
+        不要外链、不要 iframe。y=f(x) 的普通函数图请用 show_plot。
+        Args:
+            html: 片段即可，可用 svg/canvas 和内联 script。禁止外链脚本和 iframe
+            title: 画布标题，可空
+        """
+        from ..services.canvas import sanitize_canvas_html
+
+        ok, cleaned = sanitize_canvas_html(html)
+        if not ok:
+            return f"无法显示画布：{cleaned}"
+        payload = {
+            "_kind": "canvas",
+            "id": uuid.uuid4().hex,
+            "title": (title or "").strip() or None,
+            "html": cleaned,
+        }
+        with self._lock:
+            self._pending_ui.append(payload)
+        return (
+            f"已在右侧打开 HTML 画布。标题={payload['title'] or '画布'}。"
+            "结合图形讲解即可，不要把图再画成 ASCII，也不要声称已经画了来代替这次调用。"
+        )
+
+    def remember_about_user(self, content: str, category: str = "preference") -> str:
+        """记住用户的偏好、习惯、个性或稳定事实，供以后对话参考。
+        Args:
+            content: 要记住的内容，简短一句
+            category: preference / personality / habit / fact / other
+        """
+        from ..services.memory import remember
+
+        db = SessionLocal()
+        try:
+            ok, msg = remember(db, content, category=category or "preference")
+            return msg if ok else f"未能记住：{msg}"
+        finally:
+            db.close()
+
+    def list_user_memory(self) -> str:
+        """列出已记住的用户信息（偏好、习惯等）。"""
+        from ..services.memory import format_for_agent
+
+        db = SessionLocal()
+        try:
+            return "用户长期记忆：\n" + format_for_agent(db)
+        finally:
+            db.close()
+
+    def forget_user_memory(self, memory_id: str) -> str:
+        """删除一条不再适用的长期记忆。
+        Args:
+            memory_id: 记忆 id，来自 list_user_memory
+        """
+        from ..services.memory import forget
+
+        db = SessionLocal()
+        try:
+            ok, msg = forget(db, memory_id)
+            return msg if ok else f"未能删除：{msg}"
         finally:
             db.close()
 

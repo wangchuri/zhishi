@@ -10,7 +10,7 @@ import { EmptyNotes, MistRings, SageSprig, SealMark, TimeMotif } from "@/compone
 import { Button } from "@/components/ui/button"
 import { useAuth } from "@/context/AuthContext"
 import { tasksApi, profileApi } from "@/lib/api"
-import { noticeTodayTasks, TASKS_EVENT } from "@/lib/taskNotify"
+import { isTodayTasksSnapshot, noticeTodayTasks, TASKS_EVENT } from "@/lib/taskNotify"
 import type { TodayTasksResult } from "@/types"
 
 const quickActions = [
@@ -79,7 +79,7 @@ export function DashboardPage() {
   useEffect(() => {
     const onTasks = (ev: Event) => {
       const res = (ev as CustomEvent<TodayTasksResult>).detail
-      if (!res?.tasks) return
+      if (!isTodayTasksSnapshot(res) || !res.tasks) return
       setToday((prev) => ({ ...(prev || res), ...res }))
       if (res.goal?.text) setGoalDraft(res.goal.text)
     }

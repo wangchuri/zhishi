@@ -47,6 +47,11 @@ class UserProfile(Base):
     task_refill_round_on: Mapped[date | None] = mapped_column(Date)
     # Tina 说话风格：default | tsundere（/tina 切换傲娇）
     tina_style: Mapped[str] = mapped_column(String(20), default="default")
+    # Tina 长期记忆 JSON 数组 [{id, content, category, created_at}, ...]
+    tina_memory_json: Mapped[str | None] = mapped_column(Text)
+    # 任务 Agent 用户上限：None/0 = 不限制（交给 Agent 自判）
+    task_max_daily_count: Mapped[int | None] = mapped_column(Integer)  # 今日最多布置几条
+    task_max_study_minutes: Mapped[int | None] = mapped_column(Integer)  # 今日学习满多少分钟后不再布置
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=_now, onupdate=_now)
 
 

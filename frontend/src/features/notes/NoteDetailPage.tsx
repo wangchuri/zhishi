@@ -117,7 +117,9 @@ export function NoteDetailPage() {
               </MarkdownWithMath>
             </div>
           ) : (
-            <MarkdownWithMath className="prose prose-sm max-w-none prose-headings:font-display prose-headings:text-ink prose-p:text-ink prose-p:leading-relaxed">
+            <MarkdownWithMath
+              className="prose-headings:font-display prose-headings:text-ink prose-p:text-ink prose-p:leading-relaxed"
+            >
               {note.content_md || ""}
             </MarkdownWithMath>
           )}

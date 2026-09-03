@@ -31,13 +31,26 @@ def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+# 任务日从每天 04:00（东八区）起算；0–4 点仍算前一天。
+_TASK_TZ = timezone(timedelta(hours=8))
+_TASK_DAY_HOUR = 4
+
+
+def _now_task_local() -> datetime:
+    return datetime.now(_TASK_TZ)
+
+
 def _today() -> date:
-    return date.today()
+    """当前任务日：本地 04:00 换日。"""
+    local = _now_task_local()
+    if local.hour < _TASK_DAY_HOUR:
+        return (local - timedelta(days=1)).date()
+    return local.date()
 
 
 def _due_at(for_date: date) -> datetime:
-    """当天结束：次日 00:00 本地。过了仍未完成则标 expired。"""
-    return datetime.combine(for_date + timedelta(days=1), time.min)
+    """当天任务截止：次日 04:00（东八区墙钟，naive 入库，与现有列一致）。"""
+    return datetime.combine(for_date + timedelta(days=1), time(hour=_TASK_DAY_HOUR))
 
 
 def _loads(raw: Optional[str]) -> dict[str, Any]:
@@ -167,7 +180,7 @@ def upsert_active_goal(
 
 
 def _due_day(row: DailyTask) -> date:
-    """到期日：due_at 的日历日；没有则次日。恢复后会把 due_at 延到今天结束。"""
+    """到期日：due_at 的日历日；没有则次日。恢复后会把 due_at 延到本任务日结束（次日 04:00）。"""
     due: Any = row.due_at
     if isinstance(due, str):
         raw = due.replace("Z", "+00:00").split(".")[0]
@@ -177,7 +190,7 @@ def _due_day(row: DailyTask) -> date:
             due = None
     if isinstance(due, datetime):
         if due.tzinfo is not None:
-            due = due.astimezone().replace(tzinfo=None)
+            due = due.astimezone(_TASK_TZ).replace(tzinfo=None)
         return due.date()
     if isinstance(due, date):
         return due
@@ -185,7 +198,7 @@ def _due_day(row: DailyTask) -> date:
 
 
 def expire_overdue_tasks(db: Session) -> int:
-    """昨天及更早仍 pending、且宽限期已过的任务标为超时。每天的行都留着。"""
+    """昨天及更早仍 pending、且宽限期已过的任务标为超时。每天的行都留着。任务日 04:00 换日。"""
     today = _today()
     rows = (
         db.query(DailyTask)
@@ -383,6 +396,48 @@ def _profile(db: Session) -> UserProfile:
     return row
 
 
+def _positive_int(value: Any) -> Optional[int]:
+    try:
+        n = int(value)
+    except (TypeError, ValueError):
+        return None
+    return n if n > 0 else None
+
+
+def get_task_limits(db: Session) -> dict[str, Optional[int]]:
+    """用户设置的任务上限；值为 None 表示不限制。"""
+    row = _profile(db)
+    return {
+        "max_daily_count": _positive_int(getattr(row, "task_max_daily_count", None)),
+        "max_study_minutes": _positive_int(getattr(row, "task_max_study_minutes", None)),
+    }
+
+
+def _today_study_minutes(db: Session) -> int:
+    try:
+        from .analytics import analytics_service
+
+        act = analytics_service.get_activity(db)
+        return int(round((act.get("today_active_seconds") or 0) / 60))
+    except Exception:
+        return 0
+
+
+def task_assign_blocked_reason(db: Session) -> Optional[str]:
+    """若因用户设置不应再布置任务，返回原因；否则 None。"""
+    limits = get_task_limits(db)
+    usage = _today_usage(db)
+    max_count = limits["max_daily_count"]
+    if max_count is not None and usage["assigned"] >= max_count:
+        return f"已达设置的每日任务上限（{max_count} 条），不再布置。"
+    max_min = limits["max_study_minutes"]
+    if max_min is not None:
+        study_min = _today_study_minutes(db)
+        if study_min >= max_min:
+            return f"今日已学约 {study_min} 分钟，已达设置上限（{max_min} 分钟），不再布置。"
+    return None
+
+
 def is_day_closed(db: Session) -> bool:
     return _profile(db).task_closed_on == _today()
 
@@ -425,11 +480,21 @@ def _stop_signals(
     study_min: int,
     rate7: Optional[float],
     refill_round: int,
+    limits: Optional[dict[str, Optional[int]]] = None,
 ) -> list[str]:
+    limits = limits or {}
     signals: list[str] = []
-    if study_min >= 45:
-        signals.append(f"今日已学 {study_min} 分钟")
-    if usage["assigned"] >= 3 and usage["pending"] == 0 and usage["completed"] >= usage["assigned"]:
+    max_min = limits.get("max_study_minutes")
+    soft_min = max_min if max_min is not None else 45
+    if study_min >= soft_min:
+        if max_min is not None:
+            signals.append(f"今日已学 {study_min} 分钟（已达用户上限 {max_min} 分钟）")
+        else:
+            signals.append(f"今日已学 {study_min} 分钟")
+    max_count = limits.get("max_daily_count")
+    if max_count is not None and usage["assigned"] >= max_count:
+        signals.append(f"今日已布置 {usage['assigned']} 条（已达用户上限 {max_count} 条）")
+    elif usage["assigned"] >= 3 and usage["pending"] == 0 and usage["completed"] >= usage["assigned"]:
         signals.append(f"今日已完成 {usage['completed']} 条任务")
     if rate7 is not None and rate7 < 0.4:
         signals.append("近 7 天任务完成率偏低，宜减量")
@@ -488,6 +553,8 @@ def needs_refill(db: Session) -> bool:
         return False
     if is_day_closed(db):
         return False
+    if task_assign_blocked_reason(db):
+        return False
     usage = _today_usage(db)
     return usage["assigned"] > 0 and usage["pending"] == 0
 
@@ -500,6 +567,10 @@ def _do_refill() -> int:
     db = SessionLocal()
     try:
         expire_overdue_tasks(db)
+        blocked = task_assign_blocked_reason(db)
+        if blocked:
+            set_day_closed(db, True)
+            return 0
         if not needs_refill(db):
             return 0
         _bump_refill_round(db)
@@ -742,6 +813,8 @@ def _add_task(
     description: str,
     payload: dict[str, Any],
 ) -> Optional[DailyTask]:
+    if task_assign_blocked_reason(db):
+        return None
     today = _today()
     fp = fingerprint(checker, payload)
     exists = (
@@ -1033,14 +1106,13 @@ def task_agent_context(db: Session, *, is_refill: bool = False) -> dict[str, Any
     today_done = _today_done_items(db)
     refill_round = _refill_round(db) if is_refill else 0
 
-    study_min = 0
+    study_min = _today_study_minutes(db)
     quiz_min = 0
     weak_tags: list[dict[str, Any]] = []
     try:
         from .analytics import analytics_service
 
         act = analytics_service.get_activity(db)
-        study_min = int(round((act.get("today_active_seconds") or 0) / 60))
         quiz_min = int(round((act.get("today_quiz_seconds") or 0) / 60))
         tags = analytics_service.get_tag_stats(db).get("by_tag") or []
         weak = [
@@ -1060,18 +1132,23 @@ def task_agent_context(db: Session, *, is_refill: bool = False) -> dict[str, Any
     except Exception:
         logger.debug("任务 Agent 附加学情读取失败", exc_info=True)
 
+    limits = get_task_limits(db)
     stop_signals = _stop_signals(
         usage=usage,
         books=books,
         study_min=study_min,
         rate7=rate7,
         refill_round=refill_round,
+        limits=limits,
     )
+    blocked = task_assign_blocked_reason(db)
 
     return {
         "is_refill": is_refill,
         "refill_round": refill_round,
         "stop_signals": stop_signals,
+        "user_limits": limits,
+        "assign_blocked": blocked,
         "goal_text": goal.text if goal else "",
         "valid_until": str(goal.valid_until) if goal and goal.valid_until else "",
         "books": books,
@@ -1095,6 +1172,8 @@ def task_agent_context(db: Session, *, is_refill: bool = False) -> dict[str, Any
 
 def _fallback_assign(db: Session) -> int:
     """Agent 一题没派时：只补最急的一条缺口。"""
+    if task_assign_blocked_reason(db):
+        return 0
     for cand in collect_task_candidates(db):
         payload = apply_candidate_quantity(cand, cand.get("default_quantity"))
         added = _add_task(
@@ -1120,6 +1199,12 @@ def ensure_today_tasks(db: Session, *, force: bool = False) -> list[DailyTask]:
         set_day_closed(db, False)
 
     usage = _today_usage(db)
+    blocked = task_assign_blocked_reason(db)
+    if blocked:
+        if usage["pending"] == 0 and usage["assigned"] > 0:
+            set_day_closed(db, True)
+        return list_today_tasks(db)
+
     if usage["assigned"] == 0 or force:
         assigned = 0
         refill = usage["assigned"] > 0 and usage["pending"] == 0
@@ -1236,7 +1321,7 @@ def evaluate(db: Session) -> list[dict[str, str]]:
 
 
 def restore_task(db: Session, task_id: str) -> tuple[DailyTask, list[dict[str, str]]]:
-    """把超时任务拉回 pending，宽限到今天结束，并立刻检查是否已经做完。"""
+    """把超时任务拉回 pending，宽限到本任务日结束（次日 04:00），并立刻检查是否已经做完。"""
     expire_overdue_tasks(db)
     row = (
         db.query(DailyTask)

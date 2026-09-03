@@ -14,6 +14,7 @@ from ..services.task import (
     _doc_chapters,
     apply_candidate_quantity,
     search_questions_for_doc,
+    task_assign_blocked_reason,
 )
 
 
@@ -38,7 +39,7 @@ def _parse_id_list(raw: str) -> list[str]:
 class TaskAssignTools:
     def __init__(self, candidates):
         self.candidates = {c["id"]: c for c in candidates}
-        self.assigned = []
+        self.assigned: list[str] = []
         self.tools = Tools(name="task")
         self.tools.register_tool(tool=self.assign_task)
         self.tools.register_tool(tool=self.list_book_chapters)
@@ -48,6 +49,13 @@ class TaskAssignTools:
 
     def get_tools(self):
         return self.tools
+
+    def _blocked(self) -> str:
+        db = SessionLocal()
+        try:
+            return task_assign_blocked_reason(db) or ""
+        finally:
+            db.close()
 
     def assign_task(
         self,
@@ -63,6 +71,9 @@ class TaskAssignTools:
             reason: 为什么今天派这一条、为何这个量
             quantity: 刷题道数、出题页数或学习章数。不填则按该候选人默认数量。
         """
+        blocked = self._blocked()
+        if blocked:
+            return blocked
         cid = (candidate_id or "").strip()
         cand = self.candidates.get(cid)
         if not cand:
@@ -97,6 +108,10 @@ class TaskAssignTools:
                 description=reason_text,
                 payload=payload,
             )
+            if not row:
+                again = task_assign_blocked_reason(db)
+                if again:
+                    return again
         finally:
             db.close()
         if not row:
@@ -202,6 +217,9 @@ class TaskAssignTools:
             title: 任务名称
             reason: 为什么派、为何这些题
         """
+        blocked = self._blocked()
+        if blocked:
+            return blocked
         doc_id = (document_id or "").strip()
         ids = _parse_id_list(question_ids)
         if not doc_id:
@@ -252,6 +270,10 @@ class TaskAssignTools:
                 description=reason_text,
                 payload=payload,
             )
+            if not row:
+                again = task_assign_blocked_reason(db)
+                if again:
+                    return again
         finally:
             db.close()
         if not row:
@@ -276,6 +298,9 @@ class TaskAssignTools:
             title: 任务名称
             reason: 为什么派这些章
         """
+        blocked = self._blocked()
+        if blocked:
+            return blocked
         doc_id = (document_id or "").strip()
         want = _parse_id_list(chapter_ids)
         if not doc_id:
@@ -321,6 +346,10 @@ class TaskAssignTools:
                 description=reason_text,
                 payload=payload,
             )
+            if not row:
+                again = task_assign_blocked_reason(db)
+                if again:
+                    return again
         finally:
             db.close()
         if not row:

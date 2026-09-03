@@ -14,7 +14,20 @@ import { Button } from "@/components/ui/button"
 import { ChatMessage as ChatMessageBlock } from "@/components/blocks/ChatMessage"
 import { chatApi, kbApi, normalizeChatHistory } from "@/lib/api"
 import type { ChatQuestionWidget } from "@/features/chat/ChatQuestionCard"
+import type { ChatTipPayload } from "@/features/chat/ChatTipCard"
+import {
+  appendOnboardingBlock,
+  appendCanvasBlock,
+  appendPlotBlock,
+  appendTextBlock,
+  appendTipBlock,
+  appendWidgetBlock,
+  updateWidgetInPayload,
+} from "@/features/chat/chatBlocks"
 import type { ChatMessage, Citation } from "@/types"
+import { ChatCanvasSidebar, type ChatCanvasItem, type ChatHtmlCanvas } from "@/features/chat/ChatCanvasSidebar"
+import type { ChatPlotPayload } from "@/features/chat/ChatFunctionPlot"
+import { createSmoothStream } from "@/features/chat/smoothStream"
 import { cn } from "@/lib/utils"
 import {
   GLITCH_THINK,
@@ -89,6 +102,7 @@ const welcomeMessage: ChatMessage = {
 }
 
 const HISTORY_SIDEBAR_KEY = "zhishi_chat_history_sidebar"
+const LAST_SESSION_KEY = "zhishi_chat_last_session"
 
 function readHistorySidebarOpen(): boolean {
   try {
@@ -101,6 +115,23 @@ function readHistorySidebarOpen(): boolean {
 function persistHistorySidebarOpen(open: boolean) {
   try {
     localStorage.setItem(HISTORY_SIDEBAR_KEY, open ? "open" : "closed")
+  } catch {
+    /* ignore */
+  }
+}
+
+function readLastSessionId(): string | null {
+  try {
+    return localStorage.getItem(LAST_SESSION_KEY)
+  } catch {
+    return null
+  }
+}
+
+function persistLastSessionId(id: string | null) {
+  try {
+    if (id) localStorage.setItem(LAST_SESSION_KEY, id)
+    else localStorage.removeItem(LAST_SESSION_KEY)
   } catch {
     /* ignore */
   }
@@ -121,9 +152,13 @@ export function ChatPage() {
   const [sidebarOpen, setSidebarOpen] = useState(readHistorySidebarOpen)
   const [citationSidebarOpen, setCitationSidebarOpen] = useState(false)
   const [activeCitation, setActiveCitation] = useState<Citation | null>(null)
-  const [loadingHistory, setLoadingHistory] = useState(false)
+  const [canvasSidebarOpen, setCanvasSidebarOpen] = useState(false)
+  const [activeCanvas, setActiveCanvas] = useState<ChatCanvasItem | null>(null)
+  const [loadingHistory, setLoadingHistory] = useState(true)
+  const [sessionReady, setSessionReady] = useState(false)
   const [collectionId, setCollectionId] = useState<string>("")
   const scrollRef = useRef<HTMLDivElement>(null)
+  const stickToBottomRef = useRef(true)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const sessionIdRef = useRef<string | null>(null)
   const streamingRef = useRef(false)
@@ -148,6 +183,7 @@ export function ChatPage() {
 
   useEffect(() => {
     sessionIdRef.current = sessionId
+    if (sessionId) persistLastSessionId(sessionId)
   }, [sessionId])
 
   // 颜文字只跟「当前会话」里的 /tina 次数走，新开对话默认没有
@@ -170,15 +206,15 @@ export function ChatPage() {
   const loadSessions = async () => {
     try {
       const res = await chatApi.getSessions()
-      const items = res.sessions || res.data || []
+      const items = (res.sessions || res.data || []) as SessionItem[]
       setSessions(items)
+      return items
     } catch {
-      // ignore
+      return [] as SessionItem[]
     }
   }
 
   useEffect(() => {
-    loadSessions()
     kbApi
       .listCollections()
       .then((res) => {
@@ -196,33 +232,36 @@ export function ChatPage() {
     el.style.height = `${Math.min(el.scrollHeight, 200)}px`
   }, [input])
 
-  // ─── 从 Dashboard 跳转过来的自动搜索 / 打开已有会话 ───
+  // ─── 滚动到底（用户上翻看历史时不要拽回去） ──────────
 
-  useEffect(() => {
-    const sid = searchParams.get("session")
-    if (!sid?.trim()) return
-    const t = window.setTimeout(() => {
-      void handleSelectSession({ id: sid.trim(), title: "" })
-    }, 0)
-    return () => window.clearTimeout(t)
+  const pinToBottom = useCallback(() => {
+    const el = scrollRef.current
+    if (!el || !stickToBottomRef.current) return
+    el.scrollTop = el.scrollHeight
   }, [])
 
-  // ─── 滚动到底 ──────────────────────────────────────
+  const onChatScroll = useCallback(() => {
+    const el = scrollRef.current
+    if (!el) return
+    const gap = el.scrollHeight - el.scrollTop - el.clientHeight
+    stickToBottomRef.current = gap < 48
+  }, [])
 
-  useEffect(() => {
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" })
-  }, [messages])
+  useLayoutEffect(() => {
+    pinToBottom()
+  }, [messages, isStreaming, pinToBottom])
 
-  // ─── 切换会话 ──────────────────────────────────────
+  // ─── 打开会话 ──────────────────────────────────────
 
-  const handleSelectSession = async (s: SessionItem) => {
+  const applySession = useCallback(async (id: string) => {
     if (escaping) return
-    if (s.id === sessionId) return
     glitchRun.current += 1
-    setSessionId(s.id)
+    setSessionId(id)
+    persistLastSessionId(id)
     setLoadingHistory(true)
+    stickToBottomRef.current = true
     try {
-      const res = await chatApi.getHistory(s.id)
+      const res = await chatApi.getHistory(id)
       const msgs = mapHistoryItems(normalizeChatHistory(res))
       if (msgs.length === 0) {
         setCrisisMode(active || Boolean(res.crisis))
@@ -237,7 +276,40 @@ export function ChatPage() {
     } finally {
       setLoadingHistory(false)
     }
+  }, [escaping, active])
+
+  const handleSelectSession = (s: SessionItem) => {
+    if (s.id === sessionId) return
+    void applySession(s.id)
   }
+
+  // 进入 Tina：URL 指定会话优先，否则回到上次 / 最近一条
+  useEffect(() => {
+    let cancelled = false
+    void (async () => {
+      const items = await loadSessions()
+      if (cancelled) return
+      const urlSession = searchParams.get("session")?.trim()
+      const last = readLastSessionId()
+      const pick =
+        (urlSession && items.find((s) => s.id === urlSession)) ||
+        (urlSession ? { id: urlSession, title: "" } as SessionItem : null) ||
+        (last && items.find((s) => s.id === last)) ||
+        items[0] ||
+        null
+      if (pick) {
+        await applySession(pick.id)
+      } else if (!cancelled) {
+        setLoadingHistory(false)
+      }
+      if (!cancelled) setSessionReady(true)
+    })()
+    return () => {
+      cancelled = true
+    }
+    // 仅首屏恢复；之后靠侧栏切换
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // ─── 新建会话 ──────────────────────────────────────
 
@@ -246,6 +318,8 @@ export function ChatPage() {
     glitchRun.current += 1
     if (!active) setCrisisMode(false)
     setSessionId(null)
+    persistLastSessionId(null)
+    stickToBottomRef.current = true
     setMessages([welcomeMessage])
   }
 
@@ -255,9 +329,12 @@ export function ChatPage() {
     e.stopPropagation()
     try {
       await chatApi.deleteSession(s.id)
-      setSessions(prev => prev.filter(x => x.id !== s.id))
+      const remaining = sessions.filter((x) => x.id !== s.id)
+      setSessions(remaining)
+      if (readLastSessionId() === s.id) persistLastSessionId(remaining[0]?.id ?? null)
       if (s.id === sessionId) {
-        handleNewSession()
+        if (remaining[0]) void applySession(remaining[0].id)
+        else handleNewSession()
       }
     } catch {
       // ignore
@@ -271,6 +348,8 @@ export function ChatPage() {
     const trimmed = text.trim()
     if (!trimmed || streamingRef.current) return
 
+    stickToBottomRef.current = true
+
     const now = new Date().toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })
     const userMsg: ChatMessage = {
       id: `u-${Date.now()}`,
@@ -280,6 +359,7 @@ export function ChatPage() {
     }
 
     const assistantId = `a-${Date.now()}`
+    const liveAssistantIdRef = { current: assistantId }
     const assistantMsg: ChatMessage = {
       id: assistantId,
       role: "assistant",
@@ -312,6 +392,7 @@ export function ChatPage() {
             if (chunk.session_id && !sessionIdRef.current) {
               const sid = String(chunk.session_id)
               sessionIdRef.current = sid
+              persistLastSessionId(sid)
               setSessionId(sid)
               loadSessions()
             }
@@ -340,8 +421,36 @@ export function ChatPage() {
       return
     }
 
+    const patchAssistant = (fn: (m: ChatMessage) => ChatMessage) => {
+      const id = liveAssistantIdRef.current
+      setMessages((prev) => prev.map((m) => (m.id === id ? fn(m) : m)))
+    }
+
     try {
       let messageCitations: Citation[] = []
+      let pendingRealId: string | null = null
+      const applyStreamPiece = (piece: string, reasoning: boolean) => {
+        patchAssistant((m) => {
+          if (reasoning) {
+            if (crisisRef.current) {
+              return { ...m, reasoning_content: GLITCH_THINK, crimson: true }
+            }
+            return { ...m, reasoning_content: (m.reasoning_content || "") + piece }
+          }
+          const content = m.content + piece
+          const blocks = appendTextBlock(m.payload?.blocks as never, piece)
+          return {
+            ...m,
+            content,
+            payload: { ...m.payload, blocks },
+            crimson: crisisRef.current || m.crimson,
+          }
+        })
+      }
+      const stream = createSmoothStream((piece, kind) => {
+        applyStreamPiece(piece, kind === "reasoning")
+      })
+      try {
       await chatApi.sendStream({
         content: trimmed,
         session_id: sessionIdRef.current ?? undefined,
@@ -354,19 +463,65 @@ export function ChatPage() {
             })
           : undefined,
         onChunk: (chunk) => {
+          if (
+            chunk.event === "show_question" ||
+            chunk.event === "show_tip" ||
+            chunk.event === "show_plot" ||
+            chunk.event === "show_canvas" ||
+            chunk.event === "onboarding_ui"
+          ) {
+            stream.flush()
+          }
           if (chunk.event === "tool_status") {
             setFaceUsingTool(Boolean(chunk.using))
           }
           if (chunk.event === "show_question" && chunk.question && typeof chunk.question === "object") {
             const q = chunk.question as ChatQuestionWidget["question"]
-            setMessages((prev) =>
-              prev.map((m) => {
-                if (m.id !== assistantId) return m
-                const widgets = m.payload?.widgets || []
-                if (widgets.some((w) => w.question.question_id === q.question_id)) return m
-                return { ...m, payload: { ...m.payload, widgets: [...widgets, { question: q }] } }
-              })
-            )
+            const widget = { question: q }
+            patchAssistant((m) => {
+              const widgets = m.payload?.widgets || []
+              if (widgets.some((w) => w.question.question_id === q.question_id)) return m
+              const blocks = appendWidgetBlock(m.payload?.blocks as never, widget)
+              return {
+                ...m,
+                payload: { ...m.payload, widgets: [...widgets, widget], blocks },
+              }
+            })
+          }
+          if (chunk.event === "show_tip" && chunk.tip && typeof chunk.tip === "object") {
+            const tip = chunk.tip as ChatTipPayload
+            patchAssistant((m) => {
+              const tips = m.payload?.tips || []
+              if (tips.some((t) => t.id === tip.id)) return m
+              const blocks = appendTipBlock(m.payload?.blocks as never, tip)
+              return { ...m, payload: { ...m.payload, tips: [...tips, tip], blocks } }
+            })
+          }
+          if (chunk.event === "show_plot" && chunk.plot && typeof chunk.plot === "object") {
+            const plot = chunk.plot as ChatPlotPayload
+            if (!Array.isArray(plot.expressions)) return
+            setActiveCanvas({ type: "plot", plot })
+            setCanvasSidebarOpen(true)
+            setCitationSidebarOpen(false)
+            patchAssistant((m) => {
+              const plots = m.payload?.plots || []
+              if (plots.some((p) => p.id === plot.id)) return m
+              const blocks = appendPlotBlock(m.payload?.blocks as never, plot)
+              return { ...m, payload: { ...m.payload, plots: [...plots, plot], blocks } }
+            })
+          }
+          if (chunk.event === "show_canvas" && chunk.canvas && typeof chunk.canvas === "object") {
+            const canvas = chunk.canvas as ChatHtmlCanvas
+            if (typeof canvas.html !== "string" || !canvas.html.trim()) return
+            setActiveCanvas({ type: "html", canvas })
+            setCanvasSidebarOpen(true)
+            setCitationSidebarOpen(false)
+            patchAssistant((m) => {
+              const canvases = m.payload?.canvases || []
+              if (canvases.some((c) => c.id === canvas.id)) return m
+              const blocks = appendCanvasBlock(m.payload?.blocks as never, canvas)
+              return { ...m, payload: { ...m.payload, canvases: [...canvases, canvas], blocks } }
+            })
           }
           if (chunk.event === "onboarding_ui" && chunk.item && typeof chunk.item === "object") {
             const item = chunk.item as { type: string; goal?: string }
@@ -380,60 +535,55 @@ export function ChatPage() {
                 })
               )
               if (already) return prev
+              const id = liveAssistantIdRef.current
               return prev.map((m) => {
-                if (m.id !== assistantId) return m
+                if (m.id !== id) return m
                 const onboarding = m.payload?.onboarding || []
-                return { ...m, payload: { ...m.payload, onboarding: [...onboarding, item] } }
+                const blocks = appendOnboardingBlock(m.payload?.blocks as never, item)
+                return { ...m, payload: { ...m.payload, onboarding: [...onboarding, item], blocks } }
               })
             })
           }
           if (chunk.event === "assistant_saved" && chunk.message_id) {
-            const realId = String(chunk.message_id)
-            setMessages((prev) =>
-              prev.map((m) => (m.id === assistantId ? { ...m, id: realId } : m))
-            )
+            // 等打字机队列排空后再换真实 id，避免滚动积压时后半段字写丢
+            pendingRealId = String(chunk.message_id)
           }
           if (typeof chunk.content === "string") {
-            setMessages((prev) =>
-              prev.map((m) => {
-                if (m.id !== assistantId) return m
-                if (chunk.reasoning_content === true) {
-                  if (crisisRef.current) {
-                    return { ...m, reasoning_content: GLITCH_THINK, crimson: true }
-                  }
-                  return { ...m, reasoning_content: (m.reasoning_content || "") + chunk.content }
-                }
-                return {
-                  ...m,
-                  content: m.content + chunk.content,
-                  crimson: crisisRef.current || m.crimson,
-                }
-              })
-            )
+            const piece: string = chunk.content
+            if (chunk.reasoning_content === true) {
+              if (crisisRef.current) applyStreamPiece(piece, true)
+              else stream.push(piece, "reasoning")
+            } else {
+              stream.push(piece, "text")
+            }
           }
           if (chunk.session_id && !sessionIdRef.current) {
             const sid = String(chunk.session_id)
             sessionIdRef.current = sid
+            persistLastSessionId(sid)
             setSessionId(sid)
             loadSessions()
           }
           if (Array.isArray(chunk.citations) && chunk.citations.length > 0) {
             messageCitations = chunk.citations as Citation[]
-            setMessages((prev) =>
-              prev.map((m) =>
-                m.id === assistantId ? { ...m, citations: messageCitations } : m
-              )
-            )
+            patchAssistant((m) => ({ ...m, citations: messageCitations }))
           }
         },
       })
+      } finally {
+        stream.flush()
+        stream.stop()
+        if (pendingRealId) {
+          const prevId = liveAssistantIdRef.current
+          liveAssistantIdRef.current = pendingRealId
+          setMessages((prev) =>
+            prev.map((m) => (m.id === prevId ? { ...m, id: pendingRealId! } : m)),
+          )
+        }
+      }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "请稍后重试"
-      setMessages((prev) =>
-        prev.map((m) =>
-          m.id === assistantId ? { ...m, content: `❌ 发送失败：${msg}` } : m
-        )
-      )
+      patchAssistant((m) => ({ ...m, content: `❌ 发送失败：${msg}` }))
     } finally {
       streamingRef.current = false
       setIsStreaming(false)
@@ -448,6 +598,7 @@ export function ChatPage() {
   sendTextRef.current = sendText
 
   useEffect(() => {
+    if (!sessionReady) return
     const gone = searchParams.get("gone")
     if (!gone?.trim() || escaping) return
     const label = gone.trim()
@@ -467,7 +618,7 @@ export function ChatPage() {
       navigate("/chat", { replace: true })
     }, 180)
     return () => window.clearTimeout(t)
-  }, [searchParams, navigate, escaping, startEscape])
+  }, [searchParams, navigate, escaping, startEscape, sessionReady])
 
   const handleSend = () => {
     void sendText(input, { clearInput: true })
@@ -476,6 +627,7 @@ export function ChatPage() {
   // 任务「去验收」等：带 q= 自动发一条，再清掉 URL 避免刷新重发
   const autoQSentRef = useRef<string | null>(null)
   useEffect(() => {
+    if (!sessionReady) return
     const q = searchParams.get("q")
     if (!q?.trim()) return
     const key = `${searchParams.get("task") || ""}|${q}`
@@ -495,7 +647,7 @@ export function ChatPage() {
       cancelled = true
       window.clearTimeout(t)
     }
-  }, [searchParams, navigate])
+  }, [searchParams, navigate, sessionReady])
 
   const handleWidgetResolved = (questionId: string, next: ChatQuestionWidget, followUp: string) => {
     setMessages((prev) =>
@@ -503,12 +655,7 @@ export function ChatPage() {
         if (!m.payload?.widgets?.some((w) => w.question.question_id === questionId)) return m
         return {
           ...m,
-          payload: {
-            ...m.payload,
-            widgets: m.payload.widgets.map((w) =>
-              w.question.question_id === questionId ? next : w
-            ),
-          },
+          payload: updateWidgetInPayload(m.payload, questionId, next),
         }
       })
     )
@@ -538,6 +685,18 @@ export function ChatPage() {
     ? SLASH_COMMANDS.filter((c) => c.cmd.startsWith(slashQuery))
     : []
   const slashOpen = slashHits.length > 0 && !isStreaming && !loadingHistory
+
+  const streamingAssistant =
+    isStreaming && messages.length > 0 && messages[messages.length - 1].role === "assistant"
+      ? messages[messages.length - 1]
+      : null
+  const faceThinking = Boolean(
+    streamingAssistant &&
+      Boolean(streamingAssistant.reasoning_content) &&
+      !streamingAssistant.content &&
+      !faceUsingTool,
+  )
+  const faceSpeaking = Boolean(streamingAssistant && Boolean(streamingAssistant.content) && !faceUsingTool)
 
   // ─── 格式化时间 ────────────────────────────────────
 
@@ -658,13 +817,18 @@ export function ChatPage() {
                 <TinaFacePanel
                   key={faceEnterKey}
                   mood={faceMood}
-                  speaking={isStreaming && !faceUsingTool}
+                  speaking={faceSpeaking}
+                  thinking={faceThinking}
                   usingTool={faceUsingTool}
                 />
               </div>
             </div>
           )}
-          <div ref={scrollRef} className="flex-1 overflow-y-auto scroll-thin px-8 py-6">
+          <div
+            ref={scrollRef}
+            onScroll={onChatScroll}
+            className="flex-1 overflow-y-auto scroll-thin px-8 py-6 [overflow-anchor:none]"
+          >
             <div className="max-w-[860px] mx-auto space-y-4">
               {loadingHistory ? (
                 <div className="flex items-center justify-center py-12">
@@ -675,14 +839,38 @@ export function ChatPage() {
                 </div>
               ) : (
                 <>
-                  {messages.map((m) => (
+                  {messages.map((m, i) => (
                     <ChatMessageBlock
                       key={m.id}
                       message={m}
                       onCitationClick={handleCitationClick}
                       onWidgetResolved={handleWidgetResolved}
                       onOnboardingAction={(text) => void sendText(text)}
+                      onPlotOpen={(plot) => {
+                        setActiveCanvas({ type: "plot", plot })
+                        setCanvasSidebarOpen(true)
+                        setCitationSidebarOpen(false)
+                      }}
+                      onCanvasOpen={(canvas) => {
+                        setActiveCanvas({ type: "html", canvas })
+                        setCanvasSidebarOpen(true)
+                        setCitationSidebarOpen(false)
+                      }}
                       widgetsDisabled={isStreaming}
+                      thinkingActive={
+                        isStreaming &&
+                        i === messages.length - 1 &&
+                        m.role === "assistant" &&
+                        Boolean(m.reasoning_content) &&
+                        !m.content &&
+                        !faceUsingTool
+                      }
+                      streaming={
+                        isStreaming &&
+                        i === messages.length - 1 &&
+                        m.role === "assistant" &&
+                        !m.glitch
+                      }
                     />
                   ))}
                   {isStreaming &&
@@ -786,12 +974,20 @@ export function ChatPage() {
           </div>
         </div>
 
-        {/* ────── 右侧可折叠引用侧栏 ────── */}
-        <ChatCitationSidebar
-          open={citationSidebarOpen}
-          onOpenChange={setCitationSidebarOpen}
-          citation={activeCitation}
-        />
+        {/* ────── 右侧可折叠画布；点引用时临时换成引用来源 ────── */}
+        {citationSidebarOpen ? (
+          <ChatCitationSidebar
+            open={citationSidebarOpen}
+            onOpenChange={setCitationSidebarOpen}
+            citation={activeCitation}
+          />
+        ) : (
+          <ChatCanvasSidebar
+            open={canvasSidebarOpen}
+            onOpenChange={setCanvasSidebarOpen}
+            item={activeCanvas}
+          />
+        )}
       </div>
     </AppShell>
   )

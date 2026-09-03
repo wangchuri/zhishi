@@ -25,6 +25,8 @@ async def run_task_agent(*, is_refill: bool = False) -> int:
 
     if not candidates:
         return 0
+    if ctx.get("assign_blocked"):
+        return 0
 
     tools = TaskAssignTools(candidates)
     prompt = render_prompt(
