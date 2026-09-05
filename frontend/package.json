@@ -3,44 +3,13 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "main": "electron/dist/main.js",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "test": "vitest run",
     "test:watch": "vitest",
-    "preview": "vite preview",
-    "electron:compile": "tsc -p electron/tsconfig.json",
-    "electron:dev": "npm run electron:compile && electron . --dev",
-    "desktop": "npm run electron:compile && electron .",
-    "desktop:dev": "npm run electron:compile && electron . --dev",
-    "electron:pack": "npm run build && npm run electron:compile && electron-builder --win dir --x64",
-    "electron:build": "npm run build && npm run electron:compile && electron-builder --win dir --x64",
-    "electron:installer": "npm run build && npm run electron:compile && electron-builder --win nsis --x64"
-  },
-  "build": {
-    "appId": "com.zhishi.app",
-    "productName": "Zhishi",
-    "executableName": "Zhishi",
-    "directories": {
-      "output": "release"
-    },
-    "files": [
-      "dist/**",
-      "electron/dist/**",
-      "package.json"
-    ],
-    "win": {
-      "target": [
-        {
-          "target": "dir",
-          "arch": ["x64"]
-        }
-      ],
-      "icon": "public/logo.png"
-    },
-    "asar": true
+    "preview": "vite preview"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",
@@ -106,8 +75,6 @@
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^5.1.1",
     "autoprefixer": "^10.4.23",
-    "electron": "^37.2.0",
-    "electron-builder": "^26.0.12",
     "eslint": "^9.39.1",
     "eslint-plugin-react-hooks": "^7.0.1",
     "eslint-plugin-react-refresh": "^0.4.24",

@@ -362,7 +362,11 @@ export function UploadPage() {
             imported: res.imported_questions,
             reused: res.reused_questions,
           })
-          toast.success(`书本导入成功（含 ${res.imported_questions ?? 0} 题，复用 ${res.reused_questions ?? 0} 题）`)
+          toast.success(
+            `书本导入成功（${res.page_count ?? "?"} 页，含 ${res.imported_questions ?? 0} 题，复用 ${res.reused_questions ?? 0} 题${
+              res.has_original ? "，含原文件" : ""
+            }）`
+          )
         }
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : "导入失败"

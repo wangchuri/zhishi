@@ -183,8 +183,10 @@ class KbConfig(BaseModel):
 class ImportPackageResult(BaseModel):
     status: str
     document_id: Optional[str] = None
+    page_count: Optional[int] = None
     imported_questions: Optional[int] = None
     reused_questions: Optional[int] = None
+    has_original: Optional[bool] = None
 
 
 class LearningPathChapter(BaseModel):

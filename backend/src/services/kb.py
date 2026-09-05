@@ -18,15 +18,27 @@ from sqlalchemy.orm import Session
 from ..core.errors import AppError, NotFoundError
 from ..core.storage import storage
 from ..models import (
+    CompanionMessage,
+    CompanionSession,
     Document,
     DocumentImage,
+    DocumentLearningPath,
     DocumentSegment,
     GlobalDocument,
+    GlobalQuestion,
     KBCollection,
+    QuestionProvenance,
+    QuestionRef,
+    QuizAnswer,
+    QuizSession,
+    QuizSessionQuestion,
+    TutorSession,
+    UserNote,
 )
 from ..utils import image_file_name, sha256_hex
 from . import parser
 from .mineru import mineru_service
+from .question_gen_jobs import question_gen_jobs
 from .rag import chroma_store
 
 logger = logging.getLogger(__name__)
@@ -552,11 +564,91 @@ class KnowledgeBaseService:
         return doc
 
     def delete_document(self, db: Session, doc_id: str) -> None:
+        """删除资料及其全部关联：分段/图片、题库引用、刷题会话、伴学、Tip、学习路径、文件与向量。"""
         doc = self.get_document(db, doc_id)
-        db.query(DocumentSegment).filter(DocumentSegment.document_id == doc_id).delete()
-        db.query(DocumentImage).filter(DocumentImage.document_id == doc_id).delete()
+
+        # 刷题会话 → 答题 / 会话题目
+        session_ids = [
+            sid
+            for (sid,) in db.query(QuizSession.id)
+            .filter(QuizSession.document_id == doc_id)
+            .all()
+        ]
+        if session_ids:
+            db.query(QuizAnswer).filter(QuizAnswer.session_id.in_(session_ids)).delete(
+                synchronize_session=False
+            )
+            db.query(QuizSessionQuestion).filter(
+                QuizSessionQuestion.session_id.in_(session_ids)
+            ).delete(synchronize_session=False)
+            db.query(QuizSession).filter(QuizSession.id.in_(session_ids)).delete(
+                synchronize_session=False
+            )
+
+        db.query(TutorSession).filter(TutorSession.document_id == doc_id).delete(
+            synchronize_session=False
+        )
+
+        # 伴学
+        companion = (
+            db.query(CompanionSession).filter(CompanionSession.document_id == doc_id).first()
+        )
+        if companion:
+            db.query(CompanionMessage).filter(
+                CompanionMessage.session_id == companion.id
+            ).delete(synchronize_session=False)
+            db.delete(companion)
+
+        # Tip / 笔记（挂在该资料上的）
+        db.query(UserNote).filter(UserNote.document_id == doc_id).delete(
+            synchronize_session=False
+        )
+
+        db.query(DocumentLearningPath).filter(
+            DocumentLearningPath.document_id == doc_id
+        ).delete(synchronize_session=False)
+
+        # 题库：溯源 + 文档级引用；仅当全局题不再被其它资料引用时才删掉 GlobalQuestion
+        provs = (
+            db.query(QuestionProvenance)
+            .filter(QuestionProvenance.document_id == doc_id)
+            .all()
+        )
+        question_ids = {p.question_id for p in provs}
+        db.query(QuestionProvenance).filter(
+            QuestionProvenance.document_id == doc_id
+        ).delete(synchronize_session=False)
+        db.query(QuestionRef).filter(QuestionRef.document_id == doc_id).delete(
+            synchronize_session=False
+        )
+        for qid in question_ids:
+            still = (
+                db.query(QuestionProvenance)
+                .filter(QuestionProvenance.question_id == qid)
+                .count()
+            )
+            still_ref = (
+                db.query(QuestionRef).filter(QuestionRef.question_id == qid).count()
+            )
+            if still == 0 and still_ref == 0:
+                gq = db.get(GlobalQuestion, qid)
+                if gq:
+                    db.delete(gq)
+
+        db.query(DocumentSegment).filter(DocumentSegment.document_id == doc_id).delete(
+            synchronize_session=False
+        )
+        db.query(DocumentImage).filter(DocumentImage.document_id == doc_id).delete(
+            synchronize_session=False
+        )
         db.delete(doc)
         db.commit()
+
+        try:
+            question_gen_jobs.discard_by_document(doc_id)
+        except Exception as je:
+            logger.warning("清理出题任务失败 doc=%s: %s", doc_id, je)
+
         storage.delete_document(doc_id)
         storage.delete_thumbnail(doc_id)
         try:

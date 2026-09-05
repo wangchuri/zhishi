@@ -1,8 +1,6 @@
 # ─── Node / Frontend ───────────────────────
 node_modules/
 frontend/dist/
-frontend/electron/dist/
-!frontend/electron/dist/package.json
 *.tsbuildinfo
 
 # 误放 / 临时脚本
@@ -80,7 +78,6 @@ backend/logs/
 zhishi-backend.log
 .cursor/*.log
 frontend/_vite_out.log
-_electron_dev.log
 
 # MinerU 解析临时目录、本地测书
 backend/output/
@@ -100,9 +97,8 @@ data/*.db
 data/*.db-journal
 data/*.db-wal
 data/*.db-shm
-# ─── 桌面打包产物 ─────────────────────────
+# ─── 本地打包产物 ─────────────────────────
 desktop/
-frontend/release/
 
 # ─── LEKT 本地编译产物（按需提交则注释掉）──
 # backend/*.pyd

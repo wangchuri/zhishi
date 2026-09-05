@@ -5,9 +5,9 @@ import './index.css'
 import App from './App.tsx'
 
 /** 有新版本时立刻启用并刷新，避免平板/电脑各卡一份旧缓存。 */
-registerSW({
+const updateSW = registerSW({
   immediate: true,
-  onNeedRefresh(updateSW) {
+  onNeedRefresh() {
     void updateSW(true)
   },
   onRegisteredSW(_url, registration) {

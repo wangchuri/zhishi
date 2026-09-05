@@ -334,9 +334,15 @@ def document_page(doc_id: str, page_number: int, db: Session = Depends(get_db)):
 
 
 @router.get("/documents/{doc_id}/export")
-def export_doc(doc_id: str, db: Session = Depends(get_db)):
+def export_doc(
+    doc_id: str,
+    include_original: bool = False,
+    db: Session = Depends(get_db),
+):
     from urllib.parse import quote
-    data, filename = export_service.export_document(db, doc_id)
+    data, filename = export_service.export_document(
+        db, doc_id, include_original=include_original
+    )
     from fastapi.responses import StreamingResponse
     import io as _io
     disposition = f"attachment; filename*=UTF-8''{quote(filename)}"

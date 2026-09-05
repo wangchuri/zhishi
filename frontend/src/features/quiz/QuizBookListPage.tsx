@@ -5,11 +5,21 @@ import { AppShell } from "@/components/layout/AppShell"
 import { PageHeader } from "@/components/blocks/PageHeader"
 import { EmptyState } from "@/components/ui/empty-state"
 import { Button } from "@/components/ui/button"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 import { useKbDocuments } from "@/hooks/useKbDocuments"
-import { questionsApi, quizApi } from "@/lib/api"
+import { kbApi, questionsApi, quizApi } from "@/lib/api"
 import { QuizBookCard, type BookCardStats } from "./QuizBookCard"
 import { QuestionGenJobsBanner } from "./QuestionGenJobsBanner"
-import type { QuestionGenJob } from "@/types"
+import type { KnowledgeDoc, QuestionGenJob } from "@/types"
 
 export function QuizBookListPage() {
   const navigate = useNavigate()
@@ -20,6 +30,7 @@ export function QuizBookListPage() {
     selectedCollection,
     documents,
     loadingCollections,
+    refreshDocuments,
   } = useKbDocuments({ preferZone: "study" })
 
   const [statsMap, setStatsMap] = useState<Record<string, BookCardStats>>({})
@@ -28,6 +39,30 @@ export function QuizBookListPage() {
   const [statsEpoch, setStatsEpoch] = useState(0)
   const [ongoingCount, setOngoingCount] = useState(0)
   const hadJobsRef = useRef(false)
+  const [deleteTarget, setDeleteTarget] = useState<KnowledgeDoc | null>(null)
+  const [deleting, setDeleting] = useState(false)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
+
+  const handleConfirmDelete = async () => {
+    if (!deleteTarget) return
+    setDeleting(true)
+    setDeleteError(null)
+    try {
+      await kbApi.deleteDocument(deleteTarget.id)
+      setDeleteTarget(null)
+      setStatsMap((prev) => {
+        const next = { ...prev }
+        delete next[deleteTarget.id]
+        return next
+      })
+      await refreshDocuments()
+      setStatsEpoch((n) => n + 1)
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : "删除失败，请稍后重试")
+    } finally {
+      setDeleting(false)
+    }
+  }
 
   // 只展示学习区文档
   const studyDocs = useMemo(() => {
@@ -201,11 +236,51 @@ export function QuizBookListPage() {
                 }
                 stats={statsMap[doc.id] ?? null}
                 onClick={() => navigate(`/quiz/doc/${doc.id}`)}
+                onDelete={(e) => {
+                  e.stopPropagation()
+                  setDeleteError(null)
+                  setDeleteTarget(doc)
+                }}
               />
             ))}
           </div>
         </div>
       )}
+
+      <AlertDialog
+        open={!!deleteTarget}
+        onOpenChange={(open) => {
+          if (!open && !deleting) {
+            setDeleteTarget(null)
+            setDeleteError(null)
+          }
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>确认删除资料？</AlertDialogTitle>
+            <AlertDialogDescription>
+              将永久删除「{deleteTarget?.name}」，包括原文、分段、图片、向量索引、题库、刷题记录、伴学对话与 Tip。此操作不可撤销。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          {deleteError && (
+            <p className="text-small text-danger px-1">{deleteError}</p>
+          )}
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>取消</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault()
+                void handleConfirmDelete()
+              }}
+              disabled={deleting}
+              className="bg-danger text-white hover:bg-danger/90"
+            >
+              {deleting ? "删除中..." : "删除"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </AppShell>
   )
 }

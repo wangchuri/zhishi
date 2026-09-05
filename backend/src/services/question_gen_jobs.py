@@ -192,5 +192,17 @@ class QuestionGenJobs:
                 if j.get("status") == "running"
             ]
 
+    def discard_by_document(self, document_id: str) -> int:
+        """移除该资料相关的进程内出题任务（删除文档时调用）。"""
+        with self._lock:
+            to_drop = [
+                i
+                for i, j in self._jobs.items()
+                if j.get("document_id") == document_id
+            ]
+            for i in to_drop:
+                self._jobs.pop(i, None)
+            return len(to_drop)
+
 
 question_gen_jobs = QuestionGenJobs()

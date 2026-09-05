@@ -69,9 +69,6 @@ export function clearApiBase() {
 export function getApiBase(): string {
   const stored = getStoredApiBase()
   if (stored) return stored
-  // Electron 桌面壳默认连本机后端
-  const desktop = typeof window !== "undefined" ? window.zhishi?.backendUrl : ""
-  if (desktop) return normalizeApiBase(desktop)
   // 后端托管前端时默认同源（相对路径）；独立部署可在设置页配置服务器地址
   return DEFAULT_API_BASE || ""
 }
@@ -96,7 +93,6 @@ export function isSameOriginHosted(): boolean {
 }
 
 export function isServerConfigured(): boolean {
-  if (typeof window !== "undefined" && window.zhishi?.isElectron) return true
   return !!getStoredApiBase() || !!DEFAULT_API_BASE || isSameOriginHosted()
 }
 
@@ -394,12 +390,17 @@ export const kbApi = {
   },
 
   /** 导出书本+题库 zip 包，并触发浏览器下载 */
-  async exportPackage(docId: string, displayName?: string) {
-    const blob = await requestBlob(`/api/v1/kb/documents/${docId}/export`)
+  async exportPackage(
+    docId: string,
+    displayName?: string,
+    opts?: { includeOriginal?: boolean }
+  ) {
+    const q = opts?.includeOriginal ? "?include_original=true" : ""
+    const blob = await requestBlob(`/api/v1/kb/documents/${docId}/export${q}`)
     const url = URL.createObjectURL(blob)
     const a = document.createElement("a")
     a.href = url
-    a.download = `${displayName || "document"}-题库.zip`
+    a.download = `${displayName || "document"}-书本包.zip`
     document.body.appendChild(a)
     a.click()
     document.body.removeChild(a)
@@ -413,7 +414,14 @@ export const kbApi = {
     if (collectionId) {
       formData.append("collection_id", collectionId)
     }
-    return request<{ status: string; document_id?: string; imported_questions?: number; reused_questions?: number }>(
+    return request<{
+      status: string
+      document_id?: string
+      page_count?: number
+      imported_questions?: number
+      reused_questions?: number
+      has_original?: boolean
+    }>(
       "POST",
       "/api/v1/kb/import",
       formData,
@@ -787,6 +795,23 @@ export const profileApi = {
     task_max_study_minutes?: number | null
   }) {
     return request<UserProfile>("PUT", "/api/v1/me/profile", data)
+  },
+}
+
+export type MineruSettings = {
+  mode: "local" | "cloud"
+  api_token: string
+  api_base: string
+  model_version: "pipeline" | "vlm"
+  config_path?: string
+}
+
+export const systemApi = {
+  getMineru() {
+    return request<MineruSettings>("GET", "/api/v1/system/mineru")
+  },
+  putMineru(data: Partial<MineruSettings>) {
+    return request<MineruSettings>("PUT", "/api/v1/system/mineru", data)
   },
 }
 

@@ -18,6 +18,7 @@ import {
   ListTree,
   ListChecks,
   PenLine,
+  Trash2,
 } from "lucide-react"
 import { AppShell } from "@/components/layout/AppShell"
 import { Button } from "@/components/ui/button"
@@ -25,6 +26,25 @@ import { Badge } from "@/components/ui/badge"
 import { StatCard } from "@/components/ui/stat-card"
 import { Card } from "@/components/ui/card"
 import { EmptyState } from "@/components/ui/empty-state"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import { Checkbox } from "@/components/ui/checkbox"
 import { SectionHeader } from "@/components/blocks/SectionHeader"
 import { QuizQuestionPreviewDialog } from "./QuizQuestionPreviewDialog"
 import { QuestionGenJobsBanner } from "./QuestionGenJobsBanner"
@@ -112,6 +132,9 @@ export function QuizDocDetailPage() {
   const [startingChapter, setStartingChapter] = useState<string | null>(null)
   const [chapterLearnFilter, setChapterLearnFilter] = useState<"all" | "unread" | "read">("all")
   const wasGeneratingRef = useRef(false)
+  const [deleteOpen, setDeleteOpen] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
 
   const doc = useMemo(() => documents.find((d) => d.id === docId), [documents, docId])
 
@@ -313,16 +336,39 @@ export function QuizDocDetailPage() {
   }
 
   const [exporting, setExporting] = useState(false)
+  const [exportOpen, setExportOpen] = useState(false)
+  const [includeOriginal, setIncludeOriginal] = useState(false)
+
   const handleExport = async () => {
     if (!docId || exporting) return
     setExporting(true)
     try {
-      await kbApi.exportPackage(docId, doc?.name)
-      toast.success("书本包已下载，可分享给其他用户导入")
+      await kbApi.exportPackage(docId, doc?.name, { includeOriginal })
+      setExportOpen(false)
+      toast.success(
+        includeOriginal
+          ? "书本包已下载（含分页、题库与原文件），对方导入后可恢复"
+          : "书本包已下载（含分页与题库），对方导入后可恢复；未包含原 PDF/文件"
+      )
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : "导出失败")
     } finally {
       setExporting(false)
+    }
+  }
+
+  const handleConfirmDelete = async () => {
+    if (!docId || deleting) return
+    setDeleting(true)
+    setDeleteError(null)
+    try {
+      await kbApi.deleteDocument(docId)
+      toast.success("资料已删除")
+      navigate("/quiz", { replace: true })
+    } catch (err: unknown) {
+      setDeleteError(err instanceof Error ? err.message : "删除失败，请稍后重试")
+    } finally {
+      setDeleting(false)
     }
   }
 
@@ -415,9 +461,29 @@ export function QuizDocDetailPage() {
           <PenLine className="w-4 h-4 mr-2" />
           出题
         </Button>
-        <Button variant="secondary" size="md" onClick={handleExport} disabled={exporting}>
+        <Button
+          variant="secondary"
+          size="md"
+          onClick={() => {
+            setIncludeOriginal(false)
+            setExportOpen(true)
+          }}
+          disabled={exporting}
+        >
           {exporting ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Download className="w-4 h-4 mr-2" />}
-          导出题库
+          导出书本包
+        </Button>
+        <Button
+          variant="secondary"
+          size="md"
+          onClick={() => {
+            setDeleteError(null)
+            setDeleteOpen(true)
+          }}
+          className="text-danger hover:text-danger"
+        >
+          <Trash2 className="w-4 h-4 mr-2" />
+          删除
         </Button>
       </div>
 
@@ -877,6 +943,90 @@ export function QuizDocDetailPage() {
         questions={questionData?.questions || []}
         loading={loadingQuestions}
       />
+
+      <Dialog
+        open={exportOpen}
+        onOpenChange={(open) => {
+          if (!exporting) setExportOpen(open)
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>导出书本包</DialogTitle>
+            <DialogDescription>
+              包内默认包含分页解析稿、图片、封面、题库与学习路径。对方导入后会恢复分页、封面与题目，可直接刷题/再出题。
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 py-1">
+            <p className="text-small text-ink-secondary">
+              当前约 {(questionData?.total ?? doc.questionCount ?? 0)} 道题会写入包内，导入时可恢复；有封面时也会一并带上。
+            </p>
+            <label className="flex items-start gap-3 rounded-lg border border-line-soft bg-surface-soft px-3 py-3 cursor-pointer">
+              <Checkbox
+                checked={includeOriginal}
+                onCheckedChange={(v) => setIncludeOriginal(v === true)}
+                className="mt-0.5"
+              />
+              <span className="min-w-0">
+                <span className="block text-small font-medium text-ink-primary">带上原文件</span>
+                <span className="block text-caption text-ink-soft mt-0.5">
+                  勾选后把原始 PDF/文档一并打进 zip（体积更大）。不勾选时对方仍能阅读解析稿与刷题。
+                </span>
+              </span>
+            </label>
+          </div>
+          <DialogFooter>
+            <Button variant="secondary" size="md" onClick={() => setExportOpen(false)} disabled={exporting}>
+              取消
+            </Button>
+            <Button variant="primary" size="md" onClick={() => void handleExport()} disabled={exporting}>
+              {exporting ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                  导出中...
+                </>
+              ) : (
+                "开始导出"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog
+        open={deleteOpen}
+        onOpenChange={(open) => {
+          if (!open && !deleting) {
+            setDeleteOpen(false)
+            setDeleteError(null)
+          }
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>确认删除资料？</AlertDialogTitle>
+            <AlertDialogDescription>
+              将永久删除「{doc.name}」，包括原文、分段、图片、向量索引、题库、刷题记录、伴学对话与 Tip。此操作不可撤销。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          {deleteError && (
+            <p className="text-small text-danger px-1">{deleteError}</p>
+          )}
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>取消</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault()
+                void handleConfirmDelete()
+              }}
+              disabled={deleting}
+              className="bg-danger text-white hover:bg-danger/90"
+            >
+              {deleting ? "删除中..." : "删除"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </AppShell>
   )
 }

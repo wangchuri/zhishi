@@ -1,7 +1,7 @@
 """知拾后端入口。
 
 启动：python -m src.main
-桌面打包：zhishi-backend.exe（无窗口，由 Electron 托管）
+也可打包为 zhishi-backend.exe（无窗口后台模式）。
 """
 
 from __future__ import annotations
@@ -35,6 +35,7 @@ from .api.learning import router as learning_router
 from .api.parse import router as parse_router
 from .api.tasks import router as tasks_router
 from .api.onboarding import router as onboarding_router
+from .api.system import router as system_router
 from .core.config import config
 from .core.database import SessionLocal, init_db
 from .core.errors import AppError
@@ -71,6 +72,7 @@ app.include_router(learning_router)
 app.include_router(parse_router)
 app.include_router(tasks_router)
 app.include_router(onboarding_router)
+app.include_router(system_router)
 
 _START_TIME = time.time()
 
@@ -199,7 +201,7 @@ def main() -> None:
         pass
 
     if desktop:
-        # 同步打到文件，Electron 管道之外再留一份
+        # 同步打到文件，便于无控制台窗口时排查
         log_path = runtime_dir() / "zhishi-backend.log"
         try:
             root = logging.getLogger()
@@ -217,7 +219,7 @@ def main() -> None:
     if not desktop:
         print("  局域网:     同一 WiFi 下用本机 IP:7777")
     if desktop:
-        print("  模式:       桌面后台（Electron 托管）")
+        print("  模式:       后台（冻结/桌面）")
     print("=============================================")
     print()
     sys.stdout.flush()

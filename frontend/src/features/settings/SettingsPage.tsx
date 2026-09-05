@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useState } from "react"
 import { useNavigate } from "react-router-dom"
-import { Server, Wifi, WifiOff, UserRound, Sparkles, Terminal, Trash2, FolderOpen, ListTodo } from "lucide-react"
+import { Server, Wifi, WifiOff, UserRound, Sparkles, ListTodo, FileScan } from "lucide-react"
 import { toast } from "sonner"
 import { AppShell } from "@/components/layout/AppShell"
 import { PageHeader } from "@/components/blocks/PageHeader"
@@ -9,16 +9,13 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { useAuth } from "@/context/AuthContext"
-import { getStoredApiBase, profileApi, tasksApi } from "@/lib/api"
+import { getStoredApiBase, profileApi, systemApi, tasksApi, type MineruSettings } from "@/lib/api"
 import { cn } from "@/lib/utils"
-
-const MAX_UI_LOG_LINES = 2000
 
 export function SettingsPage() {
   const navigate = useNavigate()
   const { server, setNickname } = useAuth()
   const apiBase = getStoredApiBase()
-  const isDesktop = Boolean(window.zhishi?.isElectron)
 
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -30,20 +27,18 @@ export function SettingsPage() {
   const [taskMaxMinutes, setTaskMaxMinutes] = useState("")
   const [savingTasks, setSavingTasks] = useState(false)
 
-  const [backendLogs, setBackendLogs] = useState<string[]>([])
-  const [logFile, setLogFile] = useState("")
-  const [backendManaged, setBackendManaged] = useState(false)
-  const [backendRunning, setBackendRunning] = useState(false)
-  const logEndRef = useRef<HTMLDivElement>(null)
-  const logBoxRef = useRef<HTMLPreElement>(null)
-  const stickToBottomRef = useRef(true)
+  const [mineruMode, setMineruMode] = useState<"local" | "cloud">("local")
+  const [mineruToken, setMineruToken] = useState("")
+  const [mineruBase, setMineruBase] = useState("https://mineru.net")
+  const [mineruModel, setMineruModel] = useState<"pipeline" | "vlm">("vlm")
+  const [mineruConfigPath, setMineruConfigPath] = useState("")
+  const [savingMineru, setSavingMineru] = useState(false)
 
   useEffect(() => {
     let cancelled = false
     setLoading(true)
-    profileApi
-      .get()
-      .then((p) => {
+    Promise.all([profileApi.get(), systemApi.getMineru().catch(() => null)])
+      .then(([p, mineru]) => {
         if (cancelled) return
         setNicknameDraft(p.nickname || "")
         setRole(p.role || "")
@@ -53,6 +48,9 @@ export function SettingsPage() {
         setTaskMaxMinutes(
           p.task_max_study_minutes && p.task_max_study_minutes > 0 ? String(p.task_max_study_minutes) : "",
         )
+        if (mineru) {
+          applyMineru(mineru)
+        }
       })
       .catch(() => {
         if (!cancelled) toast.error("加载档案失败")
@@ -65,31 +63,13 @@ export function SettingsPage() {
     }
   }, [])
 
-  useEffect(() => {
-    if (!isDesktop || !window.zhishi?.getBackendLogs) return
-    let unsub: (() => void) | undefined
-    void window.zhishi.getBackendLogs().then((snap) => {
-      setBackendLogs(snap.lines.slice(-MAX_UI_LOG_LINES))
-      setLogFile(snap.logFile || "")
-      setBackendManaged(snap.managed)
-      setBackendRunning(snap.running)
-    })
-    unsub = window.zhishi.onBackendLog?.((line) => {
-      setBackendLogs((prev) => {
-        const next = [...prev, line]
-        return next.length > MAX_UI_LOG_LINES ? next.slice(-MAX_UI_LOG_LINES) : next
-      })
-    })
-    return () => {
-      unsub?.()
-    }
-  }, [isDesktop])
-
-  useEffect(() => {
-    if (!stickToBottomRef.current) return
-    logEndRef.current?.scrollIntoView({ behavior: "auto" })
-  }, [backendLogs])
-
+  const applyMineru = (m: MineruSettings) => {
+    setMineruMode(m.mode === "cloud" ? "cloud" : "local")
+    setMineruToken(m.api_token || "")
+    setMineruBase(m.api_base || "https://mineru.net")
+    setMineruModel(m.model_version === "pipeline" ? "pipeline" : "vlm")
+    setMineruConfigPath(m.config_path || "")
+  }
   const saveProfile = async () => {
     const name = nickname.trim()
     if (!name) {
@@ -145,14 +125,26 @@ export function SettingsPage() {
     }
   }
 
-  const clearLogs = async () => {
-    await window.zhishi?.clearBackendLogs?.()
-    setBackendLogs([])
-  }
-
-  const openLogFile = async () => {
-    const res = await window.zhishi?.openBackendLogFile?.()
-    if (res && !res.ok) toast.error(res.message || "无法打开日志文件")
+  const saveMineru = async () => {
+    if (mineruMode === "cloud" && !mineruToken.trim()) {
+      toast.error("云端模式需要填写 API Token")
+      return
+    }
+    setSavingMineru(true)
+    try {
+      const saved = await systemApi.putMineru({
+        mode: mineruMode,
+        api_token: mineruToken.trim(),
+        api_base: mineruBase.trim() || "https://mineru.net",
+        model_version: mineruModel,
+      })
+      applyMineru(saved)
+      toast.success("MinerU 配置已写入服务器配置文件")
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "保存失败")
+    } finally {
+      setSavingMineru(false)
+    }
   }
 
   return (
@@ -307,6 +299,119 @@ export function SettingsPage() {
         <Card className="overflow-hidden">
           <div className="flex items-center gap-3 px-5 py-3.5 border-b border-line-light bg-paper-2/50">
             <div className="w-8 h-8 rounded-md bg-sea-subtle text-sea flex items-center justify-center">
+              <FileScan className="w-4 h-4" strokeWidth={2} />
+            </div>
+            <h3 className="text-card-title font-semibold text-ink">MinerU 文档解析</h3>
+          </div>
+          <div className="p-5 space-y-4">
+            <p className="text-small text-ink-soft">
+              扫描件 / 图片 PDF 走 MinerU。本地模式拉起本机 mineru-api（无需 Token）；云端模式调用 mineru.net，需在官网创建 Token。云端超过 200 页或 200MB 时会自动拆段上传再合并。保存后写入服务器{" "}
+              <span className="font-mono text-ink">config.yml</span>。
+            </p>
+            {loading ? (
+              <p className="text-body text-ink-soft">加载中…</p>
+            ) : (
+              <>
+                <div>
+                  <div className="text-small text-ink-soft mb-1.5 font-medium">解析方式</div>
+                  <div className="flex gap-2">
+                    {(
+                      [
+                        { value: "local" as const, label: "本地 mineru-api" },
+                        { value: "cloud" as const, label: "云端 mineru.net" },
+                      ] as const
+                    ).map((opt) => (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        disabled={savingMineru}
+                        onClick={() => setMineruMode(opt.value)}
+                        className={cn(
+                          "h-9 px-3.5 rounded-full text-small font-medium border transition-colors",
+                          mineruMode === opt.value
+                            ? "bg-sea text-paper border-sea"
+                            : "bg-paper border-line text-ink-soft hover:border-sea/40 hover:text-sea",
+                        )}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {mineruMode === "cloud" ? (
+                  <>
+                    <Field label="API Token">
+                      <Input
+                        type="password"
+                        autoComplete="off"
+                        value={mineruToken}
+                        onChange={(e) => setMineruToken(e.target.value)}
+                        placeholder="在 mineru.net API 管理页创建"
+                      />
+                    </Field>
+                    <Field label="API 地址">
+                      <Input
+                        value={mineruBase}
+                        onChange={(e) => setMineruBase(e.target.value)}
+                        placeholder="https://mineru.net"
+                      />
+                    </Field>
+                    <div>
+                      <div className="text-small text-ink-soft mb-1.5 font-medium">模型版本</div>
+                      <div className="flex gap-2">
+                        {(
+                          [
+                            { value: "vlm" as const, label: "vlm（推荐）" },
+                            { value: "pipeline" as const, label: "pipeline" },
+                          ] as const
+                        ).map((opt) => (
+                          <button
+                            key={opt.value}
+                            type="button"
+                            disabled={savingMineru}
+                            onClick={() => setMineruModel(opt.value)}
+                            className={cn(
+                              "h-9 px-3.5 rounded-full text-small font-medium border transition-colors",
+                              mineruModel === opt.value
+                                ? "bg-sea text-paper border-sea"
+                                : "bg-paper border-line text-ink-soft hover:border-sea/40 hover:text-sea",
+                            )}
+                          >
+                            {opt.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <p className="text-small text-ink-soft rounded-[4px] border border-line bg-paper-2 px-3 py-2.5">
+                    本地模式不需要 Token。请确保本机已安装并可运行{" "}
+                    <span className="font-mono text-ink">mineru-api</span>（首次解析会自动尝试拉起）。
+                  </p>
+                )}
+
+                {mineruConfigPath ? (
+                  <p className="text-caption text-ink-disabled break-all">配置文件：{mineruConfigPath}</p>
+                ) : null}
+
+                <div className="flex justify-end">
+                  <Button
+                    variant="secondary"
+                    disabled={loading || savingMineru}
+                    onClick={() => void saveMineru()}
+                  >
+                    {savingMineru ? "保存中…" : "保存 MinerU 配置"}
+                  </Button>
+                </div>
+              </>
+            )}
+          </div>
+        </Card>
+
+        <Card className="overflow-hidden">
+          <div className="flex items-center gap-3 px-5 py-3.5 border-b border-line-light bg-paper-2/50">
+            <div className="w-8 h-8 rounded-md bg-sea-subtle text-sea flex items-center justify-center">
               <Server className="w-4 h-4" strokeWidth={2} />
             </div>
             <h3 className="text-card-title font-semibold text-ink">服务器</h3>
@@ -315,7 +420,7 @@ export function SettingsPage() {
             <Row
               icon={server.ok ? Wifi : WifiOff}
               title="后端地址"
-              desc={apiBase || (isDesktop ? "桌面模式 · 本机 7777" : "未配置")}
+              desc={apiBase || "未配置（同源或默认）"}
               control={
                 <button
                   type="button"
@@ -336,67 +441,6 @@ export function SettingsPage() {
             />
           </div>
         </Card>
-
-        {isDesktop && (
-          <Card className="overflow-hidden">
-            <div className="flex items-center gap-3 px-5 py-3.5 border-b border-line-light bg-paper-2/50">
-              <div className="w-8 h-8 rounded-md bg-sea-subtle text-sea flex items-center justify-center">
-                <Terminal className="w-4 h-4" strokeWidth={2} />
-              </div>
-              <div className="flex-1 min-w-0">
-                <h3 className="text-card-title font-semibold text-ink">后端日志</h3>
-                <p className="text-caption text-ink-soft truncate">
-                  {backendManaged || backendRunning
-                    ? "Electron 托管的后端实时输出"
-                    : "若后端非本窗口拉起，可能看不到管道日志"}
-                  {logFile ? ` · ${logFile}` : ""}
-                </p>
-              </div>
-              <div className="flex items-center gap-1.5 shrink-0">
-                {backendRunning ? (
-                  <Badge variant="success">运行中</Badge>
-                ) : (
-                  <Badge variant="neutral">未托管</Badge>
-                )}
-                <Button
-                  type="button"
-                  variant="secondary"
-                  className="h-8 px-2.5"
-                  onClick={() => void openLogFile()}
-                  title="打开日志文件"
-                >
-                  <FolderOpen className="w-3.5 h-3.5" />
-                </Button>
-                <Button
-                  type="button"
-                  variant="secondary"
-                  className="h-8 px-2.5"
-                  onClick={() => void clearLogs()}
-                  title="清空显示"
-                >
-                  <Trash2 className="w-3.5 h-3.5" />
-                </Button>
-              </div>
-            </div>
-            <div className="p-3">
-              <pre
-                ref={logBoxRef}
-                onScroll={() => {
-                  const el = logBoxRef.current
-                  if (!el) return
-                  stickToBottomRef.current =
-                    el.scrollHeight - el.scrollTop - el.clientHeight < 48
-                }}
-                className="h-64 overflow-auto rounded-md bg-ink text-[11px] leading-relaxed text-mist p-3 font-mono whitespace-pre-wrap break-all"
-              >
-                {backendLogs.length === 0
-                  ? "（暂无日志。启动后端后，stdout/stderr 会显示在这里。）"
-                  : backendLogs.join("\n")}
-                <div ref={logEndRef} />
-              </pre>
-            </div>
-          </Card>
-        )}
       </div>
     </AppShell>
   )

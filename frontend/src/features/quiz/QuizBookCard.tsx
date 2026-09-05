@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { FileText } from "lucide-react"
+import { FileText, Trash2 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { getThumbnailUrl } from "@/lib/api"
 import type { KnowledgeDoc } from "@/types"
@@ -16,6 +16,7 @@ type QuizBookCardProps = {
   doc: KnowledgeDoc
   stats?: BookCardStats | null
   onClick?: () => void
+  onDelete?: (e: React.MouseEvent) => void
 }
 
 function genStatusBadge(doc: KnowledgeDoc, hasQuestions?: boolean) {
@@ -31,7 +32,7 @@ function genStatusBadge(doc: KnowledgeDoc, hasQuestions?: boolean) {
   return <Badge variant="neutral" size="sm">未出题</Badge>
 }
 
-export function QuizBookCard({ doc, stats, onClick }: QuizBookCardProps) {
+export function QuizBookCard({ doc, stats, onClick, onDelete }: QuizBookCardProps) {
   const [imgError, setImgError] = useState(false)
 
   const coverUrl = getThumbnailUrl(doc.id)
@@ -61,9 +62,36 @@ export function QuizBookCard({ doc, stats, onClick }: QuizBookCardProps) {
           </div>
         )}
 
+        {onDelete && (
+          <span
+            role="button"
+            tabIndex={0}
+            onClick={(e) => {
+              e.stopPropagation()
+              e.preventDefault()
+              onDelete(e)
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.stopPropagation()
+                e.preventDefault()
+                onDelete(e as unknown as React.MouseEvent)
+              }
+            }}
+            className="absolute top-2 left-2 z-20 inline-flex h-8 w-8 items-center justify-center rounded-lg
+                       bg-surface/90 text-ink-tertiary shadow-xs backdrop-blur-sm
+                       opacity-100 sm:opacity-0 sm:group-hover:opacity-100 focus:opacity-100
+                       hover:bg-danger-soft hover:text-danger transition-all"
+            title="删除资料"
+            aria-label={`删除 ${doc.name}`}
+          >
+            <Trash2 className="w-4 h-4" strokeWidth={2} />
+          </span>
+        )}
+
         {/* 浮动统计覆盖层 */}
         {stats && stats.total > 0 && (
-          <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent
+          <div className="pointer-events-none absolute inset-0 z-[1] bg-gradient-to-t from-black/70 via-black/20 to-transparent
                           flex flex-col justify-end p-3 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
             <div className="text-white text-small space-y-1">
               <div className="flex items-center justify-between">
