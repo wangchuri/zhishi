@@ -16,6 +16,7 @@ import { SettingsPage } from "@/features/settings/SettingsPage"
 import { ServerSetupPage } from "@/features/setup/ServerSetupPage"
 import { QuizBookListPage } from "@/features/quiz/QuizBookListPage"
 import { QuizDocDetailPage } from "@/features/quiz/QuizDocDetailPage"
+import { QuizGroupDetailPage } from "@/features/quiz/QuizGroupDetailPage"
 import { QuizOngoingPage } from "@/features/quiz/QuizOngoingPage"
 import { QuizPage } from "@/features/quiz/QuizPage"
 import { QuestionGenDocPage } from "@/features/question-gen/QuestionGenDocPage"
@@ -76,6 +77,7 @@ export function AppRoutes() {
       <Route path="/settings" element={<RequireServer><SettingsPage /></RequireServer>} />
       <Route path="/quiz" element={<RequireServer><QuizBookListPage /></RequireServer>} />
       <Route path="/quiz/ongoing" element={<RequireServer><QuizOngoingPage /></RequireServer>} />
+      <Route path="/quiz/group/:groupId" element={<RequireServer><QuizGroupDetailPage /></RequireServer>} />
       <Route path="/quiz/doc/:docId" element={<RequireServer><QuizDocDetailPage /></RequireServer>} />
       <Route path="/quiz/session" element={<RequireServer><QuizPage /></RequireServer>} />
       <Route path="/question-gen" element={<Navigate to="/quiz" replace />} />

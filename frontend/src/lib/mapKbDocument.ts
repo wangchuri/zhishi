@@ -34,6 +34,7 @@ export function mapKbDocument(d: Record<string, unknown>, zone?: string): Knowle
     pdf_page_count: d.pdf_page_count != null ? Number(d.pdf_page_count) : undefined,
     warning: d.warning ? String(d.warning) : undefined,
     zone: zone || (d.zone ? String(d.zone) : undefined),
+    group_id: d.group_id ? String(d.group_id) : null,
     wordCount: Number(d.word_count || d.wordCount || 0),
     updatedAt: String(d.updated_at || d.updatedAt || "—"),
   }

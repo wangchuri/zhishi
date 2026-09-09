@@ -52,6 +52,7 @@ async def upload(
     file: UploadFile = File(...),
     collection_id: Optional[str] = Form(None),
     force_scanned: Optional[str] = Form(None),
+    group_id: Optional[str] = Form(None),
     db: Session = Depends(get_db),
 ):
     content = await file.read()
@@ -67,6 +68,7 @@ async def upload(
         force_scanned=force,
         # PDF（尤其扫描件）解析耗时，放后台执行，前端轮询状态
         async_parse=is_pdf,
+        group_id=group_id or None,
     )
     ocr_status = "processing" if (doc.indexing_status == "processing" and doc.is_scanned_pdf) else None
     from ..services.task import evaluate
@@ -90,9 +92,18 @@ def list_documents(
     page: int = 1,
     limit: int = 20,
     collection_id: Optional[str] = None,
+    group_id: Optional[str] = None,
+    ungrouped_only: bool = Query(False),
     db: Session = Depends(get_db),
 ):
-    data = kb_service.list_documents(db, page=page, limit=limit, collection_id=collection_id)
+    data = kb_service.list_documents(
+        db,
+        page=page,
+        limit=limit,
+        collection_id=collection_id,
+        group_id=group_id,
+        ungrouped_only=ungrouped_only,
+    )
     docs = []
     for d in data["documents"]:
         tags = json.loads(d.tags) if d.tags else []
@@ -113,6 +124,7 @@ def list_documents(
             ocr_status=ocr_status,
             pdf_page_count=d.pdf_page_count,
             zone=d.zone,
+            group_id=d.group_id,
         ))
     return {**data, "documents": docs}
 
@@ -437,3 +449,70 @@ def kb_config():
         max_pages_per_gen=config.question_gen_max_pages,
         question_gen_max_concurrency=config.question_gen_max_concurrency,
     )
+
+
+# ─── 资料组 ───────────────────────────────────────────
+
+@router.get("/groups", response_model=kb_schemas.DocumentGroupList)
+def list_groups(collection_id: Optional[str] = None, db: Session = Depends(get_db)):
+    from ..services.doc_group import doc_group_service
+
+    groups = doc_group_service.list_groups(db, collection_id=collection_id)
+    items = [kb_schemas.DocumentGroupItem(**doc_group_service.group_item(db, g)) for g in groups]
+    return kb_schemas.DocumentGroupList(groups=items, total=len(items))
+
+
+@router.post("/groups", response_model=kb_schemas.DocumentGroupItem)
+def create_group(body: kb_schemas.DocumentGroupCreate, db: Session = Depends(get_db)):
+    from ..services.doc_group import doc_group_service
+
+    g = doc_group_service.create(
+        db, name=body.name, collection_id=body.collection_id, description=body.description
+    )
+    return kb_schemas.DocumentGroupItem(**doc_group_service.group_item(db, g))
+
+
+@router.get("/groups/{group_id}", response_model=kb_schemas.DocumentGroupDetail)
+def get_group(group_id: str, db: Session = Depends(get_db)):
+    from ..services.doc_group import doc_group_service
+
+    return kb_schemas.DocumentGroupDetail(**doc_group_service.group_detail(db, group_id))
+
+
+@router.patch("/groups/{group_id}", response_model=kb_schemas.DocumentGroupItem)
+def update_group(group_id: str, body: kb_schemas.DocumentGroupUpdate, db: Session = Depends(get_db)):
+    from ..services.doc_group import doc_group_service
+
+    g = doc_group_service.update(
+        db,
+        group_id,
+        name=body.name,
+        description=body.description,
+        cover_document_id=body.cover_document_id,
+    )
+    return kb_schemas.DocumentGroupItem(**doc_group_service.group_item(db, g))
+
+
+@router.delete("/groups/{group_id}", response_model=kb_schemas.DeleteResult)
+def delete_group(group_id: str, db: Session = Depends(get_db)):
+    from ..services.doc_group import doc_group_service
+
+    doc_group_service.delete(db, group_id)
+    return kb_schemas.DeleteResult(message="已解散资料组（文档未删除）", doc_id=group_id)
+
+
+@router.post("/groups/{group_id}/documents", response_model=kb_schemas.DocumentGroupDetail)
+def add_group_documents(
+    group_id: str, body: kb_schemas.DocumentGroupAddDocs, db: Session = Depends(get_db)
+):
+    from ..services.doc_group import doc_group_service
+
+    detail = doc_group_service.add_documents(db, group_id, body.document_ids or [])
+    return kb_schemas.DocumentGroupDetail(**{k: v for k, v in detail.items() if k != "added"})
+
+
+@router.delete("/groups/{group_id}/documents/{document_id}", response_model=kb_schemas.DocumentGroupDetail)
+def remove_group_document(group_id: str, document_id: str, db: Session = Depends(get_db)):
+    from ..services.doc_group import doc_group_service
+
+    return kb_schemas.DocumentGroupDetail(**doc_group_service.remove_document(db, group_id, document_id))

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react"
-import { PanelRightClose, PanelRightOpen } from "lucide-react"
+import { ArrowLeft, LineChart, Minus, PanelRightClose, PanelRightOpen, PencilRuler, Plus, RotateCcw } from "lucide-react"
 import { ChatFunctionPlot, type ChatPlotPayload } from "@/features/chat/ChatFunctionPlot"
 import { cn } from "@/lib/utils"
 
@@ -22,6 +22,10 @@ const WIDTH_MIN = 280
 const WIDTH_MAX_VIEW_DESKTOP = 0.72
 const WIDTH_MAX_VIEW_NARROW = 0.92
 
+const ZOOM_MIN = 0.5
+const ZOOM_MAX = 3
+const ZOOM_STEP = 0.25
+
 function readStoredWidth(): number {
   try {
     const n = Number(localStorage.getItem(WIDTH_KEY))
@@ -41,32 +45,63 @@ function clampWidth(px: number): number {
   return Math.min(maxWidthForViewport(), Math.max(WIDTH_MIN, Math.round(px)))
 }
 
-/** 过大时整体等比缩小；不做属性监听，避免 transform 改写死循环卡死。 */
+function clampZoom(z: number): number {
+  const n = Math.round(z / ZOOM_STEP) * ZOOM_STEP
+  return Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, Number(n.toFixed(2))))
+}
+
+/** 默认按视口适配；支持父页 postMessage 调整 userZoom，并可滚轮 Ctrl 缩放。 */
 export function wrapCanvasHtml(fragment: string): string {
   const fitScript = `(function(){
   var root=document.getElementById('zhishi-fit');
-  if(!root) return;
+  var host=document.getElementById('zhishi-host');
+  if(!root||!host) return;
   var busy=false;
-  var last=1;
+  var last=-1;
+  var userZoom=1;
   function layout(){
     if(busy) return;
     busy=true;
     try{
       root.style.transform='none';
-      var pad=20;
+      host.style.width='auto';
+      host.style.height='auto';
+      var pad=16;
       var availW=Math.max(1, window.innerWidth-pad);
       var availH=Math.max(1, window.innerHeight-pad);
       var w=Math.max(root.scrollWidth, root.offsetWidth, 1);
       var h=Math.max(root.scrollHeight, root.offsetHeight, 1);
-      var s=Math.min(1, availW/w, availH/h);
-      if(Math.abs(s-last)<0.01) return;
+      var fit=Math.min(1, availW/w, availH/h);
+      if(!isFinite(fit)||fit<=0) fit=1;
+      var s=fit*userZoom;
+      if(Math.abs(s-last)<0.005) return;
       last=s;
-      root.style.transformOrigin='top center';
-      root.style.transform=s<0.995?('scale('+s+')'):'none';
+      root.style.transformOrigin='top left';
+      root.style.transform='scale('+s+')';
+      host.style.width=Math.ceil(w*s)+'px';
+      host.style.height=Math.ceil(h*s)+'px';
     }finally{
       busy=false;
     }
   }
+  function setZoom(z){
+    if(typeof z!=='number'||!isFinite(z)) return;
+    userZoom=Math.min(3, Math.max(0.5, z));
+    last=-1;
+    layout();
+  }
+  window.addEventListener('message', function(e){
+    var d=e&&e.data;
+    if(!d||d.type!=='zhishi-canvas-zoom') return;
+    setZoom(Number(d.zoom));
+  });
+  window.addEventListener('wheel', function(e){
+    if(!(e.ctrlKey||e.metaKey)) return;
+    e.preventDefault();
+    var next=userZoom*(e.deltaY<0?1.1:1/1.1);
+    setZoom(next);
+    try{ parent.postMessage({type:'zhishi-canvas-zoom-changed', zoom:userZoom}, '*'); }catch(err){}
+  }, {passive:false});
   window.addEventListener('resize', function(){ last=-1; layout(); });
   if(window.MutationObserver){
     try{
@@ -86,31 +121,181 @@ export function wrapCanvasHtml(fragment: string): string {
 <meta http-equiv="Content-Security-Policy" content="${CSP}">
 <style>
   html,body{height:100%;margin:0;padding:0;box-sizing:border-box;overflow:auto;background:#F3EFE6;color:#14212B;font-family:ui-sans-serif,system-ui,sans-serif;font-size:14px;}
-  body{margin:0;padding:10px;box-sizing:border-box;}
-  #zhishi-fit{display:block;width:max-content;max-width:100%;margin:0 auto;box-sizing:border-box;}
+  body{margin:0;padding:8px;box-sizing:border-box;}
+  #zhishi-host{position:relative;margin:0 auto;}
+  #zhishi-fit{display:block;width:max-content;box-sizing:border-box;}
   #zhishi-fit canvas,#zhishi-fit svg,#zhishi-fit img{
     display:block;
-    max-width:100%;
-    max-height:calc(100vh - 24px);
+    max-width:none;
+    max-height:none;
   }
 </style>
 </head>
 <body>
-<div id="zhishi-fit">${fragment}</div>
+<div id="zhishi-host"><div id="zhishi-fit">${fragment}</div></div>
 <script>${fitScript}<\/script>
 </body>
 </html>`
 }
 
-export function ChatHtmlFrame({ canvas }: { canvas: ChatHtmlCanvas }) {
+export function ChatHtmlFrame({
+  canvas,
+  zoom,
+  onZoomChange,
+}: {
+  canvas: ChatHtmlCanvas
+  zoom: number
+  onZoomChange?: (zoom: number) => void
+}) {
+  const iframeRef = useRef<HTMLIFrameElement>(null)
+
+  const postZoom = useCallback((z: number) => {
+    const win = iframeRef.current?.contentWindow
+    if (!win) return
+    win.postMessage({ type: "zhishi-canvas-zoom", zoom: z }, "*")
+  }, [])
+
+  useEffect(() => {
+    postZoom(zoom)
+  }, [zoom, canvas.id, postZoom])
+
+  useEffect(() => {
+    const onMsg = (e: MessageEvent) => {
+      const d = e.data
+      if (!d || d.type !== "zhishi-canvas-zoom-changed") return
+      const z = Number(d.zoom)
+      if (!Number.isFinite(z)) return
+      onZoomChange?.(clampZoom(z))
+    }
+    window.addEventListener("message", onMsg)
+    return () => window.removeEventListener("message", onMsg)
+  }, [onZoomChange])
+
   return (
     <iframe
+      ref={iframeRef}
       title={canvas.title || "画布"}
       sandbox="allow-scripts"
       referrerPolicy="no-referrer"
       srcDoc={wrapCanvasHtml(canvas.html || "")}
+      onLoad={() => postZoom(zoom)}
       className="block w-full h-full min-h-0 rounded-[12px] border border-line bg-paper"
     />
+  )
+}
+
+function ZoomToolbar({
+  zoom,
+  onZoomChange,
+}: {
+  zoom: number
+  onZoomChange: (zoom: number) => void
+}) {
+  return (
+    <div className="flex items-center gap-0.5 shrink-0 rounded-md border border-line-soft bg-paper px-0.5 py-0.5">
+      <button
+        type="button"
+        title="缩小"
+        disabled={zoom <= ZOOM_MIN}
+        onClick={() => onZoomChange(clampZoom(zoom - ZOOM_STEP))}
+        className="w-6 h-6 rounded flex items-center justify-center text-ink-secondary hover:text-ink-primary hover:bg-surface-soft disabled:opacity-40 disabled:pointer-events-none"
+      >
+        <Minus className="w-3.5 h-3.5" strokeWidth={2} />
+      </button>
+      <button
+        type="button"
+        title="点击恢复适应（100%）"
+        onClick={() => onZoomChange(1)}
+        className="min-w-[3rem] h-6 px-1 rounded text-caption font-medium text-ink-secondary hover:text-ink-primary hover:bg-surface-soft tabular-nums"
+      >
+        {Math.round(zoom * 100)}%
+      </button>
+      <button
+        type="button"
+        title="放大"
+        disabled={zoom >= ZOOM_MAX}
+        onClick={() => onZoomChange(clampZoom(zoom + ZOOM_STEP))}
+        className="w-6 h-6 rounded flex items-center justify-center text-ink-secondary hover:text-ink-primary hover:bg-surface-soft disabled:opacity-40 disabled:pointer-events-none"
+      >
+        <Plus className="w-3.5 h-3.5" strokeWidth={2} />
+      </button>
+      <button
+        type="button"
+        title="适应窗口"
+        onClick={() => onZoomChange(1)}
+        className="w-6 h-6 rounded flex items-center justify-center text-ink-secondary hover:text-ink-primary hover:bg-surface-soft"
+      >
+        <RotateCcw className="w-3.5 h-3.5" strokeWidth={2} />
+      </button>
+    </div>
+  )
+}
+
+function canvasItemKey(item: ChatCanvasItem): string {
+  return item.type === "plot" ? `plot:${item.plot.id}` : `html:${item.canvas.id}`
+}
+
+function canvasItemTitle(item: ChatCanvasItem): string {
+  if (item.type === "plot") return item.plot.title?.trim() || "函数图"
+  return item.canvas.title?.trim() || "交互画布"
+}
+
+function CanvasHistoryList({
+  history,
+  onSelect,
+}: {
+  history: ChatCanvasItem[]
+  onSelect: (item: ChatCanvasItem) => void
+}) {
+  if (history.length === 0) {
+    return (
+      <div className="text-small text-ink-tertiary text-center py-12 px-2 leading-relaxed">
+        本对话还没有画布。Tina 画出图像后会出现在这里，也可以点对话里的画布卡片打开。
+      </div>
+    )
+  }
+
+  // 新的在上，方便找最近画的
+  const ordered = [...history].reverse()
+
+  return (
+    <div className="space-y-2">
+      <p className="text-caption text-ink-tertiary px-0.5">
+        本对话共 {history.length} 个画布（新→旧）
+      </p>
+      {ordered.map((item, i) => {
+        const n = history.length - i
+        const isPlot = item.type === "plot"
+        return (
+          <button
+            key={canvasItemKey(item)}
+            type="button"
+            onClick={() => onSelect(item)}
+            className="w-full text-left rounded-xl border border-line-soft bg-paper px-3 py-2.5 hover:border-sea/40 hover:bg-sea-subtle/30 transition-colors"
+          >
+            <div className="flex items-center gap-2">
+              <span
+                className={cn(
+                  "inline-flex items-center gap-1 h-5 px-2 rounded-full text-[10px] font-semibold tracking-wide shrink-0",
+                  isPlot ? "bg-warning/10 text-warning" : "bg-sea-subtle text-sea",
+                )}
+              >
+                {isPlot ? (
+                  <LineChart className="w-3 h-3" strokeWidth={2} />
+                ) : (
+                  <PencilRuler className="w-3 h-3" strokeWidth={2} />
+                )}
+                {isPlot ? "函数图" : "画布"}
+              </span>
+              <span className="text-caption text-ink-tertiary tabular-nums shrink-0">#{n}</span>
+            </div>
+            <div className="text-small font-medium text-ink-primary mt-1.5 line-clamp-2 leading-snug">
+              {canvasItemTitle(item)}
+            </div>
+          </button>
+        )
+      })}
+    </div>
   )
 }
 
@@ -118,17 +303,29 @@ export function ChatCanvasSidebar({
   open,
   onOpenChange,
   item,
+  history = [],
+  onSelectItem,
+  onBack,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
   item: ChatCanvasItem | null
+  /** 当前对话历史画布（早→晚） */
+  history?: ChatCanvasItem[]
+  onSelectItem?: (item: ChatCanvasItem) => void
+  onBack?: () => void
 }) {
   const [width, setWidth] = useState(WIDTH_DEFAULT)
+  const [zoom, setZoom] = useState(1)
   const dragRef = useRef<{ startX: number; startW: number } | null>(null)
 
   useEffect(() => {
     setWidth(clampWidth(readStoredWidth()))
   }, [])
+
+  useEffect(() => {
+    setZoom(1)
+  }, [item?.type === "html" ? item.canvas.id : item?.type === "plot" ? item.plot.id : null])
 
   useEffect(() => {
     const onResize = () => setWidth((w) => clampWidth(w))
@@ -139,7 +336,6 @@ export function ChatCanvasSidebar({
   const onDragMove = useCallback((e: MouseEvent) => {
     const drag = dragRef.current
     if (!drag) return
-    // 从左侧边缘向左拖 → 变宽；向右拖 → 变窄
     const next = clampWidth(drag.startW + (drag.startX - e.clientX))
     setWidth(next)
   }, [])
@@ -179,12 +375,8 @@ export function ChatCanvasSidebar({
     }
   }, [onDragMove, onDragEnd])
 
-  const title =
-    item?.type === "plot"
-      ? item.plot.title?.trim() || "函数图"
-      : item?.type === "html"
-        ? item.canvas.title?.trim() || "画布"
-        : "画布"
+  const viewing = !!item
+  const title = viewing ? canvasItemTitle(item) : "画布列表"
 
   return (
     <div
@@ -217,7 +409,22 @@ export function ChatCanvasSidebar({
         )}
       >
         {open && (
-          <span className="text-card-title font-semibold text-ink-primary flex-1 truncate">{title}</span>
+          <>
+            {viewing && onBack ? (
+              <button
+                type="button"
+                onClick={onBack}
+                className="w-7 h-7 rounded-md flex items-center justify-center text-ink-tertiary hover:text-ink-primary hover:bg-surface-soft transition-colors shrink-0"
+                title="返回画布列表"
+              >
+                <ArrowLeft className="w-4 h-4" strokeWidth={2} />
+              </button>
+            ) : null}
+            <span className="text-card-title font-semibold text-ink-primary flex-1 truncate min-w-0">{title}</span>
+            {item?.type === "html" && (
+              <ZoomToolbar zoom={zoom} onZoomChange={setZoom} />
+            )}
+          </>
         )}
         <button
           type="button"
@@ -237,13 +444,14 @@ export function ChatCanvasSidebar({
           )}
         >
           {!item ? (
-            <div className="text-small text-ink-tertiary text-center py-12 px-2 leading-relaxed">
-              Tina 画出图像后会显示在这里。也可以点对话里的画布卡片重新打开。
-            </div>
+            <CanvasHistoryList
+              history={history}
+              onSelect={(it) => onSelectItem?.(it)}
+            />
           ) : item.type === "plot" ? (
             <ChatFunctionPlot plot={item.plot} />
           ) : (
-            <ChatHtmlFrame canvas={item.canvas} />
+            <ChatHtmlFrame canvas={item.canvas} zoom={zoom} onZoomChange={setZoom} />
           )}
         </div>
       ) : (

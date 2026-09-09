@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 
 from ..core.errors import AppError, NotFoundError
 from ..models import (
+    Document,
     DocumentSegment,
     GlobalQuestion,
     QuestionProvenance,
@@ -22,6 +23,7 @@ from ..models import (
     QuizSession,
     QuizSessionQuestion,
 )
+from ..utils import parse_tags
 
 
 # ---- 纯函数工具 ----
@@ -115,31 +117,63 @@ class QuizService:
         *,
         document_id: Optional[str],
         collection_id: Optional[str],
+        group_id: Optional[str] = None,
         question_ids: Optional[list[str]],
         filter_mode: str = "all",
+        tags: Optional[list[str]] = None,
     ) -> list[str]:
         """解析会话题目 ID 集合。"""
         if question_ids:
-            return list(question_ids)
+            ids = list(question_ids)
+        else:
+            q = db.query(QuestionProvenance.question_id)
+            scope_doc_ids: list[str] | None = None
+            if group_id:
+                scope_doc_ids = [
+                    r[0]
+                    for r in db.query(Document.id).filter(Document.group_id == group_id).all()
+                ]
+                if not scope_doc_ids:
+                    return []
+                q = q.filter(QuestionProvenance.document_id.in_(scope_doc_ids))
+            elif document_id:
+                scope_doc_ids = [document_id]
+                q = q.filter(QuestionProvenance.document_id == document_id)
+            ids = list(dict.fromkeys(r[0] for r in q.all()))
 
-        q = db.query(QuestionProvenance.question_id)
-        if document_id:
-            q = q.filter(QuestionProvenance.document_id == document_id)
-        ids = [r[0] for r in q.all()]
+            if filter_mode in ("wrong", "unknown", "undone") and scope_doc_ids:
+                refs = (
+                    db.query(QuestionRef)
+                    .filter(QuestionRef.document_id.in_(scope_doc_ids))
+                    .all()
+                )
+                # 同题跨文档：取 attempt 最高的 ref 作为状态
+                ref_map: dict[str, QuestionRef] = {}
+                for r in refs:
+                    prev = ref_map.get(r.question_id)
+                    if prev is None or (r.attempt_count or 0) > (prev.attempt_count or 0):
+                        ref_map[r.question_id] = r
+                filtered = []
+                for qid in ids:
+                    ref = ref_map.get(qid)
+                    if filter_mode == "undone" and (ref is None or (ref.attempt_count or 0) == 0):
+                        filtered.append(qid)
+                    elif filter_mode == "wrong" and ref and ref.last_status == "wrong":
+                        filtered.append(qid)
+                    elif filter_mode == "unknown" and ref and ref.last_status == "unknown":
+                        filtered.append(qid)
+                ids = filtered
 
-        if filter_mode in ("wrong", "unknown", "undone") and document_id:
-            refs = db.query(QuestionRef).filter(QuestionRef.document_id == document_id).all()
-            ref_map = {r.question_id: r for r in refs}
-            filtered = []
-            for qid in ids:
-                ref = ref_map.get(qid)
-                if filter_mode == "undone" and (ref is None or ref.attempt_count == 0):
-                    filtered.append(qid)
-                elif filter_mode == "wrong" and ref and ref.last_status == "wrong":
-                    filtered.append(qid)
-                elif filter_mode == "unknown" and ref and ref.last_status == "unknown":
-                    filtered.append(qid)
-            ids = filtered
+        tag_set = {t.strip() for t in (tags or []) if t and str(t).strip()}
+        if tag_set:
+            kept = []
+            for gq in db.query(GlobalQuestion).filter(GlobalQuestion.id.in_(ids)).all():
+                q_tags = set(parse_tags(gq.tags))
+                if q_tags & tag_set:
+                    kept.append(gq.id)
+            # 保持原顺序
+            kept_set = set(kept)
+            ids = [qid for qid in ids if qid in kept_set]
         return ids
 
     def create_session(
@@ -148,9 +182,11 @@ class QuizService:
         *,
         document_id: Optional[str],
         collection_id: Optional[str] = None,
+        group_id: Optional[str] = None,
         question_ids: Optional[list[str]] = None,
         title: Optional[str] = None,
         filter_mode: str = "all",
+        tags: Optional[list[str]] = None,
         resume: bool = True,
         task_id: Optional[str] = None,
     ) -> QuizSession:
@@ -158,8 +194,10 @@ class QuizService:
             db,
             document_id=document_id,
             collection_id=collection_id,
+            group_id=group_id,
             question_ids=question_ids,
             filter_mode=filter_mode,
+            tags=tags,
         )
         if not ids:
             raise AppError("没有可刷的题目（可能该文档还没有生成题目）")
@@ -174,6 +212,7 @@ class QuizService:
         session = QuizSession(
             document_id=document_id,
             collection_id=collection_id,
+            group_id=group_id,
             title=title,
             status="active",
         )
@@ -310,6 +349,19 @@ class QuizService:
             .order_by(QuizSessionQuestion.order_index)
             .all()
         )
+        qids = [gq.id for _, gq in rows]
+        last_times: dict[str, int] = {}
+        if qids:
+            # 每题最近一次历史耗时（不含本会话未提交的）
+            answers = (
+                db.query(QuizAnswer)
+                .filter(QuizAnswer.question_id.in_(qids), QuizAnswer.time_spent_seconds.isnot(None))
+                .order_by(QuizAnswer.answered_at.desc())
+                .all()
+            )
+            for a in answers:
+                if a.question_id not in last_times and a.time_spent_seconds is not None:
+                    last_times[a.question_id] = int(a.time_spent_seconds)
         questions = []
         for sq, gq in rows:
             questions.append({
@@ -321,6 +373,7 @@ class QuizService:
                 "source_type": gq.source_type,
                 "html_content": gq.html_content,
                 "answer_params": gq.answer_params,
+                "last_time_spent_seconds": last_times.get(gq.id),
             })
         answered = (
             db.query(QuizAnswer)
@@ -333,6 +386,7 @@ class QuizService:
             "status": session.status,
             "document_id": session.document_id,
             "collection_id": session.collection_id,
+            "group_id": session.group_id,
             "total_questions": len(questions),
             "answered_count": answered,
             "started_at": session.started_at.isoformat() if session.started_at else None,
@@ -517,6 +571,29 @@ class QuizService:
             .filter_by(session_id=session.id, question_id=question_id)
             .first()
         )
+        # 组会话无 document_id 时，用题目溯源文档更新统计
+        ref_doc_id = session.document_id
+        if not ref_doc_id:
+            if session.group_id:
+                from ..models import Document
+
+                group_doc_ids = [
+                    r[0]
+                    for r in db.query(Document.id).filter(Document.group_id == session.group_id).all()
+                ]
+                prov = (
+                    db.query(QuestionProvenance)
+                    .filter(
+                        QuestionProvenance.question_id == question_id,
+                        QuestionProvenance.document_id.in_(group_doc_ids),
+                    )
+                    .first()
+                    if group_doc_ids
+                    else None
+                )
+            else:
+                prov = db.query(QuestionProvenance).filter_by(question_id=question_id).first()
+            ref_doc_id = prov.document_id if prov else None
         if existing:
             old_status = existing.status
             existing.user_answer = user_answer
@@ -527,7 +604,7 @@ class QuizService:
             if time_spent_seconds is not None:
                 existing.time_spent_seconds = time_spent_seconds
             existing.answered_at = datetime.now(timezone.utc)
-            self.revise_ref_stats(db, question_id, session.document_id, old_status, status)
+            self.revise_ref_stats(db, question_id, ref_doc_id, old_status, status)
         else:
             answer = QuizAnswer(
                 session_id=session.id,
@@ -540,7 +617,7 @@ class QuizService:
                 time_spent_seconds=time_spent_seconds,
             )
             db.add(answer)
-            self.update_ref_stats(db, question_id, session.document_id, status)
+            self.update_ref_stats(db, question_id, ref_doc_id, status)
 
         answered = db.query(QuizAnswer).filter(QuizAnswer.session_id == session.id).count()
         total = db.query(QuizSessionQuestion).filter(QuizSessionQuestion.session_id == session.id).count()
@@ -666,6 +743,12 @@ class QuizService:
                     "explanation": gq.explanation,
                 })
         total = db.query(QuizSessionQuestion).filter(QuizSessionQuestion.session_id == session.id).count()
+        time_rows = (
+            db.query(QuizAnswer.time_spent_seconds)
+            .filter(QuizAnswer.session_id == session.id)
+            .all()
+        )
+        total_time = sum(int(t[0] or 0) for t in time_rows)
         return {
             "session_id": session.id,
             "status": session.status,
@@ -673,6 +756,7 @@ class QuizService:
             "correct_count": correct,
             "wrong_count": wrong,
             "unknown_count": unknown,
+            "total_time_spent_seconds": total_time,
             "items": items,
         }
 

@@ -50,6 +50,7 @@ class KnowledgeDoc(BaseModel):
     warning: Optional[str] = None
     questionCount: Optional[int] = None
     zone: Optional[str] = None
+    group_id: Optional[str] = None
     wordCount: int = 0
     updatedAt: Optional[datetime] = None
 
@@ -202,3 +203,49 @@ class LearningPathResult(BaseModel):
     status: str = "missing"  # missing/pending/generated/failed
     title: Optional[str] = None
     chapters: list[LearningPathChapter] = []
+
+
+class DocumentGroupCreate(BaseModel):
+    name: str
+    collection_id: Optional[str] = None
+    description: Optional[str] = None
+
+
+class DocumentGroupUpdate(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    cover_document_id: Optional[str] = None
+
+
+class DocumentGroupStats(BaseModel):
+    total: int = 0
+    answered: int = 0
+    correct: int = 0
+    wrong: int = 0
+    unknown: int = 0
+
+
+class DocumentGroupItem(BaseModel):
+    id: str
+    name: str
+    description: Optional[str] = None
+    collection_id: Optional[str] = None
+    cover_document_id: Optional[str] = None
+    doc_count: int = 0
+    stats: DocumentGroupStats = DocumentGroupStats()
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+
+class DocumentGroupList(BaseModel):
+    groups: list[DocumentGroupItem]
+    total: int
+
+
+class DocumentGroupDetail(DocumentGroupItem):
+    documents: list[KnowledgeDoc] = []
+    tags: list[str] = []
+
+
+class DocumentGroupAddDocs(BaseModel):
+    document_ids: list[str]

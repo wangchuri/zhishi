@@ -313,7 +313,7 @@ export const kbApi = {
     return request<any>("PATCH", `/api/v1/kb/collections/${collectionId}`, data)
   },
 
-  upload(file: File, collectionId?: string, forceScanned?: boolean) {
+  upload(file: File, collectionId?: string, forceScanned?: boolean, groupId?: string) {
     const formData = new FormData()
     formData.append("file", file)
     if (collectionId) {
@@ -322,13 +322,57 @@ export const kbApi = {
     if (forceScanned != null) {
       formData.append("force_scanned", String(forceScanned))
     }
+    if (groupId) {
+      formData.append("group_id", groupId)
+    }
     return request<any>("POST", "/api/v1/kb/upload", formData, true)
   },
 
-  listDocuments(page = 1, limit = 20, collectionId?: string) {
+  listDocuments(page = 1, limit = 20, collectionId?: string, opts?: { groupId?: string; ungroupedOnly?: boolean }) {
     const params = new URLSearchParams({ page: String(page), limit: String(limit) })
     if (collectionId) params.set("collection_id", collectionId)
+    if (opts?.groupId) params.set("group_id", opts.groupId)
+    if (opts?.ungroupedOnly) params.set("ungrouped_only", "true")
     return request<any>("GET", `/api/v1/kb/documents?${params}`)
+  },
+
+  listGroups(collectionId?: string) {
+    const params = new URLSearchParams()
+    if (collectionId) params.set("collection_id", collectionId)
+    const q = params.toString()
+    return request<{ groups: import("@/types").DocumentGroupItem[]; total: number }>(
+      "GET",
+      `/api/v1/kb/groups${q ? `?${q}` : ""}`
+    )
+  },
+
+  createGroup(data: { name: string; collection_id?: string; description?: string }) {
+    return request<import("@/types").DocumentGroupItem>("POST", "/api/v1/kb/groups", data)
+  },
+
+  getGroup(groupId: string) {
+    return request<import("@/types").DocumentGroupDetail>("GET", `/api/v1/kb/groups/${groupId}`)
+  },
+
+  updateGroup(groupId: string, data: { name?: string; description?: string; cover_document_id?: string }) {
+    return request<import("@/types").DocumentGroupItem>("PATCH", `/api/v1/kb/groups/${groupId}`, data)
+  },
+
+  deleteGroup(groupId: string) {
+    return request<any>("DELETE", `/api/v1/kb/groups/${groupId}`)
+  },
+
+  addGroupDocuments(groupId: string, documentIds: string[]) {
+    return request<import("@/types").DocumentGroupDetail>("POST", `/api/v1/kb/groups/${groupId}/documents`, {
+      document_ids: documentIds,
+    })
+  },
+
+  removeGroupDocument(groupId: string, documentId: string) {
+    return request<import("@/types").DocumentGroupDetail>(
+      "DELETE",
+      `/api/v1/kb/groups/${groupId}/documents/${documentId}`
+    )
   },
 
   getDocumentStatus(batchId: string) {
@@ -524,10 +568,11 @@ export function documentImageBase(docId: string): string {
 // ─── Questions ─────────────────────────────────────────
 
 export const questionsApi = {
-  list(params: { document_id?: string; collection_id?: string; keyword?: string }) {
+  list(params: { document_id?: string; collection_id?: string; group_id?: string; keyword?: string }) {
     const qs = new URLSearchParams()
     if (params.document_id) qs.set("document_id", params.document_id)
     if (params.collection_id) qs.set("collection_id", params.collection_id)
+    if (params.group_id) qs.set("group_id", params.group_id)
     if (params.keyword) qs.set("keyword", params.keyword)
     const q = qs.toString()
     return request<any>("GET", `/api/v1/questions${q ? `?${q}` : ""}`)
@@ -624,9 +669,11 @@ export const quizApi = {
   createSession(data: {
     document_id?: string
     collection_id?: string
+    group_id?: string
     question_ids?: string[]
     title?: string
     filter?: "all" | "undone" | "wrong" | "unknown"
+    tags?: string[]
     resume?: boolean
     task_id?: string
   }) {

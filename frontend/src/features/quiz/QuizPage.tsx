@@ -58,6 +58,13 @@ import { MarkdownWithMath } from "@/components/blocks/MarkdownWithMath"
 
 type Phase = "setup" | "quiz" | "done"
 
+function formatDuration(seconds: number): string {
+  const s = Math.max(0, Math.floor(seconds))
+  const m = Math.floor(s / 60)
+  const r = s % 60
+  return `${m}:${r.toString().padStart(2, "0")}`
+}
+
 function QuestionStatusBadge({
   status,
   attemptCount = 0,
@@ -122,11 +129,13 @@ export function QuizPage() {
     correct: number
     wrong: number
     unknown: number
+    totalTime?: number
   } | null>(null)
   const [questionListData, setQuestionListData] = useState<QuestionListResult | null>(null)
   const [loadingQuestions, setLoadingQuestions] = useState(false)
   const [searchKeyword, setSearchKeyword] = useState("")
   const [questionStartTime, setQuestionStartTime] = useState(Date.now())
+  const [elapsedSeconds, setElapsedSeconds] = useState(0)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [deletingQuestions, setDeletingQuestions] = useState(false)
   const [streakDialog, setStreakDialog] = useState<{ open: boolean; streak: number }>({ open: false, streak: 0 })
@@ -313,6 +322,17 @@ export function QuizPage() {
 
   const currentQuestion = session?.questions[currentIndex]
 
+  useEffect(() => {
+    if (phase !== "quiz" || !currentQuestion || lastResult) {
+      return
+    }
+    setElapsedSeconds(0)
+    const timer = window.setInterval(() => {
+      setElapsedSeconds(Math.round((Date.now() - questionStartTime) / 1000))
+    }, 1000)
+    return () => window.clearInterval(timer)
+  }, [phase, currentQuestion?.question_id, questionStartTime, lastResult])
+
   const isSessionExpiredError = (msg: string) =>
     msg.includes("刷题会话不存在") || msg.includes("会话已结束")
 
@@ -446,6 +466,7 @@ export function QuizPage() {
         correct: Number(res.correct_count) || 0,
         wrong: Number(res.wrong_count) || 0,
         unknown: Number(res.unknown_count) || 0,
+        totalTime: Number(res.total_time_spent_seconds) || 0,
       })
       const items = (res.items || []) as QuizReviewItem[]
       if (items.length > 0) setReviewItems(items)
@@ -831,6 +852,9 @@ export function QuizPage() {
                     🤖 AI 出题
                   </Badge>
                 )}
+                <Badge variant="neutral" size="sm" title="本题用时">
+                  ⏱ {formatDuration(elapsedSeconds)}
+                </Badge>
               </div>
               <span className="text-small text-ink-tertiary truncate max-w-[40%]">
                 {selectedDocument?.name || session.title}
@@ -864,7 +888,13 @@ export function QuizPage() {
             </div>
 
             {/* 操作栏常驻：提交/下一题 不随内容滚出视口 */}
-            <div className="shrink-0 border-t border-line-soft px-6 py-4">
+            <div className="shrink-0 border-t border-line-soft px-6 py-4 space-y-3">
+              {currentQuestion.last_time_spent_seconds != null &&
+                currentQuestion.last_time_spent_seconds > 0 && (
+                  <p className="text-caption text-ink-tertiary">
+                    上次本题用时 {formatDuration(currentQuestion.last_time_spent_seconds)}
+                  </p>
+                )}
               {!lastResult ? (
                 <div className="flex flex-wrap items-center gap-3">
                   <Button
@@ -926,10 +956,13 @@ export function QuizPage() {
             <CheckCircle2 className="w-12 h-12 text-success mx-auto mb-3" strokeWidth={1.5} />
             <div className="text-card-title font-semibold text-ink-primary mb-2">本轮练习完成</div>
             {resultsSummary && (
-              <div className="flex items-center justify-center gap-6 text-body text-ink-secondary">
+              <div className="flex items-center justify-center gap-6 text-body text-ink-secondary flex-wrap">
                 <span>正确 {resultsSummary.correct}</span>
                 <span>错误 {resultsSummary.wrong}</span>
                 <span>我不会 {resultsSummary.unknown}</span>
+                {resultsSummary.totalTime != null && resultsSummary.totalTime > 0 && (
+                  <span>本次用时 {formatDuration(resultsSummary.totalTime)}</span>
+                )}
               </div>
             )}
             <div className="mt-4 flex justify-center gap-3">

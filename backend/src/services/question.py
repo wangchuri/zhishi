@@ -165,13 +165,36 @@ class QuestionService:
         document_id: Optional[str] = None,
         collection_id: Optional[str] = None,
         keyword: Optional[str] = None,
+        group_id: Optional[str] = None,
     ) -> dict:
         """列出题目（带文档级统计）。"""
         q = db.query(GlobalQuestion).join(
             QuestionProvenance,
             QuestionProvenance.question_id == GlobalQuestion.id,
         )
-        if document_id:
+        scope_doc_ids: list[str] | None = None
+        if group_id:
+            from ..models import Document
+
+            scope_doc_ids = [
+                r[0] for r in db.query(Document.id).filter(Document.group_id == group_id).all()
+            ]
+            if not scope_doc_ids:
+                return {
+                    "questions": [],
+                    "total": 0,
+                    "document_id": document_id,
+                    "collection_id": collection_id,
+                    "group_id": group_id,
+                    "answered_count": 0,
+                    "correct_count": 0,
+                    "wrong_count": 0,
+                    "unknown_count": 0,
+                    "best_streak": 0,
+                }
+            q = q.filter(QuestionProvenance.document_id.in_(scope_doc_ids))
+        elif document_id:
+            scope_doc_ids = [document_id]
             q = q.filter(QuestionProvenance.document_id == document_id)
         if collection_id:
             q = q.join(QuestionRef, QuestionRef.question_id == GlobalQuestion.id).filter(
@@ -180,8 +203,17 @@ class QuestionService:
         if keyword:
             q = q.filter(GlobalQuestion.stem.like(f"%{keyword}%"))
 
-        total = q.count()
+        # 去重（组内同题可能多 provenance）
         questions = q.order_by(GlobalQuestion.created_at.desc()).all()
+        seen: set[str] = set()
+        unique: list = []
+        for gq in questions:
+            if gq.id in seen:
+                continue
+            seen.add(gq.id)
+            unique.append(gq)
+        questions = unique
+        total = len(questions)
 
         result = []
         for gq in questions:
@@ -191,11 +223,33 @@ class QuestionService:
                 prov = db.query(QuestionProvenance).filter_by(
                     question_id=gq.id, document_id=doc_id
                 ).first()
+            elif scope_doc_ids:
+                prov = (
+                    db.query(QuestionProvenance)
+                    .filter(
+                        QuestionProvenance.question_id == gq.id,
+                        QuestionProvenance.document_id.in_(scope_doc_ids),
+                    )
+                    .first()
+                )
+                doc_id = prov.document_id if prov else None
             else:
                 prov = db.query(QuestionProvenance).filter_by(question_id=gq.id).first()
                 doc_id = prov.document_id if prov else None
             ref = None
-            if doc_id:
+            if scope_doc_ids and len(scope_doc_ids) > 1:
+                refs = (
+                    db.query(QuestionRef)
+                    .filter(
+                        QuestionRef.question_id == gq.id,
+                        QuestionRef.document_id.in_(scope_doc_ids),
+                    )
+                    .all()
+                )
+                for r in refs:
+                    if ref is None or (r.attempt_count or 0) > (ref.attempt_count or 0):
+                        ref = r
+            elif doc_id:
                 ref = db.query(QuestionRef).filter_by(question_id=gq.id, document_id=doc_id).first()
             result.append(_question_out(
                 gq, ref, doc_id, chapter_id=prov.chapter_id if prov else None,
@@ -204,20 +258,21 @@ class QuestionService:
         # 统计
         answered = correct = wrong = unknown = 0
         best_streak = 0
-        if document_id:
-            refs = db.query(QuestionRef).filter_by(document_id=document_id).all()
+        if scope_doc_ids:
+            refs = db.query(QuestionRef).filter(QuestionRef.document_id.in_(scope_doc_ids)).all()
             for r in refs:
-                answered += r.attempt_count
-                correct += r.correct_count
-                wrong += r.wrong_count
-                unknown += r.unknown_count
-                best_streak = max(best_streak, r.best_streak)
+                answered += r.attempt_count or 0
+                correct += r.correct_count or 0
+                wrong += r.wrong_count or 0
+                unknown += r.unknown_count or 0
+                best_streak = max(best_streak, r.best_streak or 0)
 
         return {
             "questions": result,
             "total": total,
             "document_id": document_id,
             "collection_id": collection_id,
+            "group_id": group_id,
             "answered_count": answered,
             "correct_count": correct,
             "wrong_count": wrong,

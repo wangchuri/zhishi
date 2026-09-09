@@ -17,6 +17,7 @@ class QuizSessionQuestion(BaseModel):
     source_type: Optional[str] = None
     html_content: Optional[str] = None
     answer_params: Optional[str] = None
+    last_time_spent_seconds: Optional[int] = None
 
 
 class QuizSession(BaseModel):
@@ -25,6 +26,7 @@ class QuizSession(BaseModel):
     status: str = "active"
     document_id: Optional[str] = None
     collection_id: Optional[str] = None
+    group_id: Optional[str] = None
     total_questions: int = 0
     answered_count: int = 0
     started_at: Optional[datetime] = None
@@ -35,9 +37,11 @@ class QuizSession(BaseModel):
 class QuizSessionCreate(BaseModel):
     document_id: Optional[str] = None
     collection_id: Optional[str] = None
+    group_id: Optional[str] = None
     question_ids: Optional[list[str]] = None
     title: Optional[str] = None
     filter: Optional[str] = "all"  # all/undone/wrong/unknown
+    tags: Optional[list[str]] = None  # 知识点；空/省略=全部；多选为并集（任一命中）
     resume: bool = True  # 同一批题有未完成会话则续刷
     task_id: Optional[str] = None  # 今日刷题任务 id，续刷后回写 href
 
@@ -85,6 +89,7 @@ class QuizResults(BaseModel):
     correct_count: int = 0
     wrong_count: int = 0
     unknown_count: int = 0
+    total_time_spent_seconds: int = 0
     items: list[QuizReviewItem] = []
 
 

@@ -48,20 +48,14 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { SectionHeader } from "@/components/blocks/SectionHeader"
 import { QuizQuestionPreviewDialog } from "./QuizQuestionPreviewDialog"
 import { QuestionGenJobsBanner } from "./QuestionGenJobsBanner"
+import { QuizStartPanel, type QuizFilterMode } from "./QuizStartPanel"
 import { questionsApi, quizApi, analyticsApi, kbApi, getThumbnailUrl } from "@/lib/api"
 import { accuracyPercent, formatAccuracy, splitTagLabels } from "@/lib/utils"
 import { useKbDocuments } from "@/hooks/useKbDocuments"
-import type { LearningPathChapter, LearningPathResult, Question, QuestionGenJob, QuestionListResult, QuizSession, TagStatsResult } from "@/types"
+import type { KnowledgeDoc, LearningPathChapter, LearningPathResult, Question, QuestionGenJob, QuestionListResult, QuizSession, TagStatsResult } from "@/types"
 import { toast } from "sonner"
 
-type FilterMode = "all" | "undone" | "wrong" | "unknown"
-
-const FILTER_OPTIONS: { value: FilterMode; label: string; desc: string }[] = [
-  { value: "all", label: "从头开始", desc: "全部题目随机顺序" },
-  { value: "undone", label: "只做未做题", desc: "过滤已答过的题目" },
-  { value: "wrong", label: "只做错题", desc: "过滤答错的题目" },
-  { value: "unknown", label: "只做不会题", desc: "过滤标记为不会的题目" },
-]
+type FilterMode = QuizFilterMode
 
 const TYPE_LABEL: Record<string, string> = {
   single_choice: "单选题",
@@ -109,6 +103,12 @@ function matchesFilter(q: Question, mode: FilterMode): boolean {
   return true
 }
 
+function matchesTags(q: Question, tags: string[]): boolean {
+  if (!tags.length) return true
+  const qTags = new Set(q.tags || [])
+  return tags.some((t) => qTags.has(t))
+}
+
 export function QuizDocDetailPage() {
   const { docId } = useParams<{ docId: string }>()
   const navigate = useNavigate()
@@ -120,6 +120,7 @@ export function QuizDocDetailPage() {
   const [loadingTagStats, setLoadingTagStats] = useState(false)
   const [activeSession, setActiveSession] = useState<QuizSession | null>(null)
   const [filterMode, setFilterMode] = useState<FilterMode>("all")
+  const [selectedTags, setSelectedTags] = useState<string[]>([])
   const [starting, setStarting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [learningPath, setLearningPath] = useState<LearningPathResult | null>(null)
@@ -136,7 +137,37 @@ export function QuizDocDetailPage() {
   const [deleting, setDeleting] = useState(false)
   const [deleteError, setDeleteError] = useState<string | null>(null)
 
-  const doc = useMemo(() => documents.find((d) => d.id === docId), [documents, docId])
+  const docFromList = useMemo(() => documents.find((d) => d.id === docId), [documents, docId])
+  const [fallbackDoc, setFallbackDoc] = useState<KnowledgeDoc | null>(null)
+  const doc = docFromList || fallbackDoc
+
+  useEffect(() => {
+    if (!docId || docFromList) {
+      setFallbackDoc(null)
+      return
+    }
+    let cancelled = false
+    kbApi
+      .getDocumentContent(docId, { metaOnly: true })
+      .then((meta) => {
+        if (cancelled) return
+        setFallbackDoc({
+          id: docId,
+          name: meta.file_name || docId,
+          type: (meta.file_type as KnowledgeDoc["type"]) || "txt",
+          tags: [],
+          status: "indexed",
+          wordCount: 0,
+          updatedAt: "—",
+        })
+      })
+      .catch(() => {
+        if (!cancelled) setFallbackDoc(null)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [docId, docFromList])
 
   // 加载题目统计
   const loadQuestionData = useCallback(async () => {
@@ -294,7 +325,11 @@ export function QuizDocDetailPage() {
     setStarting(true)
     setError(null)
     try {
-      const res = await quizApi.createSession({ document_id: docId, filter: filterMode })
+      const res = await quizApi.createSession({
+        document_id: docId,
+        filter: filterMode,
+        tags: selectedTags.length ? selectedTags : undefined,
+      })
       const session = res as QuizSession
       navigate(`/quiz/session?session_id=${session.id}`)
     } catch (err: unknown) {
@@ -440,6 +475,13 @@ export function QuizDocDetailPage() {
   const answeredTags = allTags.filter(t => t.total_attempts > 0)
   const questionTagLabels = [...new Set(allTags.flatMap((t) => splitTagLabels(t.tag)))]
   const typeStats = tagStats?.by_question_type ?? []
+  const quizMatchCount = (questionData?.questions || []).filter(
+    (q) => matchesFilter(q, filterMode) && matchesTags(q, selectedTags)
+  ).length
+  const startTags =
+    questionTagLabels.length > 0
+      ? questionTagLabels
+      : [...new Set((questionData?.questions || []).flatMap((q) => q.tags || []))]
 
   return (
     <AppShell maxWidth={1100}>
@@ -582,34 +624,18 @@ export function QuizDocDetailPage() {
           )}
 
           {hasQuestions ? (
-            <div className="bg-surface border border-line-soft rounded-lg p-4 space-y-3">
-              <div className="text-card-title font-semibold text-ink-primary">开始刷题</div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                {FILTER_OPTIONS.map((opt) => (
-                  <label key={opt.value}
-                    className={`flex items-center gap-2.5 p-3 rounded-lg border cursor-pointer transition-colors ${filterMode === opt.value ? "border-primary bg-primary/5 text-ink-primary" : "border-line-soft hover:border-line text-ink-secondary"}`}>
-                    <input type="radio" name="filter" value={opt.value} checked={filterMode === opt.value}
-                      onChange={() => setFilterMode(opt.value)} className="accent-primary shrink-0" />
-                    <div className="min-w-0"><div className="text-small font-medium">{opt.label}</div><div className="text-caption text-ink-tertiary truncate">{opt.desc}</div></div>
-                  </label>
-                ))}
-              </div>
-              {activeSession && (
-                <div className="flex items-center justify-between p-3 rounded-lg bg-warning/5 border border-warning/20">
-                  <div className="flex items-center gap-2 text-small text-ink-primary">
-                    <RefreshCw className="w-4 h-4 text-warning" />
-                    <span>有未完成的练习（{activeSession.answered_count}/{activeSession.total_questions} 题已答）</span>
-                  </div>
-                  <Button variant="secondary" size="sm" onClick={handleResume}>继续</Button>
-                </div>
-              )}
-              <Button variant="primary" size="lg" onClick={handleStart} disabled={starting || loadingQuestions || startingChapter !== null}
-                className="w-full" style={{ color: '#FFFFFF' }}>
-                {starting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" strokeWidth={2} />}
-                {filterMode === "all" ? "开始刷题" : `开始${FILTER_OPTIONS.find(o => o.value === filterMode)?.label}`}
-                <ChevronRight className="w-4 h-4" strokeWidth={2} />
-              </Button>
-            </div>
+            <QuizStartPanel
+              availableTags={startTags}
+              matchCount={quizMatchCount}
+              filterMode={filterMode}
+              onFilterModeChange={setFilterMode}
+              selectedTags={selectedTags}
+              onSelectedTagsChange={setSelectedTags}
+              activeSession={activeSession}
+              onResume={handleResume}
+              onStart={() => void handleStart()}
+              starting={starting || loadingQuestions || startingChapter !== null}
+            />
           ) : (
             <div className="bg-surface border border-line-soft rounded-lg p-5 text-center">
               {doc.question_gen_status === "processing" || genJobs.length > 0 ? (

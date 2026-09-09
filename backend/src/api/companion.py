@@ -28,6 +28,12 @@ async def chat(body: ai_schemas.CompanionSend, db: Session = Depends(get_db)):
     agent, session, user_content = await companion_service.send_message(
         db, body.document_id, body.content, body.page_number, body.page_content, stream=True
     )
+    session_id = session.id
+    # 流式输出前归还连接，避免 LLM 生成期间占满连接池
+    try:
+        db.close()
+    except Exception:
+        pass
 
     async def gen():
         full = ""
@@ -43,7 +49,7 @@ async def chat(body: ai_schemas.CompanionSend, db: Session = Depends(get_db)):
             full = full or err
             yield _json_line({"content": err})
         finally:
-            companion_service.persist_assistant(session.id, full)
+            companion_service.persist_assistant(session_id, full)
             yield "data: [DONE]\n\n"
 
     return StreamingResponse(gen(), media_type="text/event-stream")

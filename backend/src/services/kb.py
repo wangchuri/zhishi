@@ -51,8 +51,36 @@ def _now_iso() -> str:
 
 
 def _background_parse(doc_id: str, filename: str, content: bytes, collection_id: Optional[str], force_scanned: bool) -> None:
-    """后台线程执行文档解析（MinerU 可能耗时数分钟）。"""
+    """后台线程执行文档解析（MinerU 可能耗时数分钟）。
+
+    MinerU 轮询期间不占用 DB 连接，避免拖垮连接池。
+    """
     from ..core.database import SessionLocal
+
+    # 重活先在无 Session 下做：扫描 PDF 的 MinerU 可能长达数十分钟
+    pre_mineru: dict | None = None
+    ext = parser.file_extension(filename)
+    try:
+        if ext in parser.PDF_EXTENSIONS:
+            text, pages = parser.parse_pdf_text(content)
+            is_scanned = force_scanned or parser.is_pdf_scanned(content) or not text.strip()
+            if is_scanned:
+                logger.info("后台 MinerU 开始（不占 DB）doc=%s", doc_id)
+                pre_mineru = mineru_service.parse_pdf(content)
+    except Exception as e:
+        logger.warning("后台 MinerU 失败 doc=%s: %s", doc_id, e)
+        db = SessionLocal()
+        try:
+            doc = db.query(Document).filter(Document.id == doc_id).first()
+            if doc:
+                doc.indexing_status = "failed"
+                doc.updated_at = datetime.now(timezone.utc)
+                db.commit()
+        except Exception:
+            pass
+        finally:
+            db.close()
+        return
 
     db = SessionLocal()
     try:
@@ -60,7 +88,19 @@ def _background_parse(doc_id: str, filename: str, content: bytes, collection_id:
         if not doc:
             return
         kb = KnowledgeBaseService()
-        kb._parse_and_ingest(db, doc, content, force_scanned=force_scanned)
+        if pre_mineru is not None:
+            pages_md = pre_mineru["page_mds"]
+            all_images = pre_mineru["images"] or {}
+            name_map = kb._persist_mineru_images_once(db, doc, all_images)
+            rewritten_pages: list[str] = []
+            for p in pages_md:
+                rewritten = kb._apply_image_refs(p["markdown"], name_map)
+                rewritten_pages.append(rewritten)
+                p["markdown"] = rewritten
+            storage.save_pages(doc.id, rewritten_pages)
+            doc.is_scanned_pdf = True
+        else:
+            kb._parse_and_ingest(db, doc, content, force_scanned=force_scanned)
         doc.indexing_status = "completed"
         doc.pdf_page_count = len(storage.list_pages(doc_id))
         kb.segment_document(db, doc)
@@ -80,13 +120,11 @@ def _background_parse(doc_id: str, filename: str, content: bytes, collection_id:
         except Exception as te:
             logger.warning("任务检查失败 doc=%s: %s", doc_id, te)
 
-        # 解析完成后异步调度学习路径 Agent
         if doc.zone == "study":
             try:
                 import asyncio
                 from ..agents.learning_path_agent import schedule_learning_path
 
-                # 后台线程无事件循环，用新线程跑 asyncio
                 def _schedule():
                     try:
                         asyncio.run(schedule_learning_path(doc_id))
@@ -262,6 +300,7 @@ class KnowledgeBaseService:
         collection_id: Optional[str] = None,
         force_scanned: bool = False,
         async_parse: bool = False,
+        group_id: Optional[str] = None,
     ) -> Document:
         """上传入库：全局去重 + 存储 + 解析分发。async_parse=True 时解析放后台。"""
         ext = parser.file_extension(filename)
@@ -287,6 +326,14 @@ class KnowledgeBaseService:
             file_type=parser.detect_file_type(filename),
             indexing_status="pending",
         )
+        if not doc.id:
+            from ..utils import new_id
+
+            doc.id = new_id()
+        if group_id:
+            from .doc_group import doc_group_service
+
+            doc_group_service.assign_doc(db, doc, group_id)
         db.add(doc)
         db.commit()
         db.refresh(doc)
@@ -549,10 +596,17 @@ class KnowledgeBaseService:
         page: int = 1,
         limit: int = 20,
         collection_id: Optional[str] = None,
+        *,
+        group_id: Optional[str] = None,
+        ungrouped_only: bool = False,
     ) -> dict:
         q = db.query(Document)
         if collection_id:
             q = q.filter(Document.collection_id == collection_id)
+        if group_id:
+            q = q.filter(Document.group_id == group_id)
+        elif ungrouped_only:
+            q = q.filter(Document.group_id.is_(None))
         total = q.count()
         docs = q.order_by(Document.created_at.desc()).offset((page - 1) * limit).limit(limit).all()
         return {"documents": docs, "total": total, "page": page, "limit": limit}

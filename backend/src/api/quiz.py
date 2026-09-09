@@ -19,9 +19,11 @@ def create_session(body: quiz_schemas.QuizSessionCreate, db: Session = Depends(g
         db,
         document_id=body.document_id,
         collection_id=body.collection_id,
+        group_id=body.group_id,
         question_ids=body.question_ids,
         title=body.title,
         filter_mode=body.filter or "all",
+        tags=body.tags,
         resume=body.resume if body.resume is not None else True,
         task_id=body.task_id,
     )

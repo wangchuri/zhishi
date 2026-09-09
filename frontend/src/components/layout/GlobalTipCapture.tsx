@@ -246,8 +246,17 @@ export function GlobalTipCapture() {
   }
 
   useEffect(() => {
+    let showTimer: number | null = null
+
     const hide = () => {
       if (!open) setAnchor(null)
+    }
+
+    const clearShowTimer = () => {
+      if (showTimer != null) {
+        window.clearTimeout(showTimer)
+        showTimer = null
+      }
     }
 
     const maybeShow = () => {
@@ -283,16 +292,44 @@ export function GlobalTipCapture() {
         html,
         text,
         x: Math.min(Math.max(rect.left + rect.width / 2, 80), window.innerWidth - 80),
+        // 各端统一放选区下方（平板上方会盖住系统选区菜单）
         y: Math.min(Math.max(rect.bottom + 8, 8), window.innerHeight - 56),
       })
     }
 
-    const onMouseDown = (e: MouseEvent) => {
+    /** 平板触控选区往往没有 mouseup；等选区稳定后再读 */
+    const scheduleShow = (delayMs: number) => {
+      clearShowTimer()
+      showTimer = window.setTimeout(() => {
+        showTimer = null
+        maybeShow()
+      }, delayMs)
+    }
+
+    const onSelectionChange = () => {
+      if (open) return
+      const sel = window.getSelection()
+      if (!sel || sel.isCollapsed || !sel.rangeCount) {
+        scheduleShow(120)
+        return
+      }
+      scheduleShow(320)
+    }
+
+    const onPointerUp = (e: PointerEvent) => {
+      if (e.pointerType === "touch" || e.pointerType === "pen") {
+        // iOS/Android：松手后选区句柄才落定
+        scheduleShow(360)
+      }
+    }
+
+    const onPointerDown = (e: PointerEvent) => {
       const t = e.target as HTMLElement | null
       if (t?.closest("[data-tip-fab], [data-tip-dialog]")) return
       const img = t?.closest?.("img") as HTMLImageElement | null
       if (img?.closest("[data-tip-doc]") && !img.closest(IGNORE)) {
-        e.preventDefault()
+        // 仅鼠标：避免拖出选区干扰「点图收 tip」；触控仍允许滚动
+        if (e.pointerType === "mouse") e.preventDefault()
         return
       }
       window.setTimeout(() => {
@@ -309,6 +346,7 @@ export function GlobalTipCapture() {
       if (!file) return
       e.preventDefault()
       e.stopPropagation()
+      clearShowTimer()
       window.getSelection()?.removeAllRanges()
       const pageRaw = closestAttr(img, "[data-page]", "data-page")
       const fromDom = closestAttr(img, "[data-tip-doc]", "data-tip-doc")
@@ -320,15 +358,23 @@ export function GlobalTipCapture() {
       openEditor(`<p><img src="${escapeHtml(src)}" alt=""></p>`, "", page)
     }
 
-    document.addEventListener("mouseup", maybeShow)
-    document.addEventListener("keyup", maybeShow)
-    document.addEventListener("mousedown", onMouseDown)
+    const onMouseUp = () => scheduleShow(0)
+    const onKeyUp = () => scheduleShow(0)
+
+    document.addEventListener("mouseup", onMouseUp)
+    document.addEventListener("keyup", onKeyUp)
+    document.addEventListener("pointerup", onPointerUp)
+    document.addEventListener("selectionchange", onSelectionChange)
+    document.addEventListener("pointerdown", onPointerDown)
     document.addEventListener("click", onImgClick, true)
     document.addEventListener("scroll", hide, true)
     return () => {
-      document.removeEventListener("mouseup", maybeShow)
-      document.removeEventListener("keyup", maybeShow)
-      document.removeEventListener("mousedown", onMouseDown)
+      clearShowTimer()
+      document.removeEventListener("mouseup", onMouseUp)
+      document.removeEventListener("keyup", onKeyUp)
+      document.removeEventListener("pointerup", onPointerUp)
+      document.removeEventListener("selectionchange", onSelectionChange)
+      document.removeEventListener("pointerdown", onPointerDown)
       document.removeEventListener("click", onImgClick, true)
       document.removeEventListener("scroll", hide, true)
     }
@@ -409,9 +455,10 @@ export function GlobalTipCapture() {
         <button
           type="button"
           data-tip-fab
+          onPointerDown={(e) => e.preventDefault()}
           onMouseDown={(e) => e.preventDefault()}
           onClick={() => openEditor(anchor.html, anchor.text)}
-          className="fixed z-[70] inline-flex items-center gap-1.5 h-9 px-3 rounded-full bg-ink text-paper text-caption font-medium shadow-[0_8px_24px_rgba(20,33,43,0.18)] hover:bg-sea transition-colors"
+          className="fixed z-[70] inline-flex items-center gap-1.5 min-h-11 min-w-11 h-11 px-4 rounded-full bg-ink text-paper text-caption font-medium shadow-[0_8px_24px_rgba(20,33,43,0.18)] hover:bg-sea transition-colors touch-manipulation"
           style={{ left: anchor.x, top: anchor.y, transform: "translateX(-50%)" }}
         >
           <StickyNote className="w-3.5 h-3.5" strokeWidth={2} />

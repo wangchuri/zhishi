@@ -29,6 +29,7 @@ class QuizSession(Base):
     user_id: Mapped[int] = mapped_column(Integer, default=1)
     collection_id: Mapped[str | None] = mapped_column(String(36), index=True)
     document_id: Mapped[str | None] = mapped_column(String(36), index=True)
+    group_id: Mapped[str | None] = mapped_column(String(36), index=True)
     title: Mapped[str | None] = mapped_column(String(200))
     status: Mapped[str] = mapped_column(String(20), default="active")  # active/completed
     started_at: Mapped[datetime] = mapped_column(DateTime, default=_now)

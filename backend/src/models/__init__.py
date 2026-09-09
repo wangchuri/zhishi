@@ -2,6 +2,7 @@
 
 from .kb import (
     Document,
+    DocumentGroup,
     DocumentImage,
     DocumentSegment,
     GlobalDocument,
@@ -24,6 +25,7 @@ from .goal import DailyTask, Goal, UserProfile
 
 __all__ = [
     "KBCollection",
+    "DocumentGroup",
     "GlobalDocument",
     "Document",
     "DocumentSegment",

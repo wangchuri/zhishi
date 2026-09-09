@@ -52,8 +52,34 @@ export interface KnowledgeDoc {
   warning?: string
   questionCount?: number
   zone?: string
+  group_id?: string | null
   wordCount: number
   updatedAt: string
+}
+
+export interface DocumentGroupStats {
+  total: number
+  answered: number
+  correct: number
+  wrong: number
+  unknown: number
+}
+
+export interface DocumentGroupItem {
+  id: string
+  name: string
+  description?: string | null
+  collection_id?: string | null
+  cover_document_id?: string | null
+  doc_count: number
+  stats: DocumentGroupStats
+  created_at?: string | null
+  updated_at?: string | null
+}
+
+export interface DocumentGroupDetail extends DocumentGroupItem {
+  documents: KnowledgeDoc[]
+  tags: string[]
 }
 
 /** 学习技能掌握度 */
@@ -180,6 +206,7 @@ export interface QuizSessionQuestion {
   source_type?: string
   html_content?: string | null
   answer_params?: string | null
+  last_time_spent_seconds?: number | null
 }
 
 /** 刷题会话 */
@@ -190,6 +217,7 @@ export interface QuizSession {
   document_id?: string | null
   document_name?: string | null
   collection_id?: string | null
+  group_id?: string | null
   total_questions: number
   answered_count: number
   started_at?: string | null

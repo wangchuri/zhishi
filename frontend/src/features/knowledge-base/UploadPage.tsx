@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from "react"
+import { useSearchParams } from "react-router-dom"
 import {
   UploadCloud,
   FileText,
@@ -22,7 +23,7 @@ import { SegmentedTabs } from "@/components/ui/segmented-tabs"
 import { kbApi } from "@/lib/api"
 import { notifyCompletedTasks } from "@/lib/taskNotify"
 import { toast } from "sonner"
-import type { KbCollection } from "@/types"
+import type { DocumentGroupItem, KbCollection } from "@/types"
 
 const SUPPORTED_EXTENSIONS = [".txt", ".md", ".csv", ".json", ".html", ".htm", ".pdf", ".docx"]
 const SUPPORTED_LABEL = "TXT, MD, CSV, JSON, HTML, PDF, DOCX"
@@ -65,6 +66,7 @@ const uploadMethods = [
 ]
 
 export function UploadPage() {
+  const [searchParams] = useSearchParams()
   const [active, setActive] = useState("doc")
   const [dragging, setDragging] = useState(false)
   const [tasks, setTasks] = useState<UploadTask[]>([])
@@ -72,6 +74,8 @@ export function UploadPage() {
   const [maxUploadSize, setMaxUploadSize] = useState("")
   const [collections, setCollections] = useState<KbCollection[]>([])
   const [selectedCollectionId, setSelectedCollectionId] = useState("")
+  const [groups, setGroups] = useState<DocumentGroupItem[]>([])
+  const [selectedGroupId, setSelectedGroupId] = useState("")
   const fileInputRef = useRef<HTMLInputElement>(null)
   const importInputRef = useRef<HTMLInputElement>(null)
   const [importing, setImporting] = useState(false)
@@ -94,11 +98,28 @@ export function UploadPage() {
       .then((res) => {
         const cols = (res.collections || []) as KbCollection[]
         setCollections(cols)
-        const defaultCol = cols.find((c) => c.is_default) || cols[0]
+        const fromUrl = searchParams.get("collection_id") || ""
+        const defaultCol =
+          cols.find((c) => c.id === fromUrl) ||
+          cols.find((c) => c.is_default) ||
+          cols[0]
         if (defaultCol) setSelectedCollectionId(defaultCol.id)
+        const gid = searchParams.get("group_id") || ""
+        if (gid) setSelectedGroupId(gid)
       })
       .catch(() => {})
-  }, [])
+  }, [searchParams])
+
+  useEffect(() => {
+    if (!selectedCollectionId) {
+      setGroups([])
+      return
+    }
+    kbApi
+      .listGroups(selectedCollectionId)
+      .then((res) => setGroups(res.groups || []))
+      .catch(() => setGroups([]))
+  }, [selectedCollectionId])
 
   // 当前选中方式对应的 accept
   const currentAccept =
@@ -267,7 +288,12 @@ export function UploadPage() {
         }
 
         try {
-          const res = await kbApi.upload(file, selectedCollectionId || undefined, forceScanned)
+          const res = await kbApi.upload(
+            file,
+            selectedCollectionId || undefined,
+            forceScanned,
+            selectedGroupId || undefined
+          )
           notifyCompletedTasks(res)
 
           if (res.warning) {
@@ -317,7 +343,7 @@ export function UploadPage() {
 
       setUploading(false)
     },
-    [active, pollStatus, selectedCollectionId]
+    [active, pollStatus, selectedCollectionId, selectedGroupId]
   )
 
   const onDrop = useCallback(
@@ -404,16 +430,38 @@ export function UploadPage() {
       <PageHeader title="上传到知识库" subtitle="把文档、图片或拍照资料交给 Tina 整理" />
 
       {collections.length > 0 && (
-        <div className="mb-6">
-          <div className="text-small text-ink-tertiary mb-2">上传到分区</div>
-          <SegmentedTabs
-            tabs={collections.map((c) => ({
-              label: `${c.name}${c.zone === "life" ? " · 生活" : " · 学习"}`,
-              value: c.id,
-            }))}
-            value={selectedCollectionId}
-            onChange={setSelectedCollectionId}
-          />
+        <div className="mb-6 space-y-4">
+          <div>
+            <div className="text-small text-ink-tertiary mb-2">上传到分区</div>
+            <SegmentedTabs
+              tabs={collections.map((c) => ({
+                label: `${c.name}${c.zone === "life" ? " · 生活" : " · 学习"}`,
+                value: c.id,
+              }))}
+              value={selectedCollectionId}
+              onChange={(id) => {
+                setSelectedCollectionId(id)
+                setSelectedGroupId("")
+              }}
+            />
+          </div>
+          {groups.length > 0 && (
+            <div>
+              <div className="text-small text-ink-tertiary mb-2">可选：加入资料组</div>
+              <select
+                className="h-10 px-3 rounded-lg border border-line-soft bg-surface text-body min-w-[220px]"
+                value={selectedGroupId}
+                onChange={(e) => setSelectedGroupId(e.target.value)}
+              >
+                <option value="">不加入资料组</option>
+                {groups.map((g) => (
+                  <option key={g.id} value={g.id}>
+                    {g.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
         </div>
       )}
 

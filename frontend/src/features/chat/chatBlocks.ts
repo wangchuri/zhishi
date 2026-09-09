@@ -2,7 +2,7 @@ import type { ChatMessage } from "@/types"
 import type { ChatQuestionWidget } from "@/features/chat/ChatQuestionCard"
 import type { ChatTipPayload } from "@/features/chat/ChatTipCard"
 import type { ChatPlotPayload } from "@/features/chat/ChatFunctionPlot"
-import type { ChatHtmlCanvas } from "@/features/chat/ChatCanvasSidebar"
+import type { ChatHtmlCanvas, ChatCanvasItem } from "@/features/chat/ChatCanvasSidebar"
 
 export type ChatOnboardingItem = NonNullable<ChatMessage["payload"]>["onboarding"] extends (infer T)[] | undefined
   ? T
@@ -88,6 +88,24 @@ export function resolveChatBlocks(message: ChatMessage): ChatPayloadBlock[] {
   for (const canvas of message.payload?.canvases || []) out.push({ type: "canvas", canvas })
   for (const widget of message.payload?.widgets || []) out.push({ type: "widget", widget })
   for (const item of message.payload?.onboarding || []) out.push({ type: "onboarding", item })
+  return out
+}
+
+/** 当前对话里出现过的画布/函数图，按时间先后（早→晚）。 */
+export function collectCanvasHistory(messages: ChatMessage[]): ChatCanvasItem[] {
+  const out: ChatCanvasItem[] = []
+  const seen = new Set<string>()
+  for (const m of messages) {
+    for (const b of resolveChatBlocks(m)) {
+      if (b.type === "plot" && b.plot?.id && !seen.has(b.plot.id)) {
+        seen.add(b.plot.id)
+        out.push({ type: "plot", plot: b.plot })
+      } else if (b.type === "canvas" && b.canvas?.id && !seen.has(b.canvas.id)) {
+        seen.add(b.canvas.id)
+        out.push({ type: "html", canvas: b.canvas })
+      }
+    }
+  }
   return out
 }
 

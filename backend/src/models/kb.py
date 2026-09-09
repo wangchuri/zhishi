@@ -38,6 +38,21 @@ class KBCollection(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
 
 
+class DocumentGroup(Base):
+    """资料组：学习区内的系列（如「英语真题」下挂各年 PDF）。"""
+
+    __tablename__ = "document_groups"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    user_id: Mapped[int] = mapped_column(Integer, default=1)
+    collection_id: Mapped[str | None] = mapped_column(String(36), index=True)
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    description: Mapped[str | None] = mapped_column(String(500))
+    cover_document_id: Mapped[str | None] = mapped_column(String(36))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=_now, onupdate=_now)
+
+
 class GlobalDocument(Base):
     """全局文件去重（相同内容只存一份）。"""
 
@@ -62,6 +77,7 @@ class Document(Base):
     # 旧库 documents.user_id NOT NULL + FK；单用户默认 1，避免 INSERT 失败
     user_id: Mapped[int] = mapped_column(Integer, default=1)
     collection_id: Mapped[str | None] = mapped_column(String(36), index=True)
+    group_id: Mapped[str | None] = mapped_column(String(36), index=True)
     global_document_id: Mapped[str | None] = mapped_column(String(36), index=True)
     display_name: Mapped[str] = mapped_column(String(255), nullable=False)
     zone: Mapped[str] = mapped_column(String(20), nullable=False, default="study")

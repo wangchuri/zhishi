@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
-from ..core.database import get_db
+from ..core.database import SessionLocal, get_db
 from ..core.llm import format_agent_error, is_tool_related_chunk, visible_assistant_delta
 from ..schemas import ai as ai_schemas
 from ..services.chat import (
@@ -28,6 +28,14 @@ from ..services.profile import get_or_create_profile, profile_out
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/chat", tags=["chat"])
+
+
+def _release_request_db(db: Session) -> None:
+    """流式响应返回前归还连接，避免整段 LLM 输出期间占着连接池。"""
+    try:
+        db.close()
+    except Exception:
+        pass
 
 
 def _json_line(data: dict) -> str:
@@ -86,6 +94,8 @@ async def send(body: ai_schemas.ChatSend, db: Session = Depends(get_db)):
         chat_service.get_session(db, session_id)
 
     if body.kickoff and any(m.get("role") == "assistant" for m in chat_service.get_history(db, session_id)):
+        _release_request_db(db)
+
         async def already_started():
             yield _json_line({"event": "session", "session_id": session_id})
             yield "data: [DONE]\n\n"
@@ -94,6 +104,7 @@ async def send(body: ai_schemas.ChatSend, db: Session = Depends(get_db)):
 
     if is_glitch_cmd(body.content):
         chat_service.enable_crisis(db, session_id)
+        _release_request_db(db)
 
         async def glitch_gen():
             yield _json_line({
@@ -106,6 +117,7 @@ async def send(body: ai_schemas.ChatSend, db: Session = Depends(get_db)):
 
     if is_style_cmd(body.content):
         new_style, ack = chat_service.apply_style_command(db, session_id, body.content or "/tina")
+        _release_request_db(db)
 
         async def style_gen():
             yield _json_line({"event": "session", "session_id": session_id})
@@ -115,12 +127,16 @@ async def send(body: ai_schemas.ChatSend, db: Session = Depends(get_db)):
                 "session_id": session_id,
             })
             yield _json_line({"content": ack, "session_id": session_id, "role": "assistant"})
-            profile = get_or_create_profile(db)
-            yield _json_line({
-                "event": "profile",
-                "profile": profile_out(db, profile),
-                "session_id": session_id,
-            })
+            sdb = SessionLocal()
+            try:
+                profile = get_or_create_profile(sdb)
+                yield _json_line({
+                    "event": "profile",
+                    "profile": profile_out(sdb, profile),
+                    "session_id": session_id,
+                })
+            finally:
+                sdb.close()
             yield "data: [DONE]\n\n"
 
         return StreamingResponse(style_gen(), media_type="text/event-stream")
@@ -133,6 +149,9 @@ async def send(body: ai_schemas.ChatSend, db: Session = Depends(get_db)):
     )
 
     if body.stream:
+        # 归还请求级连接后再流式输出；流内写库用短生命周期 Session
+        _release_request_db(db)
+
         async def gen():
             full = ""
             reasoning = ""
@@ -187,20 +206,26 @@ async def send(body: ai_schemas.ChatSend, db: Session = Depends(get_db)):
                     "session_id": sid,
                 })
             payload = pack_assistant_payload(widgets, onboarding, tips, blocks, plots, canvases)
-            think = GLITCH_THINK if chat_service.session_in_crisis(db, sid) else (reasoning or None)
-            message_id = chat_service.persist_assistant(sid, full, think, None, payload)
-            yield _json_line({
-                "event": "assistant_saved",
-                "message_id": message_id,
-                "session_id": sid,
-            })
-            if onboarding or chat_service.session_kind(db, sid) == "onboarding":
-                profile = get_or_create_profile(db)
+            sdb = SessionLocal()
+            try:
+                in_crisis = chat_service.session_in_crisis(sdb, sid)
+                kind = chat_service.session_kind(sdb, sid)
+                think = GLITCH_THINK if in_crisis else (reasoning or None)
+                message_id = chat_service.persist_assistant(sid, full, think, None, payload)
                 yield _json_line({
-                    "event": "profile",
-                    "profile": profile_out(db, profile),
+                    "event": "assistant_saved",
+                    "message_id": message_id,
                     "session_id": sid,
                 })
+                if onboarding or kind == "onboarding":
+                    profile = get_or_create_profile(sdb)
+                    yield _json_line({
+                        "event": "profile",
+                        "profile": profile_out(sdb, profile),
+                        "session_id": sid,
+                    })
+            finally:
+                sdb.close()
             yield "data: [DONE]\n\n"
         return StreamingResponse(gen(), media_type="text/event-stream")
 

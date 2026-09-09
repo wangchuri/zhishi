@@ -28,10 +28,17 @@ def _questions_per_page(value: Optional[int], default: int = 3) -> int:
 def list_questions(
     document_id: Optional[str] = None,
     collection_id: Optional[str] = None,
+    group_id: Optional[str] = None,
     keyword: Optional[str] = None,
     db: Session = Depends(get_db),
 ):
-    data = question_service.list_questions(db, document_id=document_id, collection_id=collection_id, keyword=keyword)
+    data = question_service.list_questions(
+        db,
+        document_id=document_id,
+        collection_id=collection_id,
+        keyword=keyword,
+        group_id=group_id,
+    )
     return data
 
 

@@ -51,6 +51,11 @@ async def send_message(
     if body.stream:
         agent = tutor_service.ensure_agent(db, session)
         tutor_service.touch_session(db, session)
+        # 流式输出前归还连接，避免 LLM 生成期间占满连接池
+        try:
+            db.close()
+        except Exception:
+            pass
 
         async def gen():
             try:

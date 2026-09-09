@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import { useNavigate } from "react-router-dom"
-import { Brain, Loader2, Library, Play, Upload } from "lucide-react"
+import { Brain, FolderPlus, Loader2, Library, Play, Upload } from "lucide-react"
 import { AppShell } from "@/components/layout/AppShell"
 import { PageHeader } from "@/components/blocks/PageHeader"
 import { EmptyState } from "@/components/ui/empty-state"
@@ -15,11 +15,20 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 import { useKbDocuments } from "@/hooks/useKbDocuments"
 import { kbApi, questionsApi, quizApi } from "@/lib/api"
+import { toast } from "sonner"
 import { QuizBookCard, type BookCardStats } from "./QuizBookCard"
+import { QuizGroupCard } from "./QuizGroupCard"
 import { QuestionGenJobsBanner } from "./QuestionGenJobsBanner"
-import type { KnowledgeDoc, QuestionGenJob } from "@/types"
+import type { DocumentGroupItem, KnowledgeDoc, QuestionGenJob } from "@/types"
 
 export function QuizBookListPage() {
   const navigate = useNavigate()
@@ -31,7 +40,7 @@ export function QuizBookListPage() {
     documents,
     loadingCollections,
     refreshDocuments,
-  } = useKbDocuments({ preferZone: "study" })
+  } = useKbDocuments({ preferZone: "study", ungroupedOnly: true })
 
   const [statsMap, setStatsMap] = useState<Record<string, BookCardStats>>({})
   const [loadingStats, setLoadingStats] = useState(false)
@@ -42,6 +51,27 @@ export function QuizBookListPage() {
   const [deleteTarget, setDeleteTarget] = useState<KnowledgeDoc | null>(null)
   const [deleting, setDeleting] = useState(false)
   const [deleteError, setDeleteError] = useState<string | null>(null)
+  const [groups, setGroups] = useState<DocumentGroupItem[]>([])
+  const [createOpen, setCreateOpen] = useState(false)
+  const [newGroupName, setNewGroupName] = useState("")
+  const [creating, setCreating] = useState(false)
+
+  const loadGroups = async () => {
+    if (!selectedCollectionId) {
+      setGroups([])
+      return
+    }
+    try {
+      const res = await kbApi.listGroups(selectedCollectionId)
+      setGroups(res.groups || [])
+    } catch {
+      setGroups([])
+    }
+  }
+
+  useEffect(() => {
+    void loadGroups()
+  }, [selectedCollectionId, statsEpoch])
 
   const handleConfirmDelete = async () => {
     if (!deleteTarget) return
@@ -64,14 +94,32 @@ export function QuizBookListPage() {
     }
   }
 
-  // 只展示学习区文档
+  const handleCreateGroup = async () => {
+    const name = newGroupName.trim()
+    if (!name || !selectedCollectionId) return
+    setCreating(true)
+    try {
+      const g = await kbApi.createGroup({ name, collection_id: selectedCollectionId })
+      setCreateOpen(false)
+      setNewGroupName("")
+      toast.success("已创建资料组")
+      navigate(`/quiz/group/${g.id}`)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "创建失败")
+    } finally {
+      setCreating(false)
+    }
+  }
+
   const studyDocs = useMemo(() => {
     return documents.filter((d) => d.zone !== "life" || !selectedCollection?.zone)
   }, [documents, selectedCollection])
 
-  // 加载每个文档的做题统计
   useEffect(() => {
-    if (studyDocs.length === 0) return
+    if (studyDocs.length === 0) {
+      setStatsMap({})
+      return
+    }
     let cancelled = false
     setLoadingStats(true)
 
@@ -83,10 +131,9 @@ export function QuizBookListPage() {
           const res = await questionsApi.list({ document_id: doc.id })
           const items = res.questions || []
           const total = res.total ?? (Array.isArray(items) ? items.length : 0)
-          const answered = res.answered_count ?? 0
           results[doc.id] = {
             total,
-            answered,
+            answered: res.answered_count ?? 0,
             correct: res.correct_count ?? 0,
             wrong: res.wrong_count ?? 0,
             unknown: res.unknown_count ?? 0,
@@ -102,7 +149,9 @@ export function QuizBookListPage() {
       if (!cancelled) setLoadingStats(false)
     })
 
-    return () => { cancelled = true }
+    return () => {
+      cancelled = true
+    }
   }, [studyDocs, statsEpoch])
 
   useEffect(() => {
@@ -149,12 +198,15 @@ export function QuizBookListPage() {
     [genJobs]
   )
 
+  const isEmpty = studyDocs.length === 0 && groups.length === 0
+
   return (
     <AppShell maxWidth={1180}>
-      <PageHeader
-        title="资料"
-        subtitle="你的书本、题目都在这里"
-      >
+      <PageHeader title="资料" subtitle="你的书本、题目都在这里">
+        <Button variant="secondary" size="md" onClick={() => setCreateOpen(true)} disabled={!selectedCollectionId}>
+          <FolderPlus className="w-4 h-4 mr-2" strokeWidth={2} />
+          新建资料组
+        </Button>
         <Button variant="primary" size="md" onClick={() => navigate("/knowledge/upload")}>
           <Upload className="w-4 h-4 mr-2" strokeWidth={2} />
           上传
@@ -173,11 +225,11 @@ export function QuizBookListPage() {
           description="先上传学习资料，解析完成后会显示在这里"
           primaryAction={{ label: "去上传", onClick: () => navigate("/knowledge/upload") }}
         />
-      ) : studyDocs.length === 0 ? (
+      ) : isEmpty ? (
         <EmptyState
           icon={Library}
           title="暂无文档"
-          description="还没有上传文档，上传后即可刷题、出题"
+          description="还没有上传文档，上传后即可刷题、出题；也可先建资料组收纳系列资料"
           primaryAction={{ label: "去上传", onClick: () => navigate("/knowledge/upload") }}
         />
       ) : (
@@ -197,7 +249,6 @@ export function QuizBookListPage() {
             </button>
           ) : null}
           <QuestionGenJobsBanner jobs={genJobs} />
-          {/* 集合选择器 */}
           {collections.length > 1 && (
             <div className="flex flex-wrap gap-2">
               {collections.map((coll) => (
@@ -206,9 +257,10 @@ export function QuizBookListPage() {
                   type="button"
                   onClick={() => setSelectedCollectionId(coll.id === selectedCollectionId ? "" : coll.id)}
                   className={`px-3 py-1.5 rounded-lg text-small font-medium transition-colors
-                    ${coll.id === selectedCollectionId || (!selectedCollectionId && coll.id === selectedCollectionId)
-                      ? "bg-primary text-white"
-                      : "bg-surface-soft text-ink-secondary hover:bg-surface-soft/80 border border-line-soft"
+                    ${
+                      coll.id === selectedCollectionId
+                        ? "bg-primary text-white"
+                        : "bg-surface-soft text-ink-secondary hover:bg-surface-soft/80 border border-line-soft"
                     }`}
                 >
                   {coll.name}
@@ -224,8 +276,10 @@ export function QuizBookListPage() {
             </div>
           )}
 
-          {/* 书本卡片网格 */}
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
+            {groups.map((g) => (
+              <QuizGroupCard key={g.id} group={g} onClick={() => navigate(`/quiz/group/${g.id}`)} />
+            ))}
             {studyDocs.map((doc) => (
               <QuizBookCard
                 key={doc.id}
@@ -247,6 +301,36 @@ export function QuizBookListPage() {
         </div>
       )}
 
+      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>新建资料组</DialogTitle>
+          </DialogHeader>
+          <input
+            className="w-full h-10 px-3 rounded-lg border border-line-soft bg-surface text-body"
+            placeholder="例如：英语真题"
+            value={newGroupName}
+            onChange={(e) => setNewGroupName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") void handleCreateGroup()
+            }}
+          />
+          <DialogFooter>
+            <Button variant="secondary" onClick={() => setCreateOpen(false)} disabled={creating}>
+              取消
+            </Button>
+            <Button
+              variant="primary"
+              onClick={() => void handleCreateGroup()}
+              disabled={creating || !newGroupName.trim()}
+              style={{ color: "#FFFFFF" }}
+            >
+              {creating ? "创建中..." : "创建"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <AlertDialog
         open={!!deleteTarget}
         onOpenChange={(open) => {
@@ -263,9 +347,7 @@ export function QuizBookListPage() {
               将永久删除「{deleteTarget?.name}」，包括原文、分段、图片、向量索引、题库、刷题记录、伴学对话与 Tip。此操作不可撤销。
             </AlertDialogDescription>
           </AlertDialogHeader>
-          {deleteError && (
-            <p className="text-small text-danger px-1">{deleteError}</p>
-          )}
+          {deleteError && <p className="text-small text-danger px-1">{deleteError}</p>}
           <AlertDialogFooter>
             <AlertDialogCancel disabled={deleting}>取消</AlertDialogCancel>
             <AlertDialogAction

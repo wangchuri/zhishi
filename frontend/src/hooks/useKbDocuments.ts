@@ -10,10 +10,12 @@ interface UseKbDocumentsOptions {
   preferDefault?: boolean
   /** 默认分区 zone 偏好 */
   preferZone?: "study" | "life"
+  /** 只列未入组文档（资料列表用） */
+  ungroupedOnly?: boolean
 }
 
 export function useKbDocuments(options: UseKbDocumentsOptions = {}) {
-  const { zoneFilter, preferDefault = true, preferZone } = options
+  const { zoneFilter, preferDefault = true, preferZone, ungroupedOnly = false } = options
 
   const [collections, setCollections] = useState<KbCollection[]>([])
   const [selectedCollectionId, setSelectedCollectionId] = useState("")
@@ -31,7 +33,9 @@ export function useKbDocuments(options: UseKbDocumentsOptions = {}) {
       }
       if (!silent) setLoadingDocuments(true)
       try {
-        const res = await kbApi.listDocuments(1, 50, collectionId)
+        const res = await kbApi.listDocuments(1, 50, collectionId, {
+          ungroupedOnly: ungroupedOnly || undefined,
+        })
         const items = (res.documents || []) as Record<string, unknown>[]
         const docs = items.map((d) => mapKbDocument(d, zone))
         setDocuments(docs)
@@ -43,7 +47,7 @@ export function useKbDocuments(options: UseKbDocumentsOptions = {}) {
         if (!silent) setLoadingDocuments(false)
       }
     },
-    []
+    [ungroupedOnly]
   )
 
   const refreshDocuments = useCallback(

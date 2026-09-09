@@ -43,6 +43,7 @@ class QuestionListResult(BaseModel):
     total: int
     document_id: Optional[str] = None
     collection_id: Optional[str] = None
+    group_id: Optional[str] = None
     answered_count: Optional[int] = None
     correct_count: Optional[int] = None
     wrong_count: Optional[int] = None

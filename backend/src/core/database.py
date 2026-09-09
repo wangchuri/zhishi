@@ -5,6 +5,7 @@
 - busy_timeout=10000
 - synchronous=1
 - foreign_keys=ON
+- NullPool：避免后台长任务占满 QueuePool（默认 5+10）导致全站 500
 """
 
 from __future__ import annotations
@@ -13,6 +14,7 @@ from pathlib import Path
 
 from sqlalchemy import create_engine, event, inspect, text
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
+from sqlalchemy.pool import NullPool
 
 from .config import config
 
@@ -26,9 +28,16 @@ _is_sqlite = _database_url.startswith("sqlite")
 
 _engine_kwargs: dict = {"echo": False}
 if _is_sqlite:
+    # SQLite + 多线程后台任务：不要用 QueuePool。
+    # MinerU/出题等会长时间占着 Session，默认池（5+10）一满，
+    # 后续 profile/tasks 等请求就会 QueuePool TimeoutError。
     _engine_kwargs["connect_args"] = {"check_same_thread": False}
+    _engine_kwargs["poolclass"] = NullPool
 else:
     _engine_kwargs["pool_recycle"] = 3600
+    _engine_kwargs["pool_pre_ping"] = True
+    _engine_kwargs["pool_size"] = 10
+    _engine_kwargs["max_overflow"] = 20
 
 engine = create_engine(_database_url, **_engine_kwargs)
 
@@ -53,6 +62,9 @@ def get_db():
     db = SessionLocal()
     try:
         yield db
+    except Exception:
+        db.rollback()
+        raise
     finally:
         db.close()
 

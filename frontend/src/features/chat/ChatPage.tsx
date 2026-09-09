@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback, useLayoutEffect } from "react"
+import { useState, useRef, useEffect, useCallback, useLayoutEffect, useMemo } from "react"
 import {
   ArrowUp,
   PanelLeftClose,
@@ -22,6 +22,7 @@ import {
   appendTextBlock,
   appendTipBlock,
   appendWidgetBlock,
+  collectCanvasHistory,
   updateWidgetInPayload,
 } from "@/features/chat/chatBlocks"
 import type { ChatMessage, Citation } from "@/types"
@@ -154,6 +155,8 @@ export function ChatPage() {
   const [activeCitation, setActiveCitation] = useState<Citation | null>(null)
   const [canvasSidebarOpen, setCanvasSidebarOpen] = useState(false)
   const [activeCanvas, setActiveCanvas] = useState<ChatCanvasItem | null>(null)
+
+  const canvasHistory = useMemo(() => collectCanvasHistory(messages), [messages])
   const [loadingHistory, setLoadingHistory] = useState(true)
   const [sessionReady, setSessionReady] = useState(false)
   const [collectionId, setCollectionId] = useState<string>("")
@@ -260,6 +263,7 @@ export function ChatPage() {
     persistLastSessionId(id)
     setLoadingHistory(true)
     stickToBottomRef.current = true
+    setActiveCanvas(null)
     try {
       const res = await chatApi.getHistory(id)
       const msgs = mapHistoryItems(normalizeChatHistory(res))
@@ -320,6 +324,7 @@ export function ChatPage() {
     setSessionId(null)
     persistLastSessionId(null)
     stickToBottomRef.current = true
+    setActiveCanvas(null)
     setMessages([welcomeMessage])
   }
 
@@ -986,6 +991,13 @@ export function ChatPage() {
             open={canvasSidebarOpen}
             onOpenChange={setCanvasSidebarOpen}
             item={activeCanvas}
+            history={canvasHistory}
+            onSelectItem={(it) => {
+              setActiveCanvas(it)
+              setCanvasSidebarOpen(true)
+              setCitationSidebarOpen(false)
+            }}
+            onBack={() => setActiveCanvas(null)}
           />
         )}
       </div>
