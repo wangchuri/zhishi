@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react"
 import { useNavigate, useLocation } from "react-router-dom"
-import { Loader2, NotebookPen, StickyNote } from "lucide-react"
+import { Folder, Loader2, NotebookPen, Plus, StickyNote } from "lucide-react"
 import { AppShell } from "@/components/layout/AppShell"
+import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/ui/empty-state"
 import { SearchInput } from "@/components/ui/search-input"
-import { notesApi, type NoteItem } from "@/lib/api"
+import { notesApi, type NoteFolder, type NoteItem } from "@/lib/api"
 import { NoteCard } from "@/components/blocks/NoteCard"
 import { TipDeck } from "@/features/notes/TipDeck"
 import { cn } from "@/lib/utils"
@@ -40,6 +41,33 @@ function formatDate(iso?: string): string {
   }
 }
 
+function FolderTab({
+  label,
+  count,
+  active,
+  onClick,
+}: {
+  label: string
+  count: number
+  active: boolean
+  onClick: () => void
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "inline-flex items-center gap-2 h-9 px-3 rounded-lg text-small whitespace-nowrap transition-colors shrink-0",
+        active ? "bg-sea-subtle text-sea font-medium" : "text-ink-soft hover:bg-sea-subtle hover:text-ink",
+      )}
+    >
+      <Folder className="w-4 h-4" strokeWidth={2} />
+      <span className="truncate-1 max-w-[9rem]">{label}</span>
+      <span className={cn("text-[11px]", active ? "text-sea" : "text-ink-disabled")}>{count}</span>
+    </button>
+  )
+}
+
 export function NotesPage() {
   const navigate = useNavigate()
   const location = useLocation()
@@ -49,17 +77,23 @@ export function NotesPage() {
   const [query, setQuery] = useState("")
   const [expanded, setExpanded] = useState(true)
   const [tagFilter, setTagFilter] = useState<string[]>([])
+  const [folders, setFolders] = useState<NoteFolder[]>([])
+  const [activeFolder, setActiveFolder] = useState("全部")
   const tab = location.hash === "#tips" ? "tips" : "notes"
 
   useEffect(() => {
     let cancelled = false
     Promise.allSettled([
       notesApi.list({ limit: 100 }),
-    ]).then(([all]) => {
+      notesApi.listFolders(),
+    ]).then(([all, folderRes]) => {
       if (cancelled) return
       const items = all.status === "fulfilled" ? all.value.notes || [] : []
       setTips(items.filter((n) => n.note_type === "tip"))
       setNotes(items.filter((n) => n.note_type !== "tip"))
+      if (folderRes.status === "fulfilled") {
+        setFolders((folderRes.value.folders || []).filter((f) => f.name !== "tip"))
+      }
     }).finally(() => {
       if (!cancelled) setLoading(false)
     })
@@ -102,9 +136,14 @@ export function NotesPage() {
     )
   }
 
-  const filteredNotes = query.trim()
-    ? notes.filter((n) => (n.title || "").includes(query) || (n.content_md || "").includes(query))
-    : notes
+  const filteredNotes = notes.filter((n) => {
+    if (activeFolder !== "全部" && (n.folder || "我的笔记") !== activeFolder) return false
+    if (query.trim()) {
+      return (n.title || "").includes(query) || (n.content_md || "").includes(query)
+    }
+    return true
+  })
+  const totalNotes = notes.length
   const tipTags = Array.from(new Set(tips.flatMap((t) => t.tags || [])))
   const shownTips = tips.filter(tipMatchesFilter)
 
@@ -119,27 +158,35 @@ export function NotesPage() {
               : "学习报告和自己写下的长内容。"}
           </p>
         </div>
-        <div className="flex rounded-xl border border-line bg-paper p-0.5 text-small shrink-0">
-          <button
-            type="button"
-            onClick={() => setTab("notes")}
-            className={cn(
-              "px-4 py-1.5 rounded-lg font-medium transition-colors",
-              tab === "notes" ? "bg-sea text-paper" : "text-ink-soft hover:text-sea",
-            )}
-          >
-            笔记 {notes.length}
-          </button>
-          <button
-            type="button"
-            onClick={() => setTab("tips")}
-            className={cn(
-              "px-4 py-1.5 rounded-lg font-medium transition-colors",
-              tab === "tips" ? "bg-sea text-paper" : "text-ink-soft hover:text-sea",
-            )}
-          >
-            tip {tips.length}
-          </button>
+        <div className="flex items-center gap-2 shrink-0">
+          <div className="flex rounded-xl border border-line bg-paper p-0.5 text-small">
+            <button
+              type="button"
+              onClick={() => setTab("notes")}
+              className={cn(
+                "px-4 py-1.5 rounded-lg font-medium transition-colors",
+                tab === "notes" ? "bg-sea text-paper" : "text-ink-soft hover:text-sea",
+              )}
+            >
+              笔记 {notes.length}
+            </button>
+            <button
+              type="button"
+              onClick={() => setTab("tips")}
+              className={cn(
+                "px-4 py-1.5 rounded-lg font-medium transition-colors",
+                tab === "tips" ? "bg-sea text-paper" : "text-ink-soft hover:text-sea",
+              )}
+            >
+              tip {tips.length}
+            </button>
+          </div>
+          {tab === "notes" ? (
+            <Button variant="primary" size="sm" onClick={() => navigate("/notes/new")}>
+              <Plus className="w-4 h-4" strokeWidth={2} />
+              新建笔记
+            </Button>
+          ) : null}
         </div>
       </div>
 
@@ -244,33 +291,56 @@ export function NotesPage() {
               <SearchInput placeholder="搜索笔记..." value={query} onChange={(e) => setQuery(e.target.value)} />
             </div>
           </div>
-          {filteredNotes.length === 0 ? (
-            <div className="rounded-2xl border border-line bg-paper p-4">
-              <EmptyState
-                icon={NotebookPen}
-                title={notes.length === 0 ? "还没有长笔记" : "没有匹配的笔记"}
-                description={
-                  notes.length === 0
-                    ? "学习报告会保存在这里。短摘录请到 tip。"
-                    : "换个关键词试试。"
-                }
-                size="lg"
-              />
-            </div>
-          ) : (
-            <div className="rounded-2xl border border-line bg-paper p-4">
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                {filteredNotes.map((n) => (
-                  <NoteCard
-                    key={n.id}
-                    note={toNote(n)}
-                    onClick={() => navigate(`/notes/${n.id}`)}
-                    className="rounded-2xl bg-paper-2 border-line"
+          <div className="grid grid-cols-1 md:grid-cols-[200px_minmax(0,1fr)] gap-5">
+            <aside className="md:sticky md:top-20 self-start">
+              <div className="flex md:flex-col gap-1.5 overflow-x-auto md:overflow-visible pb-2 md:pb-0">
+                <FolderTab
+                  label="全部"
+                  count={totalNotes}
+                  active={activeFolder === "全部"}
+                  onClick={() => setActiveFolder("全部")}
+                />
+                {folders.map((f) => (
+                  <FolderTab
+                    key={f.name}
+                    label={f.name}
+                    count={f.count}
+                    active={activeFolder === f.name}
+                    onClick={() => setActiveFolder(f.name)}
                   />
                 ))}
               </div>
+            </aside>
+            <div className="min-w-0">
+              {filteredNotes.length === 0 ? (
+                <div className="rounded-2xl border border-line bg-paper p-4">
+                  <EmptyState
+                    icon={NotebookPen}
+                    title={notes.length === 0 ? "还没有笔记" : "这个文件夹里没有笔记"}
+                    description={
+                      notes.length === 0
+                        ? "点右上角「新建笔记」写第一条吧；学习报告也会归到「学习报告」文件夹。"
+                        : "换个文件夹或关键词试试。"
+                    }
+                    size="lg"
+                  />
+                </div>
+              ) : (
+                <div className="rounded-2xl border border-line bg-paper p-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+                    {filteredNotes.map((n) => (
+                      <NoteCard
+                        key={n.id}
+                        note={toNote(n)}
+                        onClick={() => navigate(`/notes/${n.id}`)}
+                        className="rounded-2xl bg-paper-2 border-line"
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
-          )}
+          </div>
         </section>
       )}
     </AppShell>

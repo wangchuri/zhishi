@@ -12,10 +12,59 @@ import threading
 
 from tina import Tools
 
+from ..core.database import SessionLocal
+from ..models import Document
+from ..services.question import question_service
 from ..utils import parse_tags
 from .learning_path_tools import resolve_chapter_id
 
 NEAR_PAGE_MAX_CHARS = 12000
+MATERIAL_PREVIEW_CHARS = 120
+
+
+def _parse_pages(raw: str) -> list[int]:
+    """解析页码（逗号/区间），用于材料覆盖页。"""
+    text = "" if raw is None else str(raw)
+    out: list[int] = []
+    seen: set[int] = set()
+
+    def _push(n: int) -> None:
+        if n > 0 and n not in seen:
+            seen.add(n)
+            out.append(n)
+
+    for chunk in text.replace("；", ",").replace(";", ",").replace("，", ",").split(","):
+        piece = chunk.strip()
+        if not piece:
+            continue
+        if "-" in piece:
+            a, _, b = piece.partition("-")
+            try:
+                lo, hi = int(a.strip()), int(b.strip())
+            except ValueError:
+                continue
+            if lo > hi:
+                lo, hi = hi, lo
+            for n in range(lo, hi + 1):
+                _push(n)
+        else:
+            try:
+                _push(int(piece))
+            except ValueError:
+                continue
+    return out
+
+
+def _format_materials(mats: list) -> str:
+    if not mats:
+        return ""
+    lines = []
+    for m in mats:
+        pages = m.pages_json or ""
+        snippet = " ".join((m.content or "").split())[:MATERIAL_PREVIEW_CHARS]
+        title = f"《{m.title}》" if m.title else ""
+        lines.append(f"- id={m.id} | kind={m.kind} | 覆盖页={pages} {title}｜ 摘要：{snippet}")
+    return "\n".join(lines)
 
 
 def _norm_tags(tags: list[str] | str | None) -> list[str]:
@@ -82,6 +131,8 @@ class QuestionGenTools:
         self._max_lookups = 6
         self.tools = Tools(name="question_gen")
 
+        self.tools.register_tool(tool=self.submit_material)
+        self.tools.register_tool(tool=self.get_material)
         self.tools.register_tool(tool=self.submit_single_choice)
         self.tools.register_tool(tool=self.submit_fill_blank)
         self.tools.register_tool(tool=self.submit_short_answer)
@@ -142,6 +193,11 @@ class QuestionGenTools:
                             "count": len(self._submitted_questions),
                         }, ensure_ascii=False)
                 self._focus_page = pn_int
+            mid = q.get("material_id")
+            if mid:
+                q["sub_index"] = sum(
+                    1 for x in self._submitted_questions if x.get("material_id") == mid
+                ) + 1
             self._submitted_questions.append(q)
             return json.dumps({"status": "ok", "count": len(self._submitted_questions)}, ensure_ascii=False)
 
@@ -166,6 +222,89 @@ class QuestionGenTools:
                 )
         return None
 
+    def _materials_block(self, pages: list[int]) -> str:
+        db = SessionLocal()
+        try:
+            mats = question_service.materials_covering(db, self.document_id, pages)
+            return _format_materials(mats)
+        except Exception:
+            return ""
+        finally:
+            db.close()
+
+    def submit_material(
+        self,
+        kind: str,
+        title: str,
+        content: str,
+        pages: str = "",
+        chapter_id: str = "",
+    ) -> str:
+        """提交一段材料（阅读文章 / 完形短文等），返回 material_id。随后出子题时把 material_id 填上。
+
+        同一文档内内容相同的材料会自动复用，不会重复创建。
+        Args:
+            kind: 材料类型，如 reading（阅读理解）、cloze（完形填空）
+            title: 材料标题，可空
+            content: 材料正文（Markdown / 纯文本）
+            pages: 材料覆盖的页码，逗号或区间（如 "1-2"）；不填默认当前页
+            chapter_id: 材料所属章节 id，可空（见目录）
+        """
+        doc_id = (self.document_id or "").strip()
+        body = (content or "").strip()
+        if not body:
+            return "材料正文为空，请提供 content。"
+        page_list = _parse_pages(pages) or [self._current_page()]
+        db = SessionLocal()
+        try:
+            doc = db.get(Document, doc_id)
+            if not doc:
+                return f"找不到文档：{doc_id}"
+            mat, created = question_service.get_or_create_material(
+                db,
+                doc,
+                kind=kind or "material",
+                title=title or "",
+                content=body,
+                pages=page_list,
+                chapter_id=self._chapter_id(chapter_id),
+            )
+            db.commit()
+            mat_id, mat_kind = mat.id, mat.kind
+        except Exception as e:  # noqa: BLE001
+            db.rollback()
+            return f"提交材料失败：{e}"
+        finally:
+            db.close()
+        state = "已新建" if created else "已存在，直接复用"
+        return (
+            f"材料{state}：material_id={mat_id}（kind={mat_kind}，覆盖页={page_list}）。"
+            f"出子题时请把 material_id 填 {mat_id}。"
+        )
+
+    def get_material(self, material_id: str) -> str:
+        """按 id 取回材料全文与信息，用于基于已有材料出子题。
+        Args:
+            material_id: 材料 id（来自 submit_material 或本页已有材料清单）
+        """
+        blocked = self._lookup_guard()
+        if blocked:
+            return blocked
+        mid = (material_id or "").strip()
+        if not mid:
+            return "缺少 material_id"
+        db = SessionLocal()
+        try:
+            m = question_service.get_material(db, mid)
+            if not m or m.document_id != self.document_id:
+                return f"本页没有这个材料：{mid}"
+            head = f"material_id={m.id} | kind={m.kind} | 覆盖页={m.pages_json or ''}"
+            if m.title:
+                head += f" | 标题：{m.title}"
+            return f"{head}\n\n{(m.content or '')[:NEAR_PAGE_MAX_CHARS]}"
+        finally:
+            db.close()
+
     def get_near_page(self, offset: int) -> str:
         """本页信息不全时，按相对当前页的偏移取一页正文（目标页 = 当前页 + offset）。
 
@@ -188,16 +327,32 @@ class QuestionGenTools:
         target = self._current_page() + offset
         if target < 1:
             return f"没有第 {target} 页。"
+        body = ""
+        heading = f"## 第 {target} 页"
         for p in self.pages_context:
             if int(p.get("page_number") or 0) == target:
-                title = p.get("title") or f"第 {target} 页"
-                content = (p.get("content") or "")[:NEAR_PAGE_MAX_CHARS]
-                return f"## {title}\n\n{content}"
-        from ..core.storage import storage
-        disk = storage.read_page(self.document_id, target)
-        if disk:
-            return disk[:NEAR_PAGE_MAX_CHARS]
-        return f"页码 {target} 不在当前文档范围内"
+                heading = f"## {p.get('title') or f'第 {target} 页'}"
+                body = (p.get("content") or "")[:NEAR_PAGE_MAX_CHARS]
+                break
+        if not body:
+            from ..core.storage import storage
+
+            disk = storage.read_page(self.document_id, target)
+            if disk:
+                body = disk[:NEAR_PAGE_MAX_CHARS]
+        mats = self._materials_block([target])
+        if not body and not mats:
+            return f"页码 {target} 不在当前文档范围内"
+        parts: list[str] = []
+        if body:
+            # 磁盘页正文通常已带 "## 第 N 页" 标题，避免重复
+            if body.lstrip().startswith("#"):
+                parts.append(body)
+            else:
+                parts.append(f"{heading}\n\n{body}")
+        if mats:
+            parts.append(f"## 第 {target} 页已有材料（可直接引用 material_id）\n{mats}")
+        return "\n\n".join(parts)
 
     def search_document_content(self, query: str) -> str:
         """在本次选中页内用关键词定位原文。页正文已在用户消息中，出题前不必调用。"""
@@ -213,6 +368,7 @@ class QuestionGenTools:
             return "页正文已在用户消息中，不必检索。请直接 submit_* 出题。"
         tokens = [t for t in q.replace("，", " ").replace(",", " ").split() if len(t) > 1]
         hits: list[str] = []
+        matched_pages: list[int] = []
         for p in self.pages_context:
             content = p.get("content") or ""
             hay = content.lower()
@@ -220,6 +376,10 @@ class QuestionGenTools:
             if not matched:
                 continue
             pn = p.get("page_number")
+            try:
+                matched_pages.append(int(pn))
+            except (TypeError, ValueError):
+                pass
             snippet = content[:2000]
             hits.append(f"## 第 {pn} 页\n{snippet}")
             if len(hits) >= 5:
@@ -229,6 +389,9 @@ class QuestionGenTools:
                 "选中页中未找到该关键词。"
                 "页正文已经在用户消息里，请直接阅读后出题，不要反复检索。"
             )
+        mats = self._materials_block(matched_pages)
+        if mats:
+            hits.append(f"## 命中页已有材料（可直接引用 material_id）\n{mats}")
         return "\n\n".join(hits)
 
     # ---- 提交工具 ----
@@ -247,6 +410,7 @@ class QuestionGenTools:
         source: str,
         page_number: int,
         chapter_id: str = "",
+        material_id: str = "",
     ) -> str:
         """提交一道单选题（含 A/B/C/D 四个选项）。
 
@@ -270,6 +434,7 @@ class QuestionGenTools:
             "source": source,
             "page_number": page_number,
             "chapter_id": self._chapter_id(chapter_id),
+            "material_id": (material_id or "").strip() or None,
         })
 
     async def submit_fill_blank(
@@ -282,6 +447,7 @@ class QuestionGenTools:
         source: str,
         page_number: int,
         chapter_id: str = "",
+        material_id: str = "",
     ) -> str:
         """提交一道填空题（stem 用 ___ 或 {{blank}} 表示空位）。
 
@@ -300,6 +466,7 @@ class QuestionGenTools:
             "source": source,
             "page_number": page_number,
             "chapter_id": self._chapter_id(chapter_id),
+            "material_id": (material_id or "").strip() or None,
         })
 
     async def submit_short_answer(
@@ -312,6 +479,7 @@ class QuestionGenTools:
         source: str,
         page_number: int,
         chapter_id: str = "",
+        material_id: str = "",
     ) -> str:
         """提交一道简答题。
 
@@ -330,6 +498,7 @@ class QuestionGenTools:
             "source": source,
             "page_number": page_number,
             "chapter_id": self._chapter_id(chapter_id),
+            "material_id": (material_id or "").strip() or None,
         })
 
     async def submit_application(
@@ -342,6 +511,7 @@ class QuestionGenTools:
         source: str,
         page_number: int,
         chapter_id: str = "",
+        material_id: str = "",
     ) -> str:
         """提交一道应用题。
 
@@ -360,6 +530,7 @@ class QuestionGenTools:
             "source": source,
             "page_number": page_number,
             "chapter_id": self._chapter_id(chapter_id),
+            "material_id": (material_id or "").strip() or None,
         })
 
     async def submit_custom_question(
@@ -374,6 +545,7 @@ class QuestionGenTools:
         source: str,
         page_number: int,
         chapter_id: str = "",
+        material_id: str = "",
     ) -> str:
         """提交一道自定义 HTML 题型（填图、拖拽、表格等复杂交互）。
 
@@ -395,6 +567,7 @@ class QuestionGenTools:
             "source": source,
             "page_number": page_number,
             "chapter_id": self._chapter_id(chapter_id),
+            "material_id": (material_id or "").strip() or None,
             "html_content": html_content,
             "answer_params": answer_params,
         })

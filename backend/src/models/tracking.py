@@ -62,6 +62,8 @@ class UserNote(Base):
     title: Mapped[str | None] = mapped_column(String(255))
     content_md: Mapped[str | None] = mapped_column(Text)
     note_type: Mapped[str] = mapped_column(String(20), default="manual")  # manual/tip/report
+    # 笔记文件夹（报告固定进「学习报告」）；tip 用 "tip"
+    folder: Mapped[str] = mapped_column(String(100), default="我的笔记", nullable=False)
     # 用户给 tip 打的分类 tag，不是资料/题目上的知识点 tag
     user_tags: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)

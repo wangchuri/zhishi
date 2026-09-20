@@ -63,14 +63,31 @@ def save_tip(body: ai_schemas.NoteTipCreate, db: Session = Depends(get_db)):
     return note_service.note_to_item(db, note)
 
 
+@router.post("/notes", response_model=ai_schemas.NoteItem)
+def create_note(body: ai_schemas.NoteCreate, db: Session = Depends(get_db)):
+    note = note_service.create_note(
+        db,
+        title=body.title,
+        content_md=body.content_md,
+        folder=body.folder,
+        document_id=body.document_id,
+        page_number=body.page_number,
+        tags=body.tags,
+    )
+    return note_service.note_to_item(db, note)
+
+
 @router.get("/notes", response_model=ai_schemas.NoteListResult)
 def list_notes(
     document_id: Optional[str] = None,
     note_type: Optional[str] = None,
+    folder: Optional[str] = None,
     limit: int = 100,
     db: Session = Depends(get_db),
 ):
-    return note_service.list_notes(db, document_id=document_id, note_type=note_type, limit=limit)
+    return note_service.list_notes(
+        db, document_id=document_id, note_type=note_type, folder=folder, limit=limit
+    )
 
 
 @router.get("/notes/tip-tags", response_model=ai_schemas.TipTagList)
@@ -78,9 +95,38 @@ def list_tip_tags(db: Session = Depends(get_db)):
     return {"tags": note_service.list_tip_tags(db)}
 
 
+@router.get("/notes/folders", response_model=ai_schemas.NoteFolderList)
+def list_note_folders(db: Session = Depends(get_db)):
+    return {"folders": note_service.list_folders(db)}
+
+
 @router.get("/notes/tips/{document_id}", response_model=ai_schemas.NoteListResult)
 def list_tips(document_id: str, db: Session = Depends(get_db)):
     return note_service.list_tips(db, document_id)
+
+
+@router.patch("/notes/{note_id}", response_model=ai_schemas.NoteItem)
+def update_note(note_id: str, body: ai_schemas.NoteUpdate, db: Session = Depends(get_db)):
+    note = note_service.update_note(
+        db,
+        note_id,
+        title=body.title,
+        content_md=body.content_md,
+        folder=body.folder,
+        document_id=body.document_id,
+        page_number=body.page_number,
+        tags=body.tags,
+    )
+    if not note:
+        raise HTTPException(status_code=404, detail="笔记不存在")
+    return note_service.note_to_item(db, note)
+
+
+@router.delete("/notes/{note_id}")
+def delete_note(note_id: str, db: Session = Depends(get_db)):
+    if not note_service.delete_note(db, note_id):
+        raise HTTPException(status_code=404, detail="笔记不存在")
+    return {"ok": True}
 
 
 @router.get("/notes/{note_id}", response_model=ai_schemas.NoteItem)

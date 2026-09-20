@@ -18,6 +18,11 @@ from pathlib import Path
 from tina.agent import Agent, Tools
 from tina.llm import BaseAPI
 
+try:
+    from tina import KeywordActions
+except ImportError:  # pragma: no cover
+    KeywordActions = None  # type: ignore
+
 logger = logging.getLogger(__name__)
 
 _BACKEND_DIR = Path(__file__).resolve().parent.parent.parent
@@ -228,12 +233,15 @@ def create_agent(
     model: str | None = None,
     max_tool_loop: int | None = None,
     max_context_length: int = 500_000,
+    keyword_actions: "KeywordActions | None" = None,
 ) -> Agent:
     """创建 tina Agent（默认后端模型配置）。"""
     llm = create_llm(model=model)
     kwargs: dict = {"max_context_length": max_context_length}
     if max_tool_loop is not None:
         kwargs["max_tool_loop"] = max_tool_loop
+    if keyword_actions is not None:
+        kwargs["keyword_actions"] = keyword_actions
     agent = Agent(llm=llm, tools=tools, system_prompt=system_prompt, **kwargs)
     _attach_reasoning_roundtrip(agent)
     return agent

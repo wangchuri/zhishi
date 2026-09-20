@@ -23,6 +23,7 @@ from ..services.chat import (
     is_style_cmd,
     pack_assistant_payload,
 )
+from ..tools.tina_mood_actions import last_assistant_raw_text
 from ..services.profile import get_or_create_profile, profile_out
 
 logger = logging.getLogger(__name__)
@@ -45,6 +46,19 @@ def _json_line(data: dict) -> str:
         raise TypeError(f"Object of type {obj.__class__.__name__} is not JSON serializable")
 
     return f"data: {json.dumps(data, ensure_ascii=False, default=_default)}\n\n"
+
+
+def _emit_mood_events(mood_actions, sid: str) -> list[str]:
+    if mood_actions is None:
+        return []
+    lines = []
+    for mood in mood_actions.drain():
+        lines.append(_json_line({
+            "event": "tina_mood",
+            "mood": mood,
+            "session_id": sid,
+        }))
+    return lines
 
 
 def _emit_tool_events(tools, sid: str, widgets: list, tips: list, onboarding: list, plots: list, canvases: list, blocks: list):
@@ -141,7 +155,7 @@ async def send(body: ai_schemas.ChatSend, db: Session = Depends(get_db)):
 
         return StreamingResponse(style_gen(), media_type="text/event-stream")
 
-    agent, sid, user_content, tools = await chat_service.send_message(
+    agent, sid, user_content, tools, mood_actions = await chat_service.send_message(
         db, session_id, body.content, body.collection_id,
         stream=body.stream, crisis=body.crisis,
         remaining_pages=body.remaining_pages,
@@ -166,6 +180,8 @@ async def send(body: ai_schemas.ChatSend, db: Session = Depends(get_db)):
             try:
                 async for chunk in agent.apredict(user_content):
                     for line in _emit_tool_events(tools, sid, widgets, tips, onboarding, plots, canvases, blocks):
+                        yield line
+                    for line in _emit_mood_events(mood_actions, sid):
                         yield line
                     toolish = is_tool_related_chunk(chunk)
                     if toolish and not using_tool:
@@ -192,6 +208,8 @@ async def send(body: ai_schemas.ChatSend, db: Session = Depends(get_db)):
                         yield _json_line({"content": r, "session_id": sid, "role": "assistant", "reasoning_content": True})
                 for line in _emit_tool_events(tools, sid, widgets, tips, onboarding, plots, canvases, blocks):
                     yield line
+                for line in _emit_mood_events(mood_actions, sid):
+                    yield line
             except Exception as e:
                 logger.exception("chat 流式失败")
                 err = f"（出错了：{format_agent_error(e)}）"
@@ -205,13 +223,15 @@ async def send(body: ai_schemas.ChatSend, db: Session = Depends(get_db)):
                     "using": False,
                     "session_id": sid,
                 })
+            # 可见流已 Hide 标签；入库用原文，便于历史回放表情；blocks 保持无标签展示
+            persist_text = last_assistant_raw_text(agent) or full
             payload = pack_assistant_payload(widgets, onboarding, tips, blocks, plots, canvases)
             sdb = SessionLocal()
             try:
                 in_crisis = chat_service.session_in_crisis(sdb, sid)
                 kind = chat_service.session_kind(sdb, sid)
                 think = GLITCH_THINK if in_crisis else (reasoning or None)
-                message_id = chat_service.persist_assistant(sid, full, think, None, payload)
+                message_id = chat_service.persist_assistant(sid, persist_text, think, None, payload)
                 yield _json_line({
                     "event": "assistant_saved",
                     "message_id": message_id,

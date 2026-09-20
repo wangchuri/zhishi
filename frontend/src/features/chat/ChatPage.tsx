@@ -36,7 +36,7 @@ import {
   isGlitchCmd,
   playTinaGlitch,
 } from "@/features/chat/tinaGlitch"
-import { parseTinaBursts, type TinaMood } from "@/features/chat/tinaBursts"
+import { parseTinaBursts, TINA_MOODS, type TinaMood } from "@/features/chat/tinaBursts"
 import { TinaFacePanel } from "@/features/chat/TinaFacePanel"
 import { useTinaCrisis } from "@/context/TinaCrisisContext"
 import { remainingCrisisPages } from "@/data/nav"
@@ -479,6 +479,12 @@ export function ChatPage() {
           }
           if (chunk.event === "tool_status") {
             setFaceUsingTool(Boolean(chunk.using))
+          }
+          if (chunk.event === "tina_mood" && typeof chunk.mood === "string") {
+            const mood = String(chunk.mood).toUpperCase()
+            if ((TINA_MOODS as readonly string[]).includes(mood)) {
+              setFaceMood(mood as TinaMood)
+            }
           }
           if (chunk.event === "show_question" && chunk.question && typeof chunk.question === "object") {
             const q = chunk.question as ChatQuestionWidget["question"]

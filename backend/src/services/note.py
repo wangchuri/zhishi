@@ -35,12 +35,22 @@ def _dump_user_tags(tags: list[str] | None) -> str | None:
     return json.dumps(names, ensure_ascii=False)
 
 
+def _note_folder(n: UserNote) -> str:
+    """笔记所属文件夹：报告固定学习报告，tip 归 tip，其余用存储值。"""
+    if n.note_type == "report":
+        return "学习报告"
+    if n.note_type == "tip":
+        return "tip"
+    return ((getattr(n, "folder", None) or "我的笔记") or "").strip() or "我的笔记"
+
+
 def _note_out(n: UserNote, names: dict[str, str] | None = None) -> dict:
     return {
         "id": n.id,
         "title": n.title,
         "content_md": unwrap_markdown_fence(n.content_md or "") if n.note_type == "report" else n.content_md,
         "note_type": n.note_type,
+        "folder": _note_folder(n),
         "document_id": n.document_id,
         "document_name": (names or {}).get(n.document_id or "") if n.document_id else None,
         "page_number": n.page_number,
@@ -77,6 +87,7 @@ class NoteService:
             title=title,
             content_md=content,
             note_type="tip",
+            folder="tip",
             user_tags=_dump_user_tags(tags),
         )
         db.add(note)
@@ -84,11 +95,90 @@ class NoteService:
         db.refresh(note)
         return note
 
+    def create_note(
+        self,
+        db: Session,
+        *,
+        title: str = "无标题",
+        content_md: str = "",
+        folder: Optional[str] = None,
+        document_id: Optional[str] = None,
+        page_number: Optional[int] = None,
+        tags: Optional[list[str]] = None,
+    ) -> UserNote:
+        """新建一条手写笔记。"""
+        note = UserNote(
+            title=(title or "").strip()[:255] or "无标题",
+            content_md=content_md or "",
+            note_type="manual",
+            folder=(folder or "我的笔记").strip()[:100] or "我的笔记",
+            document_id=document_id or None,
+            page_number=page_number,
+            user_tags=_dump_user_tags(tags),
+        )
+        db.add(note)
+        db.commit()
+        db.refresh(note)
+        return note
+
+    def update_note(
+        self,
+        db: Session,
+        note_id: str,
+        *,
+        title: Optional[str] = None,
+        content_md: Optional[str] = None,
+        folder: Optional[str] = None,
+        document_id: Optional[str] = None,
+        page_number: Optional[int] = None,
+        tags: Optional[list[str]] = None,
+    ) -> Optional[UserNote]:
+        """更新手写笔记；只改传入的字段。tip/report 不允许改。"""
+        note = self.get_note(db, note_id)
+        if not note:
+            return None
+        if note.note_type != "manual":
+            return note
+        if title is not None:
+            note.title = (title or "").strip()[:255] or "无标题"
+        if content_md is not None:
+            note.content_md = content_md
+        if folder is not None:
+            note.folder = (folder or "").strip()[:100] or "我的笔记"
+        if document_id is not None:
+            note.document_id = document_id or None
+        if page_number is not None:
+            note.page_number = page_number
+        if tags is not None:
+            note.user_tags = _dump_user_tags(tags)
+        db.commit()
+        db.refresh(note)
+        return note
+
+    def delete_note(self, db: Session, note_id: str) -> bool:
+        note = self.get_note(db, note_id)
+        if not note:
+            return False
+        db.delete(note)
+        db.commit()
+        return True
+
+    def list_folders(self, db: Session) -> list[dict]:
+        """笔记文件夹及数量（不含 tip）。"""
+        rows = db.query(UserNote).filter(UserNote.note_type != "tip").all()
+        counts: dict[str, int] = {}
+        for n in rows:
+            name = _note_folder(n)
+            counts[name] = counts.get(name, 0) + 1
+        ordered = sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))
+        return [{"name": name, "count": count} for name, count in ordered]
+
     def list_notes(
         self,
         db: Session,
         document_id: Optional[str] = None,
         note_type: Optional[str] = None,
+        folder: Optional[str] = None,
         limit: int = 100,
     ) -> dict:
         q = db.query(UserNote)
@@ -96,7 +186,11 @@ class NoteService:
             q = q.filter(UserNote.document_id == document_id)
         if note_type:
             q = q.filter(UserNote.note_type == note_type)
-        notes = q.order_by(UserNote.created_at.desc()).limit(limit).all()
+        notes = q.order_by(UserNote.created_at.desc()).all()
+        if folder:
+            notes = [n for n in notes if _note_folder(n) == folder]
+        if limit and limit > 0:
+            notes = notes[:limit]
         names = _doc_names(db, notes)
         return {
             "notes": [_note_out(n, names) for n in notes],
@@ -175,7 +269,12 @@ class NoteService:
         return {"total": len(matched), "tips": matched[:cap]}
 
     def save_report(self, db: Session, title: str, content_md: str) -> UserNote:
-        note = UserNote(title=title, content_md=unwrap_markdown_fence(content_md), note_type="report")
+        note = UserNote(
+            title=title,
+            content_md=unwrap_markdown_fence(content_md),
+            note_type="report",
+            folder="学习报告",
+        )
         db.add(note)
         db.commit()
         db.refresh(note)

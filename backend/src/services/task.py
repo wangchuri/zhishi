@@ -758,6 +758,70 @@ def search_questions_for_doc(
     return rows
 
 
+_PAGE_TOC_HINTS = ("目录", "contents", "table of contents")
+_PAGE_ANSWER_HINTS = ("参考答案", "答案", "answer key", "exercise answers")
+_PAGE_EXERCISE_HINTS = ("练习", "习题", "思考题", "例题", "exercises", "problems")
+
+
+def _page_value_hint(text: str) -> tuple[str, str]:
+    """粗判一页类型，给 Agent 一个「值不值得出题」的线索。返回 (类别, 建议)。"""
+    body = (text or "").strip()
+    head = body[:120].lower()
+    if len(body) < 40:
+        return "空白", "不建议：内容太少"
+    if any(h in head for h in _PAGE_TOC_HINTS):
+        return "目录", "不建议：目录页一般不单独出题"
+    if any(h in head for h in _PAGE_ANSWER_HINTS):
+        return "答案", "不建议：答案页"
+    if any(h in body.lower() for h in _PAGE_EXERCISE_HINTS):
+        return "习题", "值得：可针对书中原题出题"
+    return "正文", "值得"
+
+
+def preview_pages_for_doc(
+    db: Session,
+    document_id: str,
+    page_numbers: Optional[list[int]] = None,
+    *,
+    limit: int = 30,
+    preview_chars: int = 200,
+) -> Optional[dict[str, Any]]:
+    """查看文档指定页（或全部未出题页）的摘要与价值线索，供任务 Agent 挑选出题页。"""
+    doc = db.get(Document, document_id)
+    if not doc:
+        return None
+    pages = _page_numbers(doc)
+    valid = set(pages)
+    have_q = _pages_with_questions(db, document_id)
+    if page_numbers:
+        wanted = [int(n) for n in page_numbers if int(n) in valid]
+    else:
+        wanted = [n for n in pages if n not in have_q]
+    wanted = wanted[: max(1, int(limit))]
+
+    rows: list[dict[str, Any]] = []
+    for n in wanted:
+        text = storage.read_page(document_id, n) or ""
+        category, suggest = _page_value_hint(text)
+        rows.append({
+            "page_number": n,
+            "chars": len(text.strip()),
+            "has_questions": n in have_q,
+            "kind": category,
+            "suggest": suggest,
+            "preview": " ".join(text.split())[:preview_chars],
+        })
+    return {
+        "document_id": document_id,
+        "name": doc.display_name,
+        "total_pages": len(pages),
+        "pages_with_questions": len(have_q),
+        "missing_pages": sum(1 for n in pages if n not in have_q),
+        "returned": len(rows),
+        "pages": rows,
+    }
+
+
 def complete_learn_task_by_tina(
     db: Session,
     task_id: str,

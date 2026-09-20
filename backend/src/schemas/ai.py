@@ -73,11 +73,30 @@ class NoteTipCreate(BaseModel):
     tags: Optional[list[str]] = None
 
 
+class NoteCreate(BaseModel):
+    title: str = "无标题"
+    content_md: str = ""
+    folder: Optional[str] = None
+    document_id: Optional[str] = None
+    page_number: Optional[int] = None
+    tags: Optional[list[str]] = None
+
+
+class NoteUpdate(BaseModel):
+    title: Optional[str] = None
+    content_md: Optional[str] = None
+    folder: Optional[str] = None
+    document_id: Optional[str] = None
+    page_number: Optional[int] = None
+    tags: Optional[list[str]] = None
+
+
 class NoteItem(BaseModel):
     id: str
     title: Optional[str] = None
     content_md: Optional[str] = None
     note_type: str = "manual"
+    folder: Optional[str] = None
     document_id: Optional[str] = None
     document_name: Optional[str] = None
     page_number: Optional[int] = None
@@ -89,6 +108,15 @@ class NoteItem(BaseModel):
 class NoteListResult(BaseModel):
     notes: list[NoteItem]
     total: int = 0
+
+
+class NoteFolder(BaseModel):
+    name: str
+    count: int = 0
+
+
+class NoteFolderList(BaseModel):
+    folders: list[NoteFolder] = []
 
 
 class TipTagList(BaseModel):

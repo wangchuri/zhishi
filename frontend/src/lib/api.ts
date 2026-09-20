@@ -663,6 +663,38 @@ export const questionsApi = {
   },
 }
 
+// ─── Materials (题目材料) ──────────────────────────────
+
+export interface MaterialItem {
+  id: string
+  document_id: string
+  kind: string
+  title?: string | null
+  content?: string | null
+  pages?: number[]
+  chapter_id?: string | null
+  audio_ref?: string | null
+  created_at?: string | null
+}
+
+export const materialsApi = {
+  list(params?: { document_id?: string; keyword?: string; limit?: number }) {
+    const qs = new URLSearchParams()
+    if (params?.document_id) qs.set("document_id", params.document_id)
+    if (params?.keyword) qs.set("keyword", params.keyword)
+    if (params?.limit != null) qs.set("limit", String(params.limit))
+    const q = qs.toString()
+    return request<{ materials: MaterialItem[] }>(
+      "GET",
+      `/api/v1/materials${q ? `?${q}` : ""}`
+    )
+  },
+
+  get(materialId: string) {
+    return request<MaterialItem>("GET", `/api/v1/materials/${encodeURIComponent(materialId)}`)
+  },
+}
+
 // ─── Quiz ──────────────────────────────────────────────
 
 export const quizApi = {
@@ -1115,8 +1147,15 @@ export interface NoteItem {
   /** 用户给 tip 打的分类 tag，不是知识点 tag */
   tags?: string[]
   note_type: string
+  /** 笔记文件夹（报告固定「学习报告」） */
+  folder?: string | null
   created_at?: string
   updated_at?: string
+}
+
+export interface NoteFolder {
+  name: string
+  count: number
 }
 
 export interface NoteListResult {
@@ -1136,14 +1175,50 @@ export const notesApi = {
     return request<NoteItem>("POST", "/api/v1/notes/tips", data)
   },
 
-  /** 列出笔记（可按文档 / 类型过滤） */
-  list(params?: { document_id?: string; note_type?: string; limit?: number }) {
+  /** 新建手写笔记 */
+  create(data: {
+    title?: string
+    content_md?: string
+    folder?: string | null
+    document_id?: string | null
+    page_number?: number | null
+    tags?: string[]
+  }) {
+    return request<NoteItem>("POST", "/api/v1/notes", data)
+  },
+
+  /** 更新手写笔记（仅 manual） */
+  update(
+    noteId: string,
+    data: {
+      title?: string
+      content_md?: string
+      folder?: string | null
+      document_id?: string | null
+      page_number?: number | null
+      tags?: string[]
+    },
+  ) {
+    return request<NoteItem>("PATCH", `/api/v1/notes/${encodeURIComponent(noteId)}`, data)
+  },
+
+  remove(noteId: string) {
+    return request<{ ok: boolean }>("DELETE", `/api/v1/notes/${encodeURIComponent(noteId)}`)
+  },
+
+  /** 列出笔记（可按文档 / 类型 / 文件夹过滤） */
+  list(params?: { document_id?: string; note_type?: string; folder?: string; limit?: number }) {
     const qs = new URLSearchParams()
     if (params?.document_id) qs.set("document_id", params.document_id)
     if (params?.note_type) qs.set("note_type", params.note_type)
+    if (params?.folder) qs.set("folder", params.folder)
     if (params?.limit != null) qs.set("limit", String(params.limit))
     const suffix = qs.toString() ? `?${qs.toString()}` : ""
     return request<NoteListResult>("GET", `/api/v1/notes${suffix}`)
+  },
+
+  listFolders() {
+    return request<{ folders: NoteFolder[] }>("GET", "/api/v1/notes/folders")
   },
 
   get(noteId: string) {

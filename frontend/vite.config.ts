@@ -44,6 +44,8 @@ export default defineConfig({
         skipWaiting: true,
         clientsClaim: true,
         cleanupOutdatedCaches: true,
+        // 富文本编辑器（Tiptap）使主包超过默认 2 MiB 预缓存上限
+        maximumFileSizeToCacheInBytes: 6 * 1024 * 1024,
         globPatterns: ["**/*.{js,css,html,png,jpg,jpeg,svg,ico,woff2}"],
         navigateFallback: "index.html",
         // 后端 API / 清缓存入口走网络，不做缓存

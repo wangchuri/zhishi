@@ -7,6 +7,7 @@ import { OnboardingPage } from "@/features/onboarding/OnboardingPage"
 import { ChatPage } from "@/features/chat/ChatPage"
 import { NotesPage } from "@/features/notes/NotesPage"
 import { NoteDetailPage } from "@/features/notes/NoteDetailPage"
+import { NoteEditorPage } from "@/features/notes/NoteEditorPage"
 import { DocumentViewPage } from "@/features/knowledge-base/DocumentViewPage"
 import { UploadPage } from "@/features/knowledge-base/UploadPage"
 import { LearningAnalyticsPage } from "@/features/learning/LearningAnalyticsPage"
@@ -64,6 +65,8 @@ export function AppRoutes() {
       <Route path="/" element={<RequireServer><DashboardPage /></RequireServer>} />
       <Route path="/chat" element={<RequireServer><ChatPage /></RequireServer>} />
       <Route path="/notes" element={<RequireServer><NotesPage /></RequireServer>} />
+      <Route path="/notes/new" element={<RequireServer><NoteEditorPage /></RequireServer>} />
+      <Route path="/notes/:noteId/edit" element={<RequireServer><NoteEditorPage /></RequireServer>} />
       <Route path="/notes/:noteId" element={<RequireServer><NoteDetailPage /></RequireServer>} />
       <Route path="/knowledge" element={<Navigate to="/quiz" replace />} />
       <Route path="/knowledge/doc/:docId" element={<RequireServer><DocumentViewPage /></RequireServer>} />

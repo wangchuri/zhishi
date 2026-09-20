@@ -15,6 +15,7 @@ from ..core.errors import AppError
 from ..models import (
     Document,
     GlobalQuestion,
+    QuestionMaterial,
     QuestionProvenance,
     QuestionRef,
 )
@@ -23,18 +24,59 @@ from ..utils import parse_tags, sha256_hex
 
 # ---- 纯函数工具 ----
 
-def _canonical(question: dict) -> str:
-    """规范化题目用于 hash：题干+选项+答案。"""
+def _canonical(question: dict, material_hash: Optional[str] = None) -> str:
+    """规范化题目用于 hash：材料内容 + 题干 + 选项 + 答案。
+
+    带 material_hash 时纳入 hash，避免不同材料下同一道子题被误判为重复。
+    """
     parts = [
         str(question.get("stem", "")),
         json.dumps(question.get("options", []), ensure_ascii=False, sort_keys=True),
         str(question.get("answer", "")),
     ]
+    if material_hash:
+        parts.insert(0, f"material:{material_hash}")
     return "|".join(parts)
 
 
-def _hash_question(question: dict) -> str:
-    return sha256_hex(_canonical(question).encode("utf-8"))
+def _hash_question(question: dict, material_hash: Optional[str] = None) -> str:
+    return sha256_hex(_canonical(question, material_hash).encode("utf-8"))
+
+
+def _hash_material(kind: str, content: str) -> str:
+    return sha256_hex(f"{kind or ''}|{content or ''}".encode("utf-8"))
+
+
+def _pages_from_json(raw: Optional[str]) -> list[int]:
+    if not raw:
+        return []
+    try:
+        data = json.loads(raw)
+    except (TypeError, ValueError):
+        return []
+    if not isinstance(data, list):
+        return []
+    out: list[int] = []
+    for n in data:
+        try:
+            out.append(int(n))
+        except (TypeError, ValueError):
+            continue
+    return sorted(set(out))
+
+
+def _material_out(m: QuestionMaterial) -> dict:
+    return {
+        "id": m.id,
+        "document_id": m.document_id,
+        "kind": m.kind,
+        "title": m.title,
+        "content": m.content,
+        "pages": _pages_from_json(m.pages_json),
+        "chapter_id": m.chapter_id,
+        "audio_ref": m.audio_ref,
+        "created_at": m.created_at.isoformat() if m.created_at else None,
+    }
 
 
 def normalize_question(q: dict) -> dict | None:
@@ -48,6 +90,11 @@ def normalize_question(q: dict) -> dict | None:
         page_number = int(page_number) if page_number is not None else None
     except (TypeError, ValueError):
         page_number = None
+    sub_index = q.get("sub_index")
+    try:
+        sub_index = int(sub_index) if sub_index is not None else None
+    except (TypeError, ValueError):
+        sub_index = None
     return {
         "stem": stem,
         "question_type": qtype,
@@ -61,6 +108,8 @@ def normalize_question(q: dict) -> dict | None:
         "answer_params": q.get("answer_params"),
         "page_number": page_number,
         "chapter_id": str(q.get("chapter_id") or "").strip() or None,
+        "material_id": str(q.get("material_id") or "").strip() or None,
+        "sub_index": sub_index,
     }
 
 
@@ -89,6 +138,8 @@ def _question_out(
         "chapter_id": chapter_id,
         "html_content": gq.html_content,
         "answer_params": gq.answer_params,
+        "material_id": gq.material_id,
+        "sub_index": gq.sub_index,
         "created_at": gq.created_at.isoformat() if gq.created_at else None,
         "user_answer_status": user_status,
         "attempt_count": ref.attempt_count if ref else 0,
@@ -108,7 +159,13 @@ class QuestionService:
         q = normalize_question(question)
         if q is None:
             raise AppError("题目缺题干")
-        content_hash = _hash_question(q)
+
+        material = None
+        if q["material_id"]:
+            material = db.get(QuestionMaterial, q["material_id"])
+            if material is not None and material.document_id != document.id:
+                material = None  # 材料不跨文档
+        content_hash = _hash_question(q, material.content_hash if material else None)
 
         gq = db.query(GlobalQuestion).filter(GlobalQuestion.content_hash == content_hash).first()
         created = gq is None
@@ -124,9 +181,15 @@ class QuestionService:
                 source_type=q["source_type"],
                 html_content=q["html_content"],
                 answer_params=q["answer_params"],
+                material_id=q["material_id"] if material else None,
+                sub_index=q["sub_index"],
             )
             db.add(gq)
             db.flush()
+        elif material and not gq.material_id:
+            gq.material_id = material.id
+            if q["sub_index"] is not None:
+                gq.sub_index = q["sub_index"]
 
         # 溯源
         existing = db.query(QuestionProvenance).filter_by(
@@ -158,6 +221,118 @@ class QuestionService:
             ))
 
         return gq, created
+
+    def get_or_create_material(
+        self,
+        db: Session,
+        document: Document,
+        *,
+        kind: str,
+        title: str = "",
+        content: str = "",
+        pages: Optional[list[int]] = None,
+        chapter_id: Optional[str] = None,
+        audio_ref: Optional[str] = None,
+    ) -> tuple[QuestionMaterial, bool]:
+        """按 (文档, kind, 内容) 去重地取或建一个材料。返回 (材料, 是否新建)。"""
+        kind = (kind or "").strip() or "material"
+        content = (content or "").strip()
+        if not content:
+            raise AppError("材料内容为空")
+        content_hash = _hash_material(kind, content)
+        mat = (
+            db.query(QuestionMaterial)
+            .filter(
+                QuestionMaterial.document_id == document.id,
+                QuestionMaterial.content_hash == content_hash,
+            )
+            .first()
+        )
+        page_list = sorted({int(p) for p in (pages or []) if p is not None})
+        created = mat is None
+        if created:
+            mat = QuestionMaterial(
+                document_id=document.id,
+                kind=kind,
+                title=(title or "").strip()[:200] or None,
+                content=content,
+                pages_json=json.dumps(page_list) if page_list else None,
+                chapter_id=chapter_id or None,
+                audio_ref=audio_ref or None,
+                content_hash=content_hash,
+            )
+            db.add(mat)
+            db.flush()
+        else:
+            # 复用已有材料：并入覆盖页；补标题
+            covered = _pages_from_json(mat.pages_json)
+            merged = sorted(set(covered) | set(page_list))
+            if merged and merged != covered:
+                mat.pages_json = json.dumps(merged)
+            if not mat.title and (title or "").strip():
+                mat.title = (title or "").strip()[:200]
+        return mat, created
+
+    def get_material(self, db: Session, material_id: str) -> Optional[QuestionMaterial]:
+        if not material_id:
+            return None
+        return db.get(QuestionMaterial, material_id)
+
+    def materials_covering(
+        self,
+        db: Session,
+        document_id: str,
+        pages: list[int],
+    ) -> list[QuestionMaterial]:
+        """返回覆盖了给定页面中任意一页的材料（按创建时间倒序）。"""
+        want = {int(p) for p in (pages or []) if p is not None}
+        if not document_id or not want:
+            return []
+        rows = (
+            db.query(QuestionMaterial)
+            .filter(QuestionMaterial.document_id == document_id)
+            .order_by(QuestionMaterial.created_at.desc())
+            .all()
+        )
+        return [m for m in rows if set(_pages_from_json(m.pages_json)) & want]
+
+    def list_materials(
+        self,
+        db: Session,
+        *,
+        document_id: Optional[str] = None,
+        keyword: Optional[str] = None,
+        limit: int = 50,
+    ) -> list[dict]:
+        """列出材料（可按文档 / 关键词过滤），供笔记侧栏检索。"""
+        q = db.query(QuestionMaterial)
+        if document_id:
+            q = q.filter(QuestionMaterial.document_id == document_id)
+        rows = q.order_by(QuestionMaterial.created_at.desc()).all()
+        kw = (keyword or "").strip().lower()
+        if kw:
+            rows = [
+                m for m in rows
+                if kw in f"{m.title or ''}\n{m.content or ''}".lower()
+            ]
+        if limit and limit > 0:
+            rows = rows[:limit]
+        return [_material_out(m) for m in rows]
+
+    def attach_materials(self, db: Session, items: list[dict]) -> list[dict]:
+        """给题目输出补上 material 详情（批量查询，避免 N+1）。"""
+        ids = {it.get("material_id") for it in items if it.get("material_id")}
+        if not ids:
+            return items
+        mats = {
+            m.id: _material_out(m)
+            for m in db.query(QuestionMaterial).filter(QuestionMaterial.id.in_(ids)).all()
+        }
+        for it in items:
+            mid = it.get("material_id")
+            if mid:
+                it["material"] = mats.get(mid)
+        return items
 
     def list_questions(
         self,
@@ -267,6 +442,7 @@ class QuestionService:
                 unknown += r.unknown_count or 0
                 best_streak = max(best_streak, r.best_streak or 0)
 
+        self.attach_materials(db, result)
         return {
             "questions": result,
             "total": total,
@@ -296,19 +472,22 @@ class QuestionService:
             }
             for p in provs
         ]
-        return {
+        out = {
             **_question_out(
                 gq, None, provs[0].document_id if provs else None,
                 chapter_id=provs[0].chapter_id if provs else None,
             ),
             "provenance": provenance,
         }
+        self.attach_materials(db, [out])
+        return out
 
     def delete_by_document(self, db: Session, document_id: str) -> int:
         provs = db.query(QuestionProvenance).filter_by(document_id=document_id).all()
         question_ids = {p.question_id for p in provs}
         db.query(QuestionProvenance).filter_by(document_id=document_id).delete()
         db.query(QuestionRef).filter_by(document_id=document_id).delete()
+        db.query(QuestionMaterial).filter_by(document_id=document_id).delete()
         db.commit()
         return len(question_ids)
 

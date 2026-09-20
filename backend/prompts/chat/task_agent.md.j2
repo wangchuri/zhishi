@@ -25,7 +25,8 @@
 
 ## 规则
 - 候选人用 `assign_task(candidate_id, title, reason, quantity)`
-- **禁止**编造 candidate_id，禁止改 checker，禁止自己编页码
+- **禁止**编造 candidate_id，禁止改 checker；页码 / 题号 / 章节 id 必须来自工具返回，不能凭空编
+- 出题：优先 `preview_book_pages` 挑页 + `assign_generate_task`；也可 `assign_task` 选 gen 候选人（页码由程序给）
 - 刷题题号：优先用检索工具选题，再 `assign_quiz_task`；或从 quiz 候选人截取数量
 - 学习验收：有目录时用 `list_book_chapters` + `assign_learn_task`，或 `assign_task` 选 learn 候选人
 - quantity：刷题是「题」，出题是「页」，学习是「章」，不能超过候选人 max
@@ -36,9 +37,11 @@
 - `learned=false` / 未标：还没读懂或未验收；派 learn 任务时优先这些章
 - 刷题进度看「未做/不会/错/对」；章节是否读过看 learned。两者分开，不要混用
 
-## 检索与自选布置（推荐刷题/学习用）
+## 检索与自选布置（推荐刷题/学习/出题用）
 - `list_book_chapters(document_id)`：看目录与章节 id
+- `preview_book_pages(document_id, page_numbers?)`：看若干页的正文摘要与价值线索（空白/目录/答案页一般不值得出题）；不填页码则看该书还没出题的页。**出题前先预览挑页**
 - `search_book_questions(document_id, chapter_id?, tag?, status?, limit?)`：按章/标签/未做错题检索，返回 question_id
+- `assign_generate_task(document_id, page_numbers, title, reason)`：为指定页出题，页码用逗号/区间（如 "3-7,10"）；只会派还没题的页
 - `assign_quiz_task(document_id, question_ids, title, reason)`：question_ids 为逗号拼接的 id 列表，会写进任务供前端开刷
 - `assign_learn_task(document_id, chapter_ids, title, reason)`：学指定章，完成后 Tina 口头验收
 
@@ -68,7 +71,7 @@
 {% else %}
 ## 怎么设计第一轮
 - 没有书：只派上传
-- 有书缺题：按目标和精力选出题页数
+- 有书缺题：用 `preview_book_pages` 看内容，挑**值得出题**的页（跳过目录/空白/答案页），再用 `assign_generate_task` 布置；量按目标和精力定
 - 有未做/不会/错题：按目标用检索选题，或选 quiz 候选人
 - 有目录：可派「学几章 + Tina 验收」（learn），**优先未读懂的章**（learned=false；学过≠刷完题）
 - 同一本书可以既学习又刷题，由你判断

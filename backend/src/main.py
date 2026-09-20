@@ -25,6 +25,7 @@ from fastapi.staticfiles import StaticFiles
 
 from .api.kb import router as kb_router
 from .api.questions import router as questions_router
+from .api.materials import router as materials_router
 from .api.quiz import router as quiz_router
 from .api.tutor import router as tutor_router
 from .api.chat import router as chat_router
@@ -62,6 +63,7 @@ app.add_middleware(
 
 app.include_router(kb_router)
 app.include_router(questions_router)
+app.include_router(materials_router)
 app.include_router(quiz_router)
 app.include_router(tutor_router)
 app.include_router(chat_router)

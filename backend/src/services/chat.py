@@ -19,6 +19,7 @@ from ..core.llm import create_agent, format_agent_error, visible_assistant_delta
 from ..core.prompts import render_prompt
 from ..models import ChatMessage, ChatSession
 from ..tools.chat_tools import ChatTools, format_question_for_agent
+from ..tools.tina_mood_actions import TinaMoodActions, last_assistant_raw_text
 
 logger = logging.getLogger(__name__)
 
@@ -506,7 +507,7 @@ class ChatService:
         remaining_pages: Optional[list[str]] = None,
         kickoff: bool = False,
     ):
-        """发送消息，返回 (agent, session_id, 本轮用户原文, tools)。
+        """发送消息，返回 (agent, session_id, 本轮用户原文, tools, mood_actions)。
 
         引导未完成时：同一套 Tina + 引导工具，不是问卷 Agent。
         """
@@ -536,6 +537,7 @@ class ChatService:
 
                 update_profile(db, onboarding_status="completed")
 
+        mood = TinaMoodActions()
         if onboarding_active:
             from ..tools.onboarding_tools import OnboardingTools
 
@@ -543,7 +545,12 @@ class ChatService:
             onboard_tools = OnboardingTools()
             tools = ToolBundle(chat_tools, onboard_tools)
             system_prompt = render_prompt("chat/onboarding_agent.md.j2", **vars_)
-            agent = create_agent(tools=tools.get_tools(), system_prompt=system_prompt, max_tool_loop=8)
+            agent = create_agent(
+                tools=tools.get_tools(),
+                system_prompt=system_prompt,
+                max_tool_loop=8,
+                keyword_actions=mood.actions,
+            )
         else:
             tools = ChatTools(collection_id=collection_id)
             in_crisis = self.session_in_crisis(db, session_id)
@@ -554,7 +561,11 @@ class ChatService:
                 )
             else:
                 system_prompt = render_prompt("chat/zhishi_agent.md.j2", **vars_)
-            agent = create_agent(tools=tools.get_tools(), system_prompt=system_prompt)
+            agent = create_agent(
+                tools=tools.get_tools(),
+                system_prompt=system_prompt,
+                keyword_actions=mood.actions,
+            )
 
         history = self._load_messages(db, session_id)
         prior = history if kickoff else history[:-1]
@@ -567,7 +578,7 @@ class ChatService:
             session.title = (user_content.strip()[:40] or "对话")
             db.commit()
 
-        return agent, session_id, stamp_user_message(user_content), tools
+        return agent, session_id, stamp_user_message(user_content), tools, mood
 
     def persist_assistant(
         self,
@@ -652,8 +663,9 @@ class ChatService:
         _merge_tool_ui(widgets, tips, onboarding, plots, canvases, blocks, w, t, o, p, cv)
 
         payload = pack_assistant_payload(widgets, onboarding, tips, blocks, plots, canvases)
-        self.persist_assistant(session_id, full, reasoning or None, citations or None, payload)
-        return full, reasoning or None, citations
+        persist_text = last_assistant_raw_text(agent) or full
+        self.persist_assistant(session_id, persist_text, reasoning or None, citations or None, payload)
+        return persist_text, reasoning or None, citations
 
 
 # 模块级单例

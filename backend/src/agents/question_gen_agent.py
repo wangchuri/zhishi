@@ -138,11 +138,33 @@ async def _run_page_agent(
     else:
         quota = f"本页最多 {page_cap} 道，达到上限立即停止。"
 
+    materials_hint = ""
+    _mdb = SessionLocal()
+    try:
+        _mats = question_service.materials_covering(_mdb, document_id, [page_number])
+        if _mats:
+            _lines = []
+            for m in _mats:
+                snippet = " ".join((m.content or "").split())[:120]
+                title = f"《{m.title}》" if m.title else ""
+                _lines.append(
+                    f"- id={m.id} | kind={m.kind} | 覆盖页={m.pages_json or ''} {title}｜ 摘要：{snippet}"
+                )
+            materials_hint = (
+                "\n## 本页已有材料（可直接引用 material_id，不要重复创建）\n"
+                + "\n".join(_lines)
+                + "\n若本页考点已被上述材料覆盖，请直接出子题并把 material_id 填上；"
+                "只有都不合适时才调用 submit_material 新建。\n"
+            )
+    finally:
+        _mdb.close()
+
     instruction = (
         f"你是 Agent `{agent_id}`，只负责文档「{doc_name}」第 {page_number} 页。"
         f"{quota}\n"
         f"提交时 page_number 必须填 {page_number}。"
         f"{' chapter_id 必须填本页所属章节的 id（见系统提示目录）。' if learning_path and (learning_path.get('chapters') or []) else ''}"
+        f"{materials_hint}"
         f"下面就是本页正文，请直接阅读后出题，不要先检索。\n\n"
         f"## 第 {page_number} 页\n{page['content'][:3000]}"
     )

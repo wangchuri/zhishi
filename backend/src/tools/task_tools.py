@@ -7,15 +7,52 @@ from typing import Optional
 
 from tina import Tools
 
+from ..core.config import config
 from ..core.database import SessionLocal
 from ..models import Document, GlobalQuestion, QuestionProvenance
 from ..services.task import (
     _add_task,
     _doc_chapters,
+    _page_numbers,
+    _pages_with_questions,
     apply_candidate_quantity,
+    preview_pages_for_doc,
     search_questions_for_doc,
     task_assign_blocked_reason,
 )
+
+
+def _parse_page_numbers(raw: str) -> list[int]:
+    """解析页码：支持逗号与区间，如 "3,5,8-12" / "3，5；8-12"。去重保序。"""
+    text = "" if raw is None else str(raw)
+    out: list[int] = []
+    seen: set[int] = set()
+
+    def _push(n: int) -> None:
+        if n > 0 and n not in seen:
+            seen.add(n)
+            out.append(n)
+
+    for chunk in text.replace("；", ",").replace(";", ",").replace("，", ",").split(","):
+        piece = chunk.strip()
+        if not piece:
+            continue
+        if "-" in piece:
+            a, _, b = piece.partition("-")
+            try:
+                lo, hi = int(a.strip()), int(b.strip())
+            except ValueError:
+                continue
+            if lo > hi:
+                lo, hi = hi, lo
+            for n in range(lo, hi + 1):
+                _push(n)
+        else:
+            try:
+                _push(int(piece))
+            except ValueError:
+                continue
+    return out
 
 
 def _parse_id_list(raw: str) -> list[str]:
@@ -43,8 +80,10 @@ class TaskAssignTools:
         self.tools = Tools(name="task")
         self.tools.register_tool(tool=self.assign_task)
         self.tools.register_tool(tool=self.list_book_chapters)
+        self.tools.register_tool(tool=self.preview_book_pages)
         self.tools.register_tool(tool=self.search_book_questions)
         self.tools.register_tool(tool=self.assign_quiz_task)
+        self.tools.register_tool(tool=self.assign_generate_task)
         self.tools.register_tool(tool=self.assign_learn_task)
 
     def get_tools(self):
@@ -144,6 +183,44 @@ class TaskAssignTools:
             for i, ch in enumerate(chapters, 1):
                 flag = "true" if ch.get("learned") else "false"
                 lines.append(f'{i}. id="{ch["id"]}" | learned={flag} | {ch["title"]}')
+            return "\n".join(lines)
+        finally:
+            db.close()
+
+    def preview_book_pages(self, document_id: str, page_numbers: str = "") -> str:
+        """查看某本资料若干页的摘要与价值线索，判断哪些页值得出题。
+        页码支持逗号与区间（如 "3,5,8-12"）；不填则列出该书还没出过题的页。
+        Args:
+            document_id: 资料文档 id
+            page_numbers: 要预览的页码，逗号/区间分隔，可空
+        """
+        doc_id = (document_id or "").strip()
+        if not doc_id:
+            return "缺少 document_id"
+        wanted = _parse_page_numbers(page_numbers) if page_numbers else None
+        if page_numbers and not wanted:
+            return "页码解析不出，请用逗号或区间，如 \"3,5,8-12\"。"
+        db = SessionLocal()
+        try:
+            data = preview_pages_for_doc(db, doc_id, wanted)
+            if data is None:
+                return f"找不到文档：{doc_id}"
+            if not data["pages"]:
+                return f"《{data['name']}》没有可预览的页（可能这些页都已出题，或页码不在范围）。"
+            lines = [
+                f"《{data['name']}》共 {data['total_pages']} 页，已有题 {data['pages_with_questions']} 页，"
+                f"未出题 {data['missing_pages']} 页。以下 {data['returned']} 页供判断："
+            ]
+            for p in data["pages"]:
+                flag = "已有题" if p["has_questions"] else "无题"
+                lines.append(
+                    f'- 第 {p["page_number"]} 页 | {p["chars"]}字 | {flag} | {p["kind"]} | {p["suggest"]}'
+                    f'\n  预览：{p["preview"] or "（空白）"}'
+                )
+            lines.append(
+                "挑好值得出题的页后，用 assign_generate_task(document_id, page_numbers, title, reason) 布置；"
+                "只会派还没有题的页。"
+            )
             return "\n".join(lines)
         finally:
             db.close()
@@ -283,6 +360,84 @@ class TaskAssignTools:
             f"已布置 [{len(self.assigned)}] {title_text}（{len(valid)}题）。"
             f"入口会带上 question_ids。还可以继续派，也可以停。"
         )
+
+    def assign_generate_task(
+        self,
+        document_id: str,
+        page_numbers: str,
+        title: str,
+        reason: str,
+    ) -> str:
+        """布置出题任务：为指定页生成题目。只会派还没有题的页，超出单次上限的页会截断。
+        Args:
+            document_id: 资料文档 id
+            page_numbers: 页码，逗号/区间分隔（如 "3-7,10"）；建议先用 preview_book_pages 确认
+            title: 任务名称
+            reason: 为什么派这些页、为何这个量
+        """
+        blocked = self._blocked()
+        if blocked:
+            return blocked
+        doc_id = (document_id or "").strip()
+        if not doc_id:
+            return "缺少 document_id"
+        want = _parse_page_numbers(page_numbers)
+        if not want:
+            return "缺少 page_numbers，例如 \"3-7,10\"。可先用 preview_book_pages 查看。"
+        db = SessionLocal()
+        try:
+            doc = db.get(Document, doc_id)
+            if not doc:
+                return f"找不到文档：{doc_id}"
+            valid = set(_page_numbers(doc))
+            have_q = _pages_with_questions(db, doc_id)
+            picked = [p for p in want if p in valid]
+            already = [p for p in picked if p in have_q]
+            fresh = [p for p in picked if p not in have_q]
+            if not fresh:
+                if already:
+                    return "选中的页都已有题，换几页吧（可用 preview_book_pages 看哪些页没题）。"
+                return "这些页码都不在该文档范围内。"
+            cap = max(1, config.question_gen_max_pages)
+            dropped: list[int] = []
+            if len(fresh) > cap:
+                dropped = fresh[cap:]
+                fresh = fresh[:cap]
+            key = "gen-ids-" + doc_id + "-" + ",".join(str(p) for p in fresh)
+            if key in self.assigned:
+                return "同样的出题页今天已经派过了。"
+            from ..services.task import get_active_goal
+
+            goal = get_active_goal(db)
+            payload = {
+                "document_id": doc_id,
+                "page_numbers": fresh,
+                "need": len(fresh),
+                "baseline_have_count": len(have_q),
+            }
+            title_text = (title or "").strip() or f"给《{doc.display_name}》出题"
+            reason_text = (reason or "").strip() or "为选定页生成题目。"
+            row = _add_task(
+                db,
+                goal_id=goal.id if goal else None,
+                kind="generate",
+                checker="generate_pages",
+                title=title_text[:200],
+                description=reason_text,
+                payload=payload,
+            )
+            if not row:
+                again = task_assign_blocked_reason(db)
+                if again:
+                    return again
+        finally:
+            db.close()
+        if not row:
+            return "同样的出题任务今天已经存在。"
+        self.assigned.append(key)
+        extra = f"，跳过已有题 {len(already)} 页" if already else ""
+        more = f"，超出单次上限 {len(dropped)} 页未派" if dropped else ""
+        return f"已布置 [{len(self.assigned)}] {title_text}（{len(fresh)}页）{extra}{more}。"
 
     def assign_learn_task(
         self,

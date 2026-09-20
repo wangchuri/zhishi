@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import uuid
 from typing import Optional
 
 from fastapi import APIRouter, Depends
@@ -104,6 +105,9 @@ def start_targeted(body: l_schemas.TargetedTrainingStart, db: Session = Depends(
 
     training = TrainingPlan(
         quiz_session_id=session.id,
+        # 前端据此判断是否显示「AI 教练」面板；训练辅导是无状态的 LLM 调用，
+        # 目前只需要一个会话 id 占位。
+        agent_session_id=str(uuid.uuid4()),
         weak_tags_json=json.dumps([{"tag": t["tag"], "wrong_count": t["wrong_count"], "correct_count": t["correct_count"], "accuracy_rate": t["accuracy_rate"]} for t in weak], ensure_ascii=False),
         question_ids_json=json.dumps(question_ids),
         report_id=body.report_id,

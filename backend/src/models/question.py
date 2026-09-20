@@ -36,6 +36,27 @@ class GlobalQuestion(Base):
     difficulty: Mapped[int | None] = mapped_column(Integer)
     html_content: Mapped[str | None] = mapped_column(Text)
     answer_params: Mapped[str | None] = mapped_column(Text)  # JSON
+    # 材料题：子题挂到 QuestionMaterial；sub_index 为子题序号（从 1 起）
+    material_id: Mapped[str | None] = mapped_column(String(36), index=True)
+    sub_index: Mapped[int | None] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
+
+
+class QuestionMaterial(Base):
+    """题目材料：阅读文章、完形短文等，可被多道子题复用。"""
+
+    __tablename__ = "question_materials"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    document_id: Mapped[str] = mapped_column(String(36), index=True, nullable=False)
+    kind: Mapped[str] = mapped_column(String(20), nullable=False)  # reading/cloze/...
+    title: Mapped[str | None] = mapped_column(String(200))
+    content: Mapped[str | None] = mapped_column(Text)
+    pages_json: Mapped[str | None] = mapped_column(Text)  # 覆盖页，JSON 数组如 [1,2]
+    chapter_id: Mapped[str | None] = mapped_column(String(36), index=True)
+    audio_ref: Mapped[str | None] = mapped_column(String(255))
+    # 去重键：同文档内 (kind + content) 相同视为同一材料
+    content_hash: Mapped[str] = mapped_column(String(64), index=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
 
 
