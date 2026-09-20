@@ -13,6 +13,7 @@ from .learning_path import DocumentLearningPath
 from .quiz import QuizAnswer, QuizSession, QuizSessionQuestion, TutorSession
 from .tracking import (
     DailyActivity,
+    NoteFolder,
     PlanTask,
     Reminder,
     StudyPlan,
@@ -42,6 +43,7 @@ __all__ = [
     "DailyActivity",
     "UserAchievement",
     "UserNote",
+    "NoteFolder",
     "Reminder",
     "StudyPlan",
     "PlanTask",

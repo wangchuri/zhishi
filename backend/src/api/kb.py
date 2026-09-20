@@ -379,6 +379,8 @@ async def import_doc(
 def _learning_path_out(doc_id: str, rec: DocumentLearningPath | None) -> kb_schemas.LearningPathResult:
     if rec is None:
         return kb_schemas.LearningPathResult(document_id=doc_id, status="missing")
+    from ..tools.learning_path_tools import clean_key_points
+
     path: dict = {}
     if rec.path_json:
         try:
@@ -400,7 +402,7 @@ def _learning_path_out(doc_id: str, rec: DocumentLearningPath | None) -> kb_sche
             id=str(ch.get("id") or ""),
             title=str(ch.get("title") or ""),
             order=order,
-            key_points=[str(p) for p in (ch.get("key_points") or []) if p],
+            key_points=clean_key_points(ch.get("key_points") or []),
             learned=bool(ch.get("learned")),
         ))
     chapters.sort(key=lambda c: c.order)

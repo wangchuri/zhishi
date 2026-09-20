@@ -28,6 +28,7 @@ function formatMeta(note: NoteItem): string {
   if (words) parts.push(`${words} 字`)
   if (note.note_type === "report") parts.push("学习报告")
   if (note.note_type === "tip") parts.push("tip")
+  if (note.note_type === "manual" && note.is_draft) parts.push("草稿")
   if (note.note_type === "manual" && note.folder) parts.push(note.folder)
   if (note.document_name) parts.push(`《${note.document_name}》`)
   if (note.page_number != null) parts.push(`第 ${note.page_number} 页`)
@@ -107,6 +108,11 @@ export function NoteDetailPage() {
             <h1 className="font-display text-[1.6rem] leading-snug text-ink">{note.title || "无标题"}</h1>
             {isManual ? (
               <div className="flex items-center gap-2 shrink-0">
+                {note.is_draft ? (
+                  <span className="inline-flex items-center h-6 px-2 rounded-full bg-amber-100 text-amber-700 text-[11px] font-medium">
+                    草稿
+                  </span>
+                ) : null}
                 {confirmDelete ? (
                   <>
                     <Button variant="danger" size="sm" onClick={() => void handleDelete()}>

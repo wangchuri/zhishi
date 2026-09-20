@@ -80,6 +80,7 @@ class NoteCreate(BaseModel):
     document_id: Optional[str] = None
     page_number: Optional[int] = None
     tags: Optional[list[str]] = None
+    is_draft: bool = False
 
 
 class NoteUpdate(BaseModel):
@@ -89,6 +90,7 @@ class NoteUpdate(BaseModel):
     document_id: Optional[str] = None
     page_number: Optional[int] = None
     tags: Optional[list[str]] = None
+    is_draft: Optional[bool] = None
 
 
 class NoteItem(BaseModel):
@@ -101,6 +103,7 @@ class NoteItem(BaseModel):
     document_name: Optional[str] = None
     page_number: Optional[int] = None
     tags: list[str] = []
+    is_draft: bool = False
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 
@@ -117,6 +120,10 @@ class NoteFolder(BaseModel):
 
 class NoteFolderList(BaseModel):
     folders: list[NoteFolder] = []
+
+
+class NoteFolderCreate(BaseModel):
+    name: str
 
 
 class TipTagList(BaseModel):

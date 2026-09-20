@@ -73,6 +73,7 @@ def create_note(body: ai_schemas.NoteCreate, db: Session = Depends(get_db)):
         document_id=body.document_id,
         page_number=body.page_number,
         tags=body.tags,
+        is_draft=body.is_draft,
     )
     return note_service.note_to_item(db, note)
 
@@ -100,6 +101,15 @@ def list_note_folders(db: Session = Depends(get_db)):
     return {"folders": note_service.list_folders(db)}
 
 
+@router.post("/notes/folders")
+def create_note_folder(body: ai_schemas.NoteFolderCreate, db: Session = Depends(get_db)):
+    """新建（可为空的）笔记文件夹，之后可在选择列表里选到。"""
+    name = note_service.create_folder(db, body.name)
+    if not name:
+        raise HTTPException(status_code=400, detail="文件夹名不能为空")
+    return {"name": name}
+
+
 @router.get("/notes/tips/{document_id}", response_model=ai_schemas.NoteListResult)
 def list_tips(document_id: str, db: Session = Depends(get_db)):
     return note_service.list_tips(db, document_id)
@@ -116,6 +126,7 @@ def update_note(note_id: str, body: ai_schemas.NoteUpdate, db: Session = Depends
         document_id=body.document_id,
         page_number=body.page_number,
         tags=body.tags,
+        is_draft=body.is_draft,
     )
     if not note:
         raise HTTPException(status_code=404, detail="笔记不存在")

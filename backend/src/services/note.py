@@ -8,7 +8,7 @@ from typing import Optional
 
 from sqlalchemy.orm import Session
 
-from ..models import Document, UserNote
+from ..models import Document, NoteFolder, UserNote
 from ..utils import parse_tags
 
 _MD_FENCE = re.compile(r"^```(?:markdown|md)?\s*\r?\n([\s\S]*?)\r?\n```\s*$", re.I)
@@ -55,9 +55,21 @@ def _note_out(n: UserNote, names: dict[str, str] | None = None) -> dict:
         "document_name": (names or {}).get(n.document_id or "") if n.document_id else None,
         "page_number": n.page_number,
         "tags": parse_tags(getattr(n, "user_tags", None)),
+        "is_draft": bool(getattr(n, "is_draft", False)),
         "created_at": n.created_at.isoformat() if n.created_at else None,
         "updated_at": n.updated_at.isoformat() if n.updated_at else None,
     }
+
+
+def _register_folder(db: Session, name: str | None) -> str:
+    """把文件夹名登记进 note_folders（不提交），空文件夹也能被记住。"""
+    clean = (name or "").strip()[:100]
+    if not clean:
+        return ""
+    exists = db.query(NoteFolder).filter(NoteFolder.name == clean).first()
+    if not exists:
+        db.add(NoteFolder(name=clean))
+    return clean
 
 
 def _doc_names(db: Session, notes: list[UserNote]) -> dict[str, str]:
@@ -105,6 +117,7 @@ class NoteService:
         document_id: Optional[str] = None,
         page_number: Optional[int] = None,
         tags: Optional[list[str]] = None,
+        is_draft: bool = False,
     ) -> UserNote:
         """新建一条手写笔记。"""
         note = UserNote(
@@ -115,7 +128,9 @@ class NoteService:
             document_id=document_id or None,
             page_number=page_number,
             user_tags=_dump_user_tags(tags),
+            is_draft=bool(is_draft),
         )
+        _register_folder(db, note.folder)
         db.add(note)
         db.commit()
         db.refresh(note)
@@ -132,6 +147,7 @@ class NoteService:
         document_id: Optional[str] = None,
         page_number: Optional[int] = None,
         tags: Optional[list[str]] = None,
+        is_draft: Optional[bool] = None,
     ) -> Optional[UserNote]:
         """更新手写笔记；只改传入的字段。tip/report 不允许改。"""
         note = self.get_note(db, note_id)
@@ -145,12 +161,15 @@ class NoteService:
             note.content_md = content_md
         if folder is not None:
             note.folder = (folder or "").strip()[:100] or "我的笔记"
+            _register_folder(db, note.folder)
         if document_id is not None:
             note.document_id = document_id or None
         if page_number is not None:
             note.page_number = page_number
         if tags is not None:
             note.user_tags = _dump_user_tags(tags)
+        if is_draft is not None:
+            note.is_draft = bool(is_draft)
         db.commit()
         db.refresh(note)
         return note
@@ -164,14 +183,27 @@ class NoteService:
         return True
 
     def list_folders(self, db: Session) -> list[dict]:
-        """笔记文件夹及数量（不含 tip）。"""
+        """笔记文件夹及数量（不含 tip）。含自建的空文件夹。"""
         rows = db.query(UserNote).filter(UserNote.note_type != "tip").all()
         counts: dict[str, int] = {}
         for n in rows:
             name = _note_folder(n)
             counts[name] = counts.get(name, 0) + 1
-        ordered = sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))
-        return [{"name": name, "count": count} for name, count in ordered]
+        names: set[str] = set(counts.keys())
+        names.add("我的笔记")
+        for (raw,) in db.query(NoteFolder.name).all():
+            clean = (raw or "").strip()
+            if clean:
+                names.add(clean)
+        ordered = sorted(names, key=lambda name: (-counts.get(name, 0), name))
+        return [{"name": name, "count": counts.get(name, 0)} for name in ordered]
+
+    def create_folder(self, db: Session, name: str) -> str:
+        """登记一个（可为空的）笔记文件夹。"""
+        clean = _register_folder(db, name)
+        if clean:
+            db.commit()
+        return clean
 
     def list_notes(
         self,

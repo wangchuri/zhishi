@@ -27,6 +27,7 @@ export interface Note {
   source: "manual" | "doc" | "ai"
   hasAISummary: boolean
   organized: boolean
+  isDraft?: boolean
   category?: string
   /** 后端 note 字段（tip 等来源） */
   content_md?: string

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { Link, useNavigate, useParams } from "react-router-dom"
 import { ArrowLeft, Eye, Loader2, Pencil, PanelRight, PanelRightClose, Save } from "lucide-react"
 import { toast } from "sonner"
@@ -24,6 +24,10 @@ interface DocOption {
   name: string
 }
 
+function payloadKey(title: string, content: string, folder: string, documentId: string): string {
+  return JSON.stringify([title.trim(), content, folder.trim(), documentId])
+}
+
 export function NoteEditorPage() {
   const { noteId } = useParams()
   const navigate = useNavigate()
@@ -42,7 +46,49 @@ export function NoteEditorPage() {
 
   const [folders, setFolders] = useState<string[]>([])
   const [docs, setDocs] = useState<DocOption[]>([])
+  const [currentNoteId, setCurrentNoteId] = useState<string | null>(noteId ?? null)
+  const [autoSaving, setAutoSaving] = useState(false)
+  const [autoSavedAt, setAutoSavedAt] = useState<string | null>(null)
   const editorRef = useRef<Editor | null>(null)
+
+  const stateRef = useRef({ title, content, folder, documentId })
+  stateRef.current = { title, content, folder, documentId }
+  const currentNoteIdRef = useRef<string | null>(noteId ?? null)
+  const lastSavedRef = useRef("")
+  const draftTimer = useRef<number | null>(null)
+  const inFlightRef = useRef(false)
+
+  const runAutosave = useCallback(async () => {
+    const s = stateRef.current
+    if (!s.title.trim() && !s.content.trim()) return
+    const key = payloadKey(s.title, s.content, s.folder, s.documentId)
+    if (key === lastSavedRef.current || inFlightRef.current) return
+    inFlightRef.current = true
+    setAutoSaving(true)
+    try {
+      const body = {
+        title: s.title.trim() || "无标题",
+        content_md: s.content,
+        folder: s.folder.trim() || "我的笔记",
+        document_id: s.documentId || null,
+      }
+      if (currentNoteIdRef.current) {
+        await notesApi.update(currentNoteIdRef.current, body)
+      } else {
+        const note = await notesApi.create({ ...body, is_draft: true })
+        currentNoteIdRef.current = note.id
+        setCurrentNoteId(note.id)
+        window.history.replaceState(null, "", `/notes/${note.id}/edit`)
+      }
+      lastSavedRef.current = key
+      setAutoSavedAt(new Date().toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" }))
+    } catch {
+      /* 自动保存失败静默处理，手动保存时再提示 */
+    } finally {
+      inFlightRef.current = false
+      setAutoSaving(false)
+    }
+  }, [])
 
   const insertEmbed = (raw: string) => {
     setPreview(false)
@@ -111,10 +157,17 @@ export function NoteEditorPage() {
       .get(noteId)
       .then((n) => {
         if (cancelled) return
-        setTitle(n.title || "")
-        setContent(n.content_md || "")
-        setFolder(n.folder || "我的笔记")
-        setDocumentId(n.document_id || "")
+        const loadedTitle = n.title || ""
+        const loadedContent = n.content_md || ""
+        const loadedFolder = n.folder || "我的笔记"
+        const loadedDoc = n.document_id || ""
+        setTitle(loadedTitle)
+        setContent(loadedContent)
+        setFolder(loadedFolder)
+        setDocumentId(loadedDoc)
+        currentNoteIdRef.current = n.id
+        setCurrentNoteId(n.id)
+        lastSavedRef.current = payloadKey(loadedTitle, loadedContent, loadedFolder, loadedDoc)
       })
       .catch(() => {
         if (!cancelled) setMissing(true)
@@ -127,19 +180,70 @@ export function NoteEditorPage() {
     }
   }, [editing, noteId])
 
+  useEffect(() => {
+    if (loading) return
+    const s = stateRef.current
+    if (!s.title.trim() && !s.content.trim()) return
+    if (payloadKey(s.title, s.content, s.folder, s.documentId) === lastSavedRef.current) return
+    if (draftTimer.current) window.clearTimeout(draftTimer.current)
+    draftTimer.current = window.setTimeout(() => {
+      void runAutosave()
+    }, 1500)
+    return () => {
+      if (draftTimer.current) window.clearTimeout(draftTimer.current)
+    }
+  }, [title, content, folder, documentId, loading, runAutosave])
+
+  useEffect(() => {
+    const flush = () => {
+      void runAutosave()
+    }
+    const onHide = () => {
+      if (document.visibilityState === "hidden") flush()
+    }
+    window.addEventListener("beforeunload", flush)
+    document.addEventListener("visibilitychange", onHide)
+    return () => {
+      window.removeEventListener("beforeunload", flush)
+      document.removeEventListener("visibilitychange", onHide)
+      if (draftTimer.current) window.clearTimeout(draftTimer.current)
+      flush()
+    }
+  }, [runAutosave])
+
+  const registerFolder = async () => {
+    const name = folder.trim()
+    if (!name || folders.includes(name)) return
+    try {
+      await notesApi.createFolder(name)
+      setFolders((prev) => (prev.includes(name) ? prev : [...prev, name]))
+    } catch {
+      /* 忽略：保存笔记时后端也会自动登记文件夹 */
+    }
+  }
+
   const save = async () => {
     if (saving) return
+    if (!title.trim() && !content.trim()) {
+      toast.error("先写点内容再保存吧")
+      return
+    }
     setSaving(true)
     try {
-      const payload = {
+      const body = {
         title: title.trim() || "无标题",
         content_md: content,
         folder: folder.trim() || "我的笔记",
         document_id: documentId || null,
+        is_draft: false,
       }
-      const note =
-        editing && noteId ? await notesApi.update(noteId, payload) : await notesApi.create(payload)
-      toast.success(editing ? "已保存" : "已新建笔记")
+      if (draftTimer.current) window.clearTimeout(draftTimer.current)
+      const id = currentNoteIdRef.current
+      const note = id ? await notesApi.update(id, body) : await notesApi.create(body)
+      lastSavedRef.current = payloadKey(title, content, folder, documentId)
+      currentNoteIdRef.current = note.id
+      setCurrentNoteId(note.id)
+      toast.success(editing || id ? "已保存" : "已新建笔记")
       navigate(`/notes/${note.id}`, { replace: true })
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "保存失败")
@@ -176,6 +280,18 @@ export function NoteEditorPage() {
         </button>
         <span className="text-caption text-ink-disabled">{editing ? "编辑笔记" : "新建笔记"}</span>
         <div className="flex-1" />
+        <span className="hidden sm:inline-flex items-center gap-1 text-caption text-ink-disabled">
+          {autoSaving ? (
+            <>
+              <Loader2 className="w-3 h-3 animate-spin" />
+              自动保存中…
+            </>
+          ) : autoSavedAt ? (
+            `草稿已自动保存 ${autoSavedAt}`
+          ) : currentNoteId && !editing ? (
+            "草稿会自动保存"
+          ) : null}
+        </span>
         <Button variant="ghost" size="sm" onClick={() => setSidebarOpen((v) => !v)}>
           {sidebarOpen ? (
             <PanelRightClose className="w-4 h-4" />
@@ -219,13 +335,16 @@ export function NoteEditorPage() {
               list="note-folder-options"
               value={folder}
               onChange={(e) => setFolder(e.target.value)}
-              placeholder="文件夹"
-              className="h-9 w-40 text-small"
+              onBlur={() => void registerFolder()}
+              placeholder="文件夹（可新建）"
+              className="h-9 w-44 text-small"
             />
             <datalist id="note-folder-options">
-              {folders.map((name) => (
-                <option key={name} value={name} />
-              ))}
+              {Array.from(new Set(["我的笔记", ...folders, folder.trim()].filter(Boolean))).map(
+                (name) => (
+                  <option key={name} value={name} />
+                ),
+              )}
             </datalist>
 
             <Select

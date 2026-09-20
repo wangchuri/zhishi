@@ -11,18 +11,40 @@ import { TipDeck } from "@/features/notes/TipDeck"
 import { cn } from "@/lib/utils"
 import type { Note } from "@/types"
 
+const EMBED_LABEL: Record<string, string> = { tip: "tip", question: "题目", material: "材料" }
+
+function toExcerpt(raw: string): string {
+  const counts: Record<string, number> = {}
+  const text = (raw || "")
+    .replace(
+      /\[\[\s*(tip|question|material)\s*:\s*[A-Za-z0-9_-]+\s*(?:\|\s*[a-z]+\s*)?\]\]/gi,
+      (_m, kind: string) => {
+        const k = kind.toLowerCase()
+        counts[k] = (counts[k] || 0) + 1
+        return " "
+      },
+    )
+    .replace(/[#*`>_-]/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+  const badges = Object.entries(counts).map(([k, c]) => `${EMBED_LABEL[k] || k}×${c}`)
+  const summary = badges.length ? `嵌入 ${badges.join("、")}` : ""
+  return [summary, text].filter(Boolean).join(" · ").slice(0, 120)
+}
+
 function toNote(n: NoteItem): Note {
-  const excerpt = (n.content_md || "").replace(/[#*`>_-]/g, "").replace(/\s+/g, " ").trim()
+  const excerpt = toExcerpt(n.content_md || "")
   return {
     id: n.id,
     title: n.title || "无标题",
-    excerpt: excerpt.slice(0, 120),
+    excerpt,
     tags: n.note_type === "report" ? ["学习报告"] : [],
     updatedAt: n.created_at ? formatDate(n.created_at) : "—",
     wordCount: (n.content_md || "").length,
     source: n.note_type === "report" ? "ai" : "manual",
     hasAISummary: n.note_type === "report",
     organized: false,
+    isDraft: !!n.is_draft,
     content_md: n.content_md || "",
     document_id: n.document_id ?? undefined,
     note_type: n.note_type,

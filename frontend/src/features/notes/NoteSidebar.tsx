@@ -224,6 +224,7 @@ export function NoteSidebar({ documentId, onInsert }: NoteSidebarProps) {
   const [query, setQuery] = useState("")
   const [loading, setLoading] = useState(false)
   const [tipStyle, setTipStyle] = useState("card")
+  const [tagFilter, setTagFilter] = useState<string[]>([])
   const [openId, setOpenId] = useState<string | null>(null)
 
   const [tips, setTips] = useState<NoteItem[]>([])
@@ -271,13 +272,18 @@ export function NoteSidebar({ documentId, onInsert }: NoteSidebarProps) {
   }, [tab, query, documentId])
 
   const q = query.trim().toLowerCase()
-  const shownTips = tips.filter(
-    (t) => !q || `${t.title || ""}${t.content_md || ""}`.toLowerCase().includes(q),
-  )
+  const tipTags = Array.from(new Set(tips.flatMap((t) => t.tags || [])))
+  const shownTips = tips.filter((t) => {
+    if (tagFilter.length && !tagFilter.every((tag) => (t.tags || []).includes(tag))) return false
+    return !q || `${t.title || ""}${t.content_md || ""}`.toLowerCase().includes(q)
+  })
   const shownQuestions = questions.filter((item) => {
     if (statusFilter !== "all" && statusOf(item) !== statusFilter) return false
     return !q || (item.stem || "").toLowerCase().includes(q)
   })
+
+  const toggleTag = (tag: string) =>
+    setTagFilter((prev) => (prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]))
 
   const sendTina = async () => {
     const text = tinaInput.trim()
@@ -333,28 +339,64 @@ export function NoteSidebar({ documentId, onInsert }: NoteSidebarProps) {
             onChange={(e) => setQuery(e.target.value)}
           />
           {tab === "tip" ? (
-            <div className="flex items-center gap-1.5 mt-2 text-[11px]">
-              <span className="text-ink-disabled">插入样式</span>
-              {[
-                { key: "card", label: "卡片" },
-                { key: "quote", label: "引用" },
-                { key: "side", label: "边注" },
-              ].map((s) => (
-                <button
-                  key={s.key}
-                  type="button"
-                  onClick={() => setTipStyle(s.key)}
-                  className={cn(
-                    "h-6 px-2 rounded-full border font-medium",
-                    tipStyle === s.key
-                      ? "bg-sea text-paper border-sea"
-                      : "border-line text-ink-soft hover:border-sea/40",
-                  )}
-                >
-                  {s.label}
-                </button>
-              ))}
-            </div>
+            <>
+              <div className="flex items-center gap-1.5 mt-2 text-[11px]">
+                <span className="text-ink-disabled">插入样式</span>
+                {[
+                  { key: "card", label: "卡片" },
+                  { key: "quote", label: "引用" },
+                  { key: "side", label: "边注" },
+                ].map((s) => (
+                  <button
+                    key={s.key}
+                    type="button"
+                    onClick={() => setTipStyle(s.key)}
+                    className={cn(
+                      "h-6 px-2 rounded-full border font-medium",
+                      tipStyle === s.key
+                        ? "bg-sea text-paper border-sea"
+                        : "border-line text-ink-soft hover:border-sea/40",
+                    )}
+                  >
+                    {s.label}
+                  </button>
+                ))}
+              </div>
+              {tipTags.length > 0 ? (
+                <div className="flex flex-wrap gap-1.5 mt-2">
+                  <button
+                    type="button"
+                    onClick={() => setTagFilter([])}
+                    className={cn(
+                      "h-6 px-2 rounded-full border text-[11px] font-medium",
+                      tagFilter.length === 0
+                        ? "bg-sea text-paper border-sea"
+                        : "border-line text-ink-soft hover:border-sea/40",
+                    )}
+                  >
+                    全部
+                  </button>
+                  {tipTags.map((tag) => {
+                    const on = tagFilter.includes(tag)
+                    return (
+                      <button
+                        key={tag}
+                        type="button"
+                        onClick={() => toggleTag(tag)}
+                        className={cn(
+                          "h-6 px-2 rounded-full border text-[11px] font-medium",
+                          on
+                            ? "bg-sea text-paper border-sea"
+                            : "border-line text-ink-soft hover:border-sea/40",
+                        )}
+                      >
+                        {tag}
+                      </button>
+                    )
+                  })}
+                </div>
+              ) : null}
+            </>
           ) : null}
           {tab === "question" ? (
             <div className="flex flex-wrap gap-1.5 mt-2">

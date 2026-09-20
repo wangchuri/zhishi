@@ -26,12 +26,16 @@ export function NoteCard({ note, onClick, className }: NoteCardProps) {
             {note.title}
           </h3>
         </div>
-        {note.hasAISummary && (
+        {note.isDraft ? (
+          <span className="inline-flex items-center h-5 px-1.5 rounded-full bg-amber-100 text-amber-700 text-small font-medium shrink-0">
+            草稿
+          </span>
+        ) : note.hasAISummary ? (
           <span className="inline-flex items-center gap-0.5 h-5 px-1.5 rounded-full bg-primary-soft text-primary text-small font-medium shrink-0">
             <Sparkles className="w-3 h-3" strokeWidth={2} />
             AI 摘要
           </span>
-        )}
+        ) : null}
       </div>
 
       <p className="text-caption text-ink-secondary leading-relaxed mb-3 truncate-2">{note.excerpt}</p>

@@ -64,10 +64,22 @@ class UserNote(Base):
     note_type: Mapped[str] = mapped_column(String(20), default="manual")  # manual/tip/report
     # 笔记文件夹（报告固定进「学习报告」）；tip 用 "tip"
     folder: Mapped[str] = mapped_column(String(100), default="我的笔记", nullable=False)
+    # 自动保存但尚未手动保存的草稿
+    is_draft: Mapped[bool] = mapped_column(Boolean, default=False)
     # 用户给 tip 打的分类 tag，不是资料/题目上的知识点 tag
     user_tags: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=_now, onupdate=_now)
+
+
+class NoteFolder(Base):
+    """用户自建的笔记文件夹名（即使暂时没有笔记也保留）。"""
+
+    __tablename__ = "note_folders"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    name: Mapped[str] = mapped_column(String(100), unique=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
 
 
 class Reminder(Base):

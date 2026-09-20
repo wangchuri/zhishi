@@ -1149,6 +1149,8 @@ export interface NoteItem {
   note_type: string
   /** 笔记文件夹（报告固定「学习报告」） */
   folder?: string | null
+  /** 自动保存但尚未手动保存的草稿 */
+  is_draft?: boolean
   created_at?: string
   updated_at?: string
 }
@@ -1183,6 +1185,7 @@ export const notesApi = {
     document_id?: string | null
     page_number?: number | null
     tags?: string[]
+    is_draft?: boolean
   }) {
     return request<NoteItem>("POST", "/api/v1/notes", data)
   },
@@ -1197,6 +1200,7 @@ export const notesApi = {
       document_id?: string | null
       page_number?: number | null
       tags?: string[]
+      is_draft?: boolean
     },
   ) {
     return request<NoteItem>("PATCH", `/api/v1/notes/${encodeURIComponent(noteId)}`, data)
@@ -1219,6 +1223,11 @@ export const notesApi = {
 
   listFolders() {
     return request<{ folders: NoteFolder[] }>("GET", "/api/v1/notes/folders")
+  },
+
+  /** 新建（可为空的）文件夹，之后可被选择 */
+  createFolder(name: string) {
+    return request<{ name: string }>("POST", "/api/v1/notes/folders", { name })
   },
 
   get(noteId: string) {

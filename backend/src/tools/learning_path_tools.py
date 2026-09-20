@@ -6,9 +6,59 @@
 from __future__ import annotations
 
 import json
+import re
 import uuid
 
 from tina import Tools
+
+_CHAPTER_PREFIX = re.compile(
+    r"^第\s*[一二三四五六七八九十百零两\d]+\s*[章节单元篇部分讲点]\s*[、:：.．\-—]?\s*"
+)
+_KP_SPLIT = re.compile(r"[、，,；;|/／]+")
+_KP_NOISE = re.compile(
+    r"(p\.?\s*\d+|第\s*\d+\s*页|\d+\s*题|选择题|判断题|填空题|问答题|简答题|论述题|材料分析题|题型|本部分|本章|本节|本讲)"
+)
+
+
+def _expand_key_point(raw: str) -> list[str]:
+    """把一个要点串按分隔符 / 括号里的并列概念拆成候选标签。"""
+    s = (raw or "").strip()
+    if not s:
+        return []
+    # 把括号替换成分隔符，让括号里的并列概念也能拆出来
+    normalized = re.sub(r"[（(]([^（()）]*)[）)]", lambda m: "、" + m.group(1) + "、", s)
+    return [part.strip() for part in _KP_SPLIT.split(normalized) if part.strip()]
+
+
+def clean_key_points(points) -> list[str]:
+    """把模型输出的要点整理成短标签：拆并列、去章号、去页码/题型等噪声。
+
+    兼容模型偶尔返回单个字符串 / 非列表的情况。
+    """
+    if isinstance(points, (str, int, float)):
+        points = [points]
+    if not isinstance(points, list):
+        points = [points] if points else []
+
+    result: list[str] = []
+    seen: set[str] = set()
+    for raw in points:
+        if isinstance(raw, (int, float)):
+            raw = str(raw)
+        if not isinstance(raw, str):
+            continue
+        for token in _expand_key_point(raw):
+            token = token.strip(" 　·:：.。、,，;；-—_【】[]()（）")
+            token = _CHAPTER_PREFIX.sub("", token).strip()
+            if not token or len(token) > 24:
+                continue
+            if _KP_NOISE.search(token):
+                continue
+            if token in seen:
+                continue
+            seen.add(token)
+            result.append(token)
+    return result[:8]
 
 
 def norm_title(title) -> str:
@@ -68,7 +118,7 @@ def norm_chapters(chapters) -> list[dict]:
             kp = kp.get("items") or kp.get("list") or []
         if not isinstance(kp, list):
             kp = [kp]
-        kp = [str(k) for k in kp if k]
+        kp = clean_key_points(kp)
         cid = str(item.get("id") or "").strip()
         row = {"title": title, "order": order, "key_points": kp}
         if cid:
@@ -175,7 +225,11 @@ def build_learning_path_tools(document_id: str):
         """提交文档学习路径。
         Args:
             title: 文档标题
-            chapters: 章节列表，每项含 title/order/key_points
+            chapters: 章节列表。每项是一个对象，含：
+                title: 章节名
+                order: 序号（从 1 开始）
+                key_points: 该章 3~6 个核心知识标签（短标签，每项 2~10 个字的
+                    名词/名词短语；不要句子、不要页码、不要题型、不要照抄章标题）
         """
         path = {"title": norm_title(title), "chapters": norm_chapters(chapters)}
         ensure_chapter_ids(path)

@@ -46,6 +46,7 @@ import {
 } from "@/components/ui/dialog"
 import { Checkbox } from "@/components/ui/checkbox"
 import { SectionHeader } from "@/components/blocks/SectionHeader"
+import { ChapterMindMap } from "@/components/blocks/ChapterMindMap"
 import { QuizQuestionPreviewDialog } from "./QuizQuestionPreviewDialog"
 import { QuestionGenJobsBanner } from "./QuestionGenJobsBanner"
 import { QuizStartPanel, type QuizFilterMode } from "./QuizStartPanel"
@@ -130,6 +131,7 @@ export function QuizDocDetailPage() {
   const [previewOpen, setPreviewOpen] = useState(false)
   const [genJobs, setGenJobs] = useState<QuestionGenJob[]>([])
   const [expandedChapter, setExpandedChapter] = useState<number | null>(null)
+  const [chapterView, setChapterView] = useState<"list" | "map">("list")
   const [startingChapter, setStartingChapter] = useState<string | null>(null)
   const [chapterLearnFilter, setChapterLearnFilter] = useState<"all" | "unread" | "read">("all")
   const wasGeneratingRef = useRef(false)
@@ -658,6 +660,18 @@ export function QuizDocDetailPage() {
                 ? `「${learningPath.title}」· 已读 ${chapterLearnStats.read} / 未读 ${chapterLearnStats.unread}（指看书了解过，不是刷完题）`
                 : `已读 ${chapterLearnStats.read} / 未读 ${chapterLearnStats.unread}（指看书了解过，不是刷完题）`
             }
+            onTitleClick={
+              (learningPath?.chapters?.length ?? 0) > 0
+                ? () => setChapterView((v) => (v === "list" ? "map" : "list"))
+                : undefined
+            }
+            titleHint={
+              (learningPath?.chapters?.length ?? 0) > 0
+                ? chapterView === "list"
+                  ? "展开思维导图 →"
+                  : "← 返回目录"
+                : undefined
+            }
           >
             <Button
               variant="ghost"
@@ -676,6 +690,15 @@ export function QuizDocDetailPage() {
               <span className="text-small">加载目录...</span>
             </Card>
           ) : (learningPath?.chapters?.length ?? 0) > 0 ? (
+            chapterView === "map" ? (
+              <Card className="overflow-hidden">
+                <ChapterMindMap
+                  chapters={learningPath!.chapters}
+                  title={learningPath!.title}
+                  className="max-h-[420px]"
+                />
+              </Card>
+            ) : (
             <Card className="overflow-hidden">
               <div className="flex flex-wrap gap-1.5 px-3 py-2.5 border-b border-line-soft bg-paper-2/40">
                 {(
@@ -801,6 +824,7 @@ export function QuizDocDetailPage() {
                 })}
               </div>
             </Card>
+            )
           ) : (
             <Card className="p-6">
               <EmptyState
