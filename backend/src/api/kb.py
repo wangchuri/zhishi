@@ -435,7 +435,7 @@ async def generate_learning_path(doc_id: str, db: Session = Depends(get_db)):
     db.commit()
 
     from ..agents.learning_path_agent import schedule_learning_path
-    await schedule_learning_path(doc_id)
+    schedule_learning_path(doc_id)
     return _learning_path_out(doc_id, rec)
 
 

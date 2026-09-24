@@ -13,6 +13,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import weakref
 from typing import Optional
 
 from ..core.config import config
@@ -138,27 +139,52 @@ async def generate_learning_path(document_id: str) -> dict:
 
 # ---- 并发调度 ----
 
-_semaphore: Optional[asyncio.Semaphore] = None
+# 每个事件循环一个信号量：后台线程用 asyncio.run 新建循环，复用同一个
+# asyncio.Semaphore 会跨循环，报 “attached to a different loop”。
+_semaphores: "weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, asyncio.Semaphore]" = (
+    weakref.WeakKeyDictionary()
+)
 _pending: set[str] = set()
+_tasks: set[asyncio.Task] = set()
 
 
 def _get_semaphore() -> asyncio.Semaphore:
-    global _semaphore
-    if _semaphore is None:
-        _semaphore = asyncio.Semaphore(max(1, config.max_concurrency))
-    return _semaphore
+    loop = asyncio.get_running_loop()
+    sem = _semaphores.get(loop)
+    if sem is None:
+        sem = asyncio.Semaphore(max(1, config.max_concurrency))
+        _semaphores[loop] = sem
+    return sem
 
 
-async def schedule_learning_path(document_id: str) -> asyncio.Task:
-    """并发调度：每文档一个任务，受 max_concurrency 限制排队。"""
-    sem = _get_semaphore()
-
-    async def _run():
-        async with sem:
-            try:
-                await generate_learning_path(document_id)
-            finally:
-                _pending.discard(document_id)
-
+async def run_learning_path(document_id: str) -> dict:
+    """受并发限制地生成一次学习路径（真正干活的协程）。"""
     _pending.add(document_id)
-    return asyncio.create_task(_run())
+    try:
+        async with _get_semaphore():
+            return await generate_learning_path(document_id)
+    finally:
+        _pending.discard(document_id)
+
+
+def schedule_learning_path(document_id: str) -> Optional[asyncio.Task]:
+    """触发后台生成学习路径。
+
+    - 在事件循环内调用（FastAPI 接口）：挂成后台 task 立即返回；
+    - 在普通线程里调用（解析完成回调）：用 asyncio.run 在本次调用内跑完。
+
+    旧实现在线程里 `asyncio.run(schedule_learning_path(...))`：schedule 返回的是
+    create_task 出来的 task，asyncio.run 见主协程结束就取消所有未完成 task 并关循环，
+    导致生成刚开始就被取消。现在线程分支直接 run 整个生成协程。
+    """
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        asyncio.run(run_learning_path(document_id))
+        return None
+
+    task = loop.create_task(run_learning_path(document_id))
+    # 保存强引用，否则 task 可能在跑完前被 GC
+    _tasks.add(task)
+    task.add_done_callback(_tasks.discard)
+    return task

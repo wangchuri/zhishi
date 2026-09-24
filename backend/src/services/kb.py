@@ -122,12 +122,11 @@ def _background_parse(doc_id: str, filename: str, content: bytes, collection_id:
 
         if doc.zone == "study":
             try:
-                import asyncio
                 from ..agents.learning_path_agent import schedule_learning_path
 
                 def _schedule():
                     try:
-                        asyncio.run(schedule_learning_path(doc_id))
+                        schedule_learning_path(doc_id)
                     except Exception as le:
                         logger.warning("后台调度学习路径失败 doc=%s: %s", doc_id, le)
 
