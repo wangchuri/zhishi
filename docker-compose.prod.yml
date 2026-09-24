@@ -1,0 +1,51 @@
+# 生产部署：知拾 + Caddy 自动 HTTPS
+#
+# 用法：
+#   cp .env.example .env      # 填 LLM_API_KEY 和 DOMAIN
+#   docker compose -f docker-compose.prod.yml up -d --build
+#
+# 只对外暴露 80/443（Caddy），后端 7777 仅在内部网络可见。
+services:
+  zhishi:
+    build: .
+    image: zhishi:latest
+    container_name: zhishi
+    # 仅内部暴露，不映射到公网；Caddy 通过内部网络访问
+    expose:
+      - "7777"
+    # 如需在开放公网前先建管理员账号，可临时取消下面注释，
+    # 用 SSH 隧道（ssh -L 7777:127.0.0.1:7777 服务器）本机访问初始化。
+    # ports:
+    #   - "127.0.0.1:7777:7777"
+    environment:
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      BASE_URL: ${BASE_URL:-https://api.deepseek.com/chat/completions}
+      MODEL_NAME: ${MODEL_NAME:-deepseek-v4-flash}
+    volumes:
+      - zhishi-data:/app/data
+      - zhishi-storage:/app/backend/storage
+      - zhishi-hf:/app/.cache/huggingface
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2
+    container_name: zhishi-caddy
+    depends_on:
+      - zhishi
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN:-localhost}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    restart: unless-stopped
+
+volumes:
+  zhishi-data:
+  zhishi-storage:
+  zhishi-hf:
+  caddy-data:
+  caddy-config:

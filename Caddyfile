@@ -1,0 +1,11 @@
+# 知拾 · 生产反代（Caddy 自动 HTTPS）
+#
+# Caddy 会自动为该域名申请并续期 Let's Encrypt 证书，
+# 并自动带上 X-Forwarded-Proto / X-Forwarded-For，后端据此设置 Secure Cookie。
+#
+# DOMAIN 由 docker-compose.prod.yml 通过环境变量注入（例如 zhishi.example.com）。
+
+{$DOMAIN} {
+	encode gzip
+	reverse_proxy zhishi:7777
+}

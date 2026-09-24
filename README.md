@@ -92,6 +92,36 @@ docker compose up --build
 
 端口同样是 `7777`。数据在 compose 的 volume 里。
 
+## 部署到服务器（登录保护）
+
+默认是**单账号**模式：首次用浏览器打开时会进入「创建管理员账号」，设置用户名 + 密码后即可使用；之后每次访问需要登录。会话用服务端 httpOnly Cookie，默认 30 天有效，可在顶栏头像菜单「退出登录」。
+
+- 建议前面挂 **Caddy / Nginx 反向代理并启用 HTTPS**，后端只监听本机；HTTPS 下 Cookie 会自动带 `Secure`（按请求的 `X-Forwarded-Proto` 判断）。
+- 后端默认监听 `0.0.0.0:7777`（见 `backend/src/main.py`）；只想给反代访问可改成 `127.0.0.1`。
+- **首次部署请在开放公网前先完成账号初始化**，否则任何人都可能抢先创建管理员。
+- 反代请保留原始 `Host` 头，并设置 `X-Forwarded-Proto: https`。
+- 忘记密码：停服后执行
+  ```bash
+  sqlite3 data/zhishi.db "DELETE FROM auth_sessions; DELETE FROM auth_users;"
+  ```
+  即可重新初始化账号（只清账号，不影响其它数据）。
+
+### 生产部署：Docker + Caddy 自动 HTTPS（推荐）
+
+仓库已带 `Caddyfile` 和 `docker-compose.prod.yml`：Caddy 自动申请/续期证书，后端 `7777` 不对公网暴露，只在内部网络。
+
+1. 把域名解析到服务器，放通 `80` / `443`。
+2. 在服务器项目目录：
+   ```bash
+   cp .env.example .env          # 填 LLM_API_KEY 与 DOMAIN=你的域名
+   docker compose -f docker-compose.prod.yml up -d --build
+   ```
+3. 打开 `https://你的域名`，出现「创建管理员账号」，设置用户名 + 密码即可。
+
+数据都在 Docker named volume（`zhishi-data` / `zhishi-storage`），升级只重建镜像、不丢数据。Caddy 会自动带 `X-Forwarded-Proto: https`，登录 Cookie 自动加 `Secure`。
+
+> 想更稳妥：先别放公网。用基础 `docker compose up -d zhishi`（或把 prod 里 `127.0.0.1:7777:7777` 那两行取消注释），再用 SSH 隧道 `ssh -L 7777:127.0.0.1:7777 服务器` 在本机把管理员账号建好，最后再开 HTTPS。
+
 ## 目录
 
 ```
