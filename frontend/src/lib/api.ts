@@ -131,6 +131,41 @@ export function getThumbnailUrl(docId: string): string {
   return `${getApiBase()}/api/v1/kb/documents/${docId}/thumbnail`
 }
 
+// ─── 登录鉴权 ───────────────────────────────────────────
+
+export interface AuthStatus {
+  configured: boolean
+  authenticated: boolean
+  username?: string | null
+}
+
+/** 会话失效事件：AuthContext 监听后跳登录页 */
+export const UNAUTHORIZED_EVENT = "zhishi-unauthorized"
+
+export const authApi = {
+  status() {
+    return request<AuthStatus>("GET", "/api/v1/auth/status")
+  },
+  setup(username: string, password: string) {
+    return request<{ ok: boolean; username: string }>("POST", "/api/v1/auth/setup", {
+      username,
+      password,
+    })
+  },
+  login(username: string, password: string) {
+    return request<{ ok: boolean; username: string }>("POST", "/api/v1/auth/login", {
+      username,
+      password,
+    })
+  },
+  logout() {
+    return request<{ ok: boolean }>("POST", "/api/v1/auth/logout")
+  },
+  me() {
+    return request<{ username: string }>("GET", "/api/v1/auth/me")
+  },
+}
+
 async function request<T = any>(
   method: string,
   path: string,
@@ -147,10 +182,14 @@ async function request<T = any>(
   const res = await fetch(url, {
     method,
     headers,
+    credentials: "include",
     body: isFormData ? (body as BodyInit) : body ? JSON.stringify(body) : undefined,
   })
 
   if (!res.ok) {
+    if (res.status === 401 && !path.startsWith("/api/v1/auth/")) {
+      window.dispatchEvent(new Event(UNAUTHORIZED_EVENT))
+    }
     const errText = await res.text()
     let detail = errText
     try {
@@ -171,7 +210,7 @@ async function request<T = any>(
 
 async function requestBlob(path: string): Promise<Blob> {
   const url = `${getApiBase()}${path}`
-  const res = await fetch(url, { method: "GET" })
+  const res = await fetch(url, { method: "GET", credentials: "include" })
 
   if (!res.ok) {
     const errText = await res.text()
@@ -252,6 +291,7 @@ export const chatApi = {
     const { content, session_id, collection_id, crisis, remaining_pages, kickoff, onChunk } = options
     const res = await fetch(`${getApiBase()}/api/v1/chat`, {
       method: "POST",
+      credentials: "include",
       headers: {
         "Content-Type": "application/json",
       },
@@ -611,6 +651,7 @@ export const questionsApi = {
   }, onChunk: (chunk: { event: string; content?: string; questions?: any[] }) => void): Promise<void> {
     return fetch(`${getApiBase()}/api/v1/questions/generate-stream`, {
       method: "POST",
+      credentials: "include",
       headers: {
         "Content-Type": "application/json",
       },
@@ -776,6 +817,7 @@ export const tutorApi = {
     if (stream) {
       return fetch(`${getApiBase()}/api/v1/tutor/sessions/${sessionId}/messages`, {
         method: "POST",
+        credentials: "include",
         headers: {
           "Content-Type": "application/json",
         },
@@ -1055,6 +1097,7 @@ export const trainingApi = {
     if (stream) {
       return fetch(`${getApiBase()}/api/v1/training/targeted/tutor/${agentSessionId}`, {
         method: "POST",
+        credentials: "include",
         headers: {
           "Content-Type": "application/json",
         },
@@ -1104,6 +1147,7 @@ export const companionApi = {
     const { document_id, content, page_number, page_content, onChunk } = options
     const res = await fetch(`${getApiBase()}/api/v1/companion/chat`, {
       method: "POST",
+      credentials: "include",
       headers: {
         "Content-Type": "application/json",
       },

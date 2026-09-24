@@ -37,10 +37,12 @@ from .api.parse import router as parse_router
 from .api.tasks import router as tasks_router
 from .api.onboarding import router as onboarding_router
 from .api.system import router as system_router
+from .api.auth import router as auth_router
 from .core.config import config
 from .core.database import SessionLocal, init_db
 from .core.errors import AppError
 from .core.paths import frontend_dist_dir, is_frozen, runtime_dir
+from .services import auth as auth_service
 from .services.kb import ensure_default_collections, reset_stale_processing
 
 logger = logging.getLogger(__name__)
@@ -56,11 +58,56 @@ async def _app_error_handler(request: Request, exc: AppError):
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origin_regex=".*",
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+# 需要登录的白名单：这几个接口公开（首次初始化 / 登录 / 探活）
+_PUBLIC_API = {
+    "/api/v1/auth/status",
+    "/api/v1/auth/setup",
+    "/api/v1/auth/login",
+}
+
+
+@app.middleware("http")
+async def _auth_guard(request: Request, call_next):
+    """保护 /api/v1/*：解析会话 Cookie，未登录返回 401；写操作校验同源。"""
+    path = request.url.path
+    if request.method == "OPTIONS" or not path.startswith("/api/v1"):
+        return await call_next(request)
+
+    db = SessionLocal()
+    try:
+        user = auth_service.resolve_session(
+            db, request.cookies.get(auth_service.SESSION_COOKIE)
+        )
+    finally:
+        db.close()
+    request.state.user = user
+
+    if path in _PUBLIC_API:
+        return await call_next(request)
+
+    if user is None:
+        return JSONResponse(status_code=401, content={"detail": "未登录"})
+
+    # 简单的 CSRF 防护：写操作若带 Origin，必须与当前 Host 同源
+    if request.method in ("POST", "PUT", "PATCH", "DELETE"):
+        origin = request.headers.get("origin")
+        host = request.headers.get("host")
+        if origin and host:
+            from urllib.parse import urlparse
+
+            if urlparse(origin).netloc != host:
+                return JSONResponse(status_code=403, content={"detail": "跨站请求被拒绝"})
+
+    return await call_next(request)
+
+
+app.include_router(auth_router)
 app.include_router(kb_router)
 app.include_router(questions_router)
 app.include_router(materials_router)

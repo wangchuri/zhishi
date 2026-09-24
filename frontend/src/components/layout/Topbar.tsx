@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react"
-import { PanelRight, Server, Menu, Wifi, WifiOff, Maximize, Minimize2 } from "lucide-react"
+import { PanelRight, Server, Menu, Wifi, WifiOff, Maximize, Minimize2, LogOut } from "lucide-react"
 import { useLocation, useNavigate } from "react-router-dom"
 import { useUI } from "@/context/UIContext"
 import { useAuth } from "@/context/AuthContext"
@@ -33,7 +33,7 @@ export function Topbar() {
   const location = useLocation()
   const navigate = useNavigate()
   const { rightPanelOpen, toggleRightPanel, toggleMobileMenu } = useUI()
-  const { user, server } = useAuth()
+  const { user, server, logout } = useAuth()
   const { active: crisisLocked } = useTinaCrisis()
   const { isFs, toggle } = useFullscreen()
   const [menuOpen, setMenuOpen] = useState(false)
@@ -145,6 +145,17 @@ export function Topbar() {
               >
                 <Server className="w-4 h-4" strokeWidth={2} />
                 服务器设置
+              </button>
+              <button
+                onClick={() => {
+                  if (crisisLocked) return
+                  setMenuOpen(false)
+                  void logout().finally(() => navigate("/login"))
+                }}
+                className="w-full flex items-center gap-2.5 px-3 py-2.5 text-small text-ink-soft hover:text-danger hover:bg-danger-soft transition-colors border-t border-line-light"
+              >
+                <LogOut className="w-4 h-4" strokeWidth={2} />
+                退出登录
               </button>
             </div>
           )}

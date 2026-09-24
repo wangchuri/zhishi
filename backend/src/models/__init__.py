@@ -23,6 +23,7 @@ from .tracking import (
 )
 from .chat import ChatMessage, ChatSession, CompanionMessage, CompanionSession
 from .goal import DailyTask, Goal, UserProfile
+from .auth import AuthSession, AuthUser
 
 __all__ = [
     "KBCollection",
@@ -55,4 +56,6 @@ __all__ = [
     "Goal",
     "DailyTask",
     "UserProfile",
+    "AuthUser",
+    "AuthSession",
 ]

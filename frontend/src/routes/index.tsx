@@ -15,6 +15,7 @@ import { TargetedTrainingPage } from "@/features/learning/TargetedTrainingPage"
 import { ProfilePage } from "@/features/profile/ProfilePage"
 import { SettingsPage } from "@/features/settings/SettingsPage"
 import { ServerSetupPage } from "@/features/setup/ServerSetupPage"
+import { LoginPage } from "@/features/auth/LoginPage"
 import { QuizBookListPage } from "@/features/quiz/QuizBookListPage"
 import { QuizDocDetailPage } from "@/features/quiz/QuizDocDetailPage"
 import { QuizGroupDetailPage } from "@/features/quiz/QuizGroupDetailPage"
@@ -26,7 +27,7 @@ import { DocParsePage } from "@/features/doc-parse/DocParsePage"
 import { TasksPage } from "@/features/tasks/TasksPage"
 
 function RequireServer({ children }: { children: React.ReactElement }) {
-  const { checkServer } = useAuth()
+  const { checkServer, authPhase } = useAuth()
   const [status, setStatus] = useState<"checking" | "ok" | "fail">("checking")
 
   useEffect(() => {
@@ -41,7 +42,7 @@ function RequireServer({ children }: { children: React.ReactElement }) {
   }, [checkServer])
 
   if (!isServerConfigured()) return <Navigate to="/setup" replace />
-  if (status === "checking") {
+  if (status === "checking" || authPhase === "unknown") {
     return <div className="h-full flex items-center justify-center bg-ink"><div className="text-body text-mist">正在检测服务器连接...</div></div>
   }
   if (status === "fail") {
@@ -54,6 +55,9 @@ function RequireServer({ children }: { children: React.ReactElement }) {
       </div>
     )
   }
+  if (authPhase === "need_setup" || authPhase === "need_login") {
+    return <Navigate to="/login" replace />
+  }
   return children
 }
 
@@ -61,6 +65,7 @@ export function AppRoutes() {
   return (
     <Routes>
       <Route path="/setup" element={<ServerSetupPage />} />
+      <Route path="/login" element={<LoginPage />} />
       <Route path="/onboarding" element={<RequireServer><OnboardingPage /></RequireServer>} />
       <Route path="/" element={<RequireServer><DashboardPage /></RequireServer>} />
       <Route path="/chat" element={<RequireServer><ChatPage /></RequireServer>} />
