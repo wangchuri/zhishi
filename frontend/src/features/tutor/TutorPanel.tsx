@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button"
 import {
   AttachImageButton,
   AttachmentThumbnails,
+  CaptureImageButton,
   MessageImages,
 } from "@/components/blocks/ImageAttachments"
 import { useImageAttachments } from "@/hooks/useImageAttachments"
@@ -344,6 +345,11 @@ export const TutorPanel = forwardRef<TutorPanelHandle, TutorPanelProps>(function
         )}
         {attachments.error && <div className="text-small text-danger">{attachments.error}</div>}
         <div className="flex items-end gap-2">
+          <CaptureImageButton
+            onFiles={attachments.addFiles}
+            disabled={loading || !!error || sending || attachments.uploading}
+            className="lg:hidden mb-0.5"
+          />
           <AttachImageButton
             onFiles={attachments.addFiles}
             disabled={loading || !!error || sending || attachments.uploading}

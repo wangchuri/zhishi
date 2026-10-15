@@ -1,5 +1,5 @@
 import { useRef, useState } from "react"
-import { ImagePlus, X } from "lucide-react"
+import { Camera, ImagePlus, X } from "lucide-react"
 import { uploadUrl } from "@/lib/api"
 import { cn } from "@/lib/utils"
 import type { AttachmentItem } from "@/hooks/useImageAttachments"
@@ -41,6 +41,49 @@ export function AttachImageButton({
         )}
       >
         <ImagePlus className="w-[18px] h-[18px]" strokeWidth={2} />
+      </button>
+    </>
+  )
+}
+
+/** 「拍照」按钮：手机上直接调起后置相机（capture 让系统跳过选择器）。
+ *  桌面浏览器会忽略 capture，退化成普通文件选择，无副作用。 */
+export function CaptureImageButton({
+  onFiles,
+  disabled,
+  className,
+}: {
+  onFiles: (files: FileList) => void
+  disabled?: boolean
+  className?: string
+}) {
+  const inputRef = useRef<HTMLInputElement>(null)
+  return (
+    <>
+      <input
+        ref={inputRef}
+        type="file"
+        accept="image/*"
+        capture="environment"
+        hidden
+        onChange={(e) => {
+          if (e.target.files?.length) onFiles(e.target.files)
+          e.target.value = ""
+        }}
+      />
+      <button
+        type="button"
+        onClick={() => inputRef.current?.click()}
+        disabled={disabled}
+        aria-label="拍照"
+        title="拍照上传"
+        className={cn(
+          "shrink-0 inline-flex items-center justify-center w-9 h-9 rounded-full text-ink-soft transition-colors",
+          "hover:bg-sea-subtle hover:text-sea disabled:opacity-50 disabled:pointer-events-none",
+          className,
+        )}
+      >
+        <Camera className="w-[18px] h-[18px]" strokeWidth={2} />
       </button>
     </>
   )

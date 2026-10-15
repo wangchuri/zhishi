@@ -16,6 +16,7 @@ import { Button } from "@/components/ui/button"
 import {
   AttachImageButton,
   AttachmentThumbnails,
+  CaptureImageButton,
 } from "@/components/blocks/ImageAttachments"
 import { useImageAttachments } from "@/hooks/useImageAttachments"
 import { ChatMessage as ChatMessageBlock } from "@/components/blocks/ChatMessage"
@@ -986,6 +987,11 @@ export function ChatPage() {
                   />
                 )}
                 <div className="flex items-end gap-2 pl-4 pr-2 py-2">
+                  <CaptureImageButton
+                    onFiles={attachments.addFiles}
+                    disabled={isStreaming || loadingHistory || attachments.uploading}
+                    className="lg:hidden mb-0.5"
+                  />
                   <AttachImageButton
                     onFiles={attachments.addFiles}
                     disabled={isStreaming || loadingHistory || attachments.uploading}

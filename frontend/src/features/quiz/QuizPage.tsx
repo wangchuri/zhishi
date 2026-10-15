@@ -21,6 +21,7 @@ import { Button } from "@/components/ui/button"
 import {
   AttachImageButton,
   AttachmentThumbnails,
+  CaptureImageButton,
 } from "@/components/blocks/ImageAttachments"
 import { useImageAttachments } from "@/hooks/useImageAttachments"
 import { EmptyState } from "@/components/ui/empty-state"
@@ -58,6 +59,7 @@ import {
   buildUserAnswerPayload,
   canSubmitAnswer,
   getBlankCount,
+  isAiGradedQuestion,
 } from "./quizQuestionUtils"
 import { TutorPanel, type TutorPanelHandle } from "@/features/tutor/TutorPanel"
 import { MarkdownWithMath } from "@/components/blocks/MarkdownWithMath"
@@ -1012,7 +1014,20 @@ export function QuizPage() {
                   </p>
                 )}
               {!lastResult ? (
+                <>
+                  {isAiGradedQuestion(currentQuestion.question_type) &&
+                    attachments.ids.length === 0 &&
+                    !textAnswer.trim() && (
+                      <p className="text-caption text-ink-tertiary">
+                        主观题可以直接拍下解答过程，不用打字 —— 拍完点「提交答案」即自动判分。
+                      </p>
+                    )}
                 <div className="flex flex-wrap items-center gap-3">
+                  <CaptureImageButton
+                    onFiles={attachments.addFiles}
+                    disabled={submitting || attachments.uploading}
+                    className="border border-line"
+                  />
                   <AttachImageButton
                     onFiles={attachments.addFiles}
                     disabled={submitting || attachments.uploading}
@@ -1040,6 +1055,7 @@ export function QuizPage() {
                     我不会
                   </Button>
                 </div>
+                </>
               ) : (
                 <QuizAnswerFeedbackActions
                   question={currentQuestion}
