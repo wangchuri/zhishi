@@ -66,7 +66,8 @@ export function Topbar() {
         <Menu className="w-5 h-5" strokeWidth={2} />
       </button>
 
-      <div className="flex items-center shrink-0 min-w-0">
+      {/* 路由标题：桌面用于辨认当前位置；手机上已有底部 tab + 页头标题，去掉避免重复 */}
+      <div className="hidden lg:flex items-center shrink-0 min-w-0">
         <span className="text-title-s text-ink truncate">{title}</span>
       </div>
 
