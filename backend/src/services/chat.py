@@ -23,6 +23,10 @@ from ..tools.tina_mood_actions import TinaMoodActions, last_assistant_raw_text
 
 logger = logging.getLogger(__name__)
 
+# 历史回放时最多重新带上多少轮图片（按 file_id 引用，命中 FilesAPI 缓存不重复上传）。
+# 带上图片很花 token，所以只回放最近几轮，保证「接着上一张图追问」能用。
+_MAX_HISTORY_IMAGE_TURNS = 2
+
 ONBOARDING_UI_TYPES = frozenset({"rail", "profile", "goal_card", "docs_card", "done"})
 ONBOARDING_BLOCK_TYPES = frozenset({"goal_card", "docs_card", "done"})
 
@@ -422,7 +426,11 @@ class ChatService:
             content += _ui_note_from_payload(m.payload)
             if m.role == "user":
                 content = stamp_user_message(content, m.created_at)
-            rows.append({"role": m.role, "content": content})
+            rows.append({
+                "role": m.role,
+                "content": content,
+                "attachments": json.loads(m.attachments) if m.attachments else None,
+            })
         return rows
 
     def session_in_crisis(self, db: Session, session_id: str) -> bool:
@@ -557,6 +565,17 @@ class ChatService:
 
                 update_profile(db, onboarding_status="completed")
 
+        # 历史必须在建 agent 之前读：历史里有图时，即使本轮没带图，也得用多模态 Agent，
+        # 否则模型看不到上一张图（只能收到一条空文本）。
+        history = self._load_messages(db, session_id)
+        prior = history if kickoff else history[:-1]
+        history_image_idx = {
+            i for i, m in enumerate(prior) if m.get("attachments")
+        }
+        # 只回放最近几轮的图，控制 token
+        keep_idx = set(sorted(history_image_idx)[-_MAX_HISTORY_IMAGE_TURNS:])
+        multimodal = multimodal or bool(keep_idx)
+
         mood = TinaMoodActions()
         if onboarding_active:
             from ..tools.onboarding_tools import OnboardingTools
@@ -589,9 +608,16 @@ class ChatService:
                 multimodal=multimodal,
             )
 
-        history = self._load_messages(db, session_id)
-        prior = history if kickoff else history[:-1]
-        for msg in prior:
+        for i, msg in enumerate(prior):
+            if i in keep_idx:
+                # 历史图片按 file_id 重新带上（FilesAPI 按 sha256 命中缓存，不会重复上传）
+                _, fids = await prepare_images(msg.get("attachments"))
+                if fids:
+                    agent.context_manager.add_user_message(
+                        instruction=(msg["content"] or "").strip() or None,
+                        file_id=fids,
+                    )
+                    continue
             agent.add_message(role=msg["role"], content=msg["content"])
 
         session = db.get(ChatSession, session_id)
