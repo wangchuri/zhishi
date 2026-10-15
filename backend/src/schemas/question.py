@@ -19,6 +19,15 @@ class AnswerParam(BaseModel):
     type: str = "text"  # text/number/textarea
 
 
+class QuestionMaterial(BaseModel):
+    id: str
+    kind: str
+    title: Optional[str] = None
+    content: Optional[str] = None
+    pages: Optional[list[int]] = None
+    chapter_id: Optional[str] = None
+
+
 class Question(BaseModel):
     id: str
     stem: str
@@ -36,6 +45,10 @@ class Question(BaseModel):
     attempt_count: Optional[int] = None
     html_content: Optional[str] = None
     answer_params: Optional[str] = None
+    # 材料题：所属材料 + 子题序号
+    material_id: Optional[str] = None
+    sub_index: Optional[int] = None
+    material: Optional[QuestionMaterial] = None
 
 
 class QuestionListResult(BaseModel):

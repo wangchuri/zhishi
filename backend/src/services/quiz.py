@@ -6,6 +6,7 @@ QuizService 持有刷题领域逻辑；判题纯函数保留为模块级工具�
 from __future__ import annotations
 
 import json
+import random
 import re
 from datetime import datetime, timezone
 from typing import Optional
@@ -17,6 +18,7 @@ from ..models import (
     Document,
     DocumentSegment,
     GlobalQuestion,
+    QuestionMaterial,
     QuestionProvenance,
     QuestionRef,
     QuizAnswer,
@@ -121,10 +123,15 @@ class QuizService:
         question_ids: Optional[list[str]],
         filter_mode: str = "all",
         tags: Optional[list[str]] = None,
+        type_counts: Optional[dict] = None,
     ) -> list[str]:
         """解析会话题目 ID 集合。"""
         if question_ids:
             ids = list(question_ids)
+        elif type_counts:
+            return self._resolve_by_type_counts(
+                db, document_id=document_id, group_id=group_id, type_counts=type_counts
+            )
         else:
             q = db.query(QuestionProvenance.question_id)
             scope_doc_ids: list[str] | None = None
@@ -174,7 +181,122 @@ class QuizService:
             # 保持原顺序
             kept_set = set(kept)
             ids = [qid for qid in ids if qid in kept_set]
-        return ids
+        return self._expand_material_questions(db, ids)
+
+    def _resolve_by_type_counts(
+        self,
+        db: Session,
+        *,
+        document_id: Optional[str],
+        group_id: Optional[str],
+        type_counts: dict,
+    ) -> list[str]:
+        """试卷模式：按题型配额随机抽题（material=材料题，按材料抽，带全部子题）。"""
+        scope_doc_ids: list[str] | None = None
+        if group_id:
+            scope_doc_ids = [
+                r[0]
+                for r in db.query(Document.id).filter(Document.group_id == group_id).all()
+            ]
+        elif document_id:
+            scope_doc_ids = [document_id]
+        if not scope_doc_ids:
+            return []
+
+        rows = (
+            db.query(GlobalQuestion.id, GlobalQuestion.question_type, GlobalQuestion.material_id)
+            .join(QuestionProvenance, QuestionProvenance.question_id == GlobalQuestion.id)
+            .filter(QuestionProvenance.document_id.in_(scope_doc_ids))
+            .distinct()
+            .all()
+        )
+        by_type: dict[str, list[str]] = {}
+        for qid, qtype, mid in rows:
+            if mid:  # 材料子题归到 material 桶，不单独计入题型
+                continue
+            by_type.setdefault(qtype or "single_choice", []).append(qid)
+
+        picked: list[str] = []
+        for qtype in (
+            "single_choice",
+            "multiple_choice",
+            "fill_blank",
+            "short_answer",
+            "application",
+            "custom",
+        ):
+            n = int(type_counts.get(qtype, 0) or 0)
+            if n <= 0:
+                continue
+            cand = by_type.get(qtype, [])
+            picked.extend(random.sample(cand, min(n, len(cand))))
+
+        m_count = int(type_counts.get("material", 0) or 0)
+        if m_count > 0:
+            mat_ids = [
+                r[0]
+                for r in db.query(QuestionMaterial.id)
+                .filter(QuestionMaterial.document_id.in_(scope_doc_ids))
+                .all()
+            ]
+            for mid in random.sample(mat_ids, min(m_count, len(mat_ids))):
+                subs = (
+                    db.query(GlobalQuestion.id)
+                    .filter(GlobalQuestion.material_id == mid)
+                    .order_by(GlobalQuestion.sub_index)
+                    .all()
+                )
+                picked.extend(s[0] for s in subs)
+
+        return self._expand_material_questions(db, picked)
+
+    def _expand_material_questions(self, db: Session, ids: list[str]) -> list[str]:
+        """带材料的题目自动补上同材料的所有子题，并按 sub_index 排序。
+
+        阅读/完形这类材料题：抽到任意一题，就把「材料 + 它的全部子题」整组带进来，
+        组插入在首次出现的位置，子题按 sub_index 排。
+        """
+        if not ids:
+            return ids
+        mid_by_qid = {
+            qid: mid
+            for qid, mid in db.query(GlobalQuestion.id, GlobalQuestion.material_id)
+            .filter(GlobalQuestion.id.in_(ids))
+            .all()
+            if mid
+        }
+        if not mid_by_qid:
+            return ids
+
+        mids = set(mid_by_qid.values())
+        group: dict[str, list[tuple[int, str]]] = {}
+        for qid, mid, sub in (
+            db.query(GlobalQuestion.id, GlobalQuestion.material_id, GlobalQuestion.sub_index)
+            .filter(GlobalQuestion.material_id.in_(mids))
+            .all()
+        ):
+            group.setdefault(mid, []).append((sub if sub is not None else 10**9, qid))
+        for mid in group:
+            group[mid].sort(key=lambda t: t[0])
+
+        out: list[str] = []
+        seen: set[str] = set()
+        placed: set[str] = set()
+        for qid in ids:
+            mid = mid_by_qid.get(qid)
+            if not mid:
+                if qid not in seen:
+                    seen.add(qid)
+                    out.append(qid)
+                continue
+            if mid in placed:
+                continue
+            placed.add(mid)
+            for _sub, sid in group.get(mid, []):
+                if sid not in seen:
+                    seen.add(sid)
+                    out.append(sid)
+        return out
 
     def create_session(
         self,
@@ -187,6 +309,7 @@ class QuizService:
         title: Optional[str] = None,
         filter_mode: str = "all",
         tags: Optional[list[str]] = None,
+        type_counts: Optional[dict] = None,
         resume: bool = True,
         task_id: Optional[str] = None,
     ) -> QuizSession:
@@ -198,6 +321,7 @@ class QuizService:
             question_ids=question_ids,
             filter_mode=filter_mode,
             tags=tags,
+            type_counts=type_counts,
         )
         if not ids:
             raise AppError("没有可刷的题目（可能该文档还没有生成题目）")
@@ -373,8 +497,14 @@ class QuizService:
                 "source_type": gq.source_type,
                 "html_content": gq.html_content,
                 "answer_params": gq.answer_params,
+                "material_id": gq.material_id,
+                "sub_index": gq.sub_index,
                 "last_time_spent_seconds": last_times.get(gq.id),
             })
+        # 材料题：带上材料正文，供前端在题目上方展示
+        from .question import question_service
+
+        question_service.attach_materials(db, questions)
         answered = (
             db.query(QuizAnswer)
             .filter(QuizAnswer.session_id == session.id)

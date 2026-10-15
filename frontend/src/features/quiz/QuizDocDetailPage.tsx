@@ -50,6 +50,7 @@ import { ChapterMindMap } from "@/components/blocks/ChapterMindMap"
 import { QuizQuestionPreviewDialog } from "./QuizQuestionPreviewDialog"
 import { QuestionGenJobsBanner } from "./QuestionGenJobsBanner"
 import { QuizStartPanel, type QuizFilterMode } from "./QuizStartPanel"
+import { QuizPaperPanel, type PaperMaxByType } from "./QuizPaperPanel"
 import { questionsApi, quizApi, analyticsApi, kbApi, getThumbnailUrl } from "@/lib/api"
 import { accuracyPercent, formatAccuracy, splitTagLabels } from "@/lib/utils"
 import { useKbDocuments } from "@/hooks/useKbDocuments"
@@ -138,6 +139,10 @@ export function QuizDocDetailPage() {
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [deleteError, setDeleteError] = useState<string | null>(null)
+  const [reparseOpen, setReparseOpen] = useState(false)
+  const [reparseForce, setReparseForce] = useState(false)
+  const [reparsing, setReparsing] = useState(false)
+  const [reparseError, setReparseError] = useState<string | null>(null)
 
   const docFromList = useMemo(() => documents.find((d) => d.id === docId), [documents, docId])
   const [fallbackDoc, setFallbackDoc] = useState<KnowledgeDoc | null>(null)
@@ -341,6 +346,26 @@ export function QuizDocDetailPage() {
     }
   }
 
+  const handleStartPaper = async (counts: Record<string, number>) => {
+    if (!docId) return
+    setStarting(true)
+    setError(null)
+    try {
+      const res = await quizApi.createSession({
+        document_id: docId,
+        type_counts: counts,
+        title: "试卷模式",
+        resume: false,
+      })
+      const session = res as QuizSession
+      navigate(`/quiz/session?session_id=${session.id}`)
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "生成试卷失败")
+    } finally {
+      setStarting(false)
+    }
+  }
+
   const handleStartChapter = async (ch: LearningPathChapter) => {
     if (!docId || !ch.id) return
     const ids = (questionsByChapter.get(ch.id) || [])
@@ -409,6 +434,21 @@ export function QuizDocDetailPage() {
     }
   }
 
+  const handleConfirmReparse = async () => {
+    if (!docId || reparsing) return
+    setReparsing(true)
+    setReparseError(null)
+    try {
+      await kbApi.reparseDocument(docId, reparseForce)
+      setReparseOpen(false)
+      toast.success("已触发重新解析，稍后刷新查看")
+    } catch (err: unknown) {
+      setReparseError(err instanceof Error ? err.message : "触发重新解析失败")
+    } finally {
+      setReparsing(false)
+    }
+  }
+
   const stats = useMemo(() => {
     if (!questionData) return null
     return {
@@ -449,6 +489,21 @@ export function QuizDocDetailPage() {
 
   const accuracy = stats && stats.answered > 0 ? Math.round((stats.correct / stats.answered) * 100) : null
   const progress = stats && stats.total > 0 ? Math.round((stats.answered / stats.total) * 100) : 0
+
+  const paperMaxByType = useMemo<PaperMaxByType>(() => {
+    const qs = questionData?.questions || []
+    const nonMaterial = qs.filter((q) => !q.material_id)
+    const countType = (t: string) => nonMaterial.filter((q) => q.question_type === t).length
+    const materialIds = new Set(
+      qs.filter((q) => q.material_id).map((q) => q.material_id as string),
+    )
+    return {
+      single_choice: countType("single_choice"),
+      fill_blank: countType("fill_blank"),
+      application: countType("application"),
+      material: materialIds.size,
+    }
+  }, [questionData])
 
   if (loadingDocuments) {
     return (
@@ -504,6 +559,18 @@ export function QuizDocDetailPage() {
         <Button variant="secondary" size="md" onClick={() => navigate(`/question-gen/doc/${doc.id}`)}>
           <PenLine className="w-4 h-4 mr-2" />
           出题
+        </Button>
+        <Button
+          variant="secondary"
+          size="md"
+          onClick={() => {
+            setReparseError(null)
+            setReparseForce(false)
+            setReparseOpen(true)
+          }}
+        >
+          <RefreshCw className="w-4 h-4 mr-2" />
+          重新解析
         </Button>
         <Button
           variant="secondary"
@@ -626,18 +693,25 @@ export function QuizDocDetailPage() {
           )}
 
           {hasQuestions ? (
-            <QuizStartPanel
-              availableTags={startTags}
-              matchCount={quizMatchCount}
-              filterMode={filterMode}
-              onFilterModeChange={setFilterMode}
-              selectedTags={selectedTags}
-              onSelectedTagsChange={setSelectedTags}
-              activeSession={activeSession}
-              onResume={handleResume}
-              onStart={() => void handleStart()}
-              starting={starting || loadingQuestions || startingChapter !== null}
-            />
+            <div className="space-y-3">
+              <QuizStartPanel
+                availableTags={startTags}
+                matchCount={quizMatchCount}
+                filterMode={filterMode}
+                onFilterModeChange={setFilterMode}
+                selectedTags={selectedTags}
+                onSelectedTagsChange={setSelectedTags}
+                activeSession={activeSession}
+                onResume={handleResume}
+                onStart={() => void handleStart()}
+                starting={starting || loadingQuestions || startingChapter !== null}
+              />
+              <QuizPaperPanel
+                maxByType={paperMaxByType}
+                starting={starting || loadingQuestions || startingChapter !== null}
+                onStart={(counts) => void handleStartPaper(counts)}
+              />
+            </div>
           ) : (
             <div className="bg-surface border border-line-soft rounded-lg p-5 text-center">
               {doc.question_gen_status === "processing" || genJobs.length > 0 ? (
@@ -1073,6 +1147,47 @@ export function QuizDocDetailPage() {
               className="bg-danger text-white hover:bg-danger/90"
             >
               {deleting ? "删除中..." : "删除"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog
+        open={reparseOpen}
+        onOpenChange={(open) => {
+          if (!open && !reparsing) {
+            setReparseOpen(false)
+            setReparseError(null)
+          }
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>重新解析资料？</AlertDialogTitle>
+            <AlertDialogDescription>
+              将用当前「PDF 解析策略」重新解析「{doc?.name}」，覆盖原解析稿、分段与向量索引（题库、刷题记录等不受影响）。扫描件或公式卷可能耗时数分钟。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <label className="flex items-center gap-2 text-small text-ink-soft px-1 select-none">
+            <input
+              type="checkbox"
+              checked={reparseForce}
+              onChange={(e) => setReparseForce(e.target.checked)}
+              className="h-4 w-4"
+            />
+            强制 OCR（把 PDF 当扫描件整篇走 MinerU）
+          </label>
+          {reparseError && <p className="text-small text-danger px-1">{reparseError}</p>}
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={reparsing}>取消</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault()
+                void handleConfirmReparse()
+              }}
+              disabled={reparsing}
+            >
+              {reparsing ? "触发中..." : "重新解析"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

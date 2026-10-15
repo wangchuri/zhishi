@@ -24,6 +24,7 @@ def create_session(body: quiz_schemas.QuizSessionCreate, db: Session = Depends(g
         title=body.title,
         filter_mode=body.filter or "all",
         tags=body.tags,
+        type_counts=body.type_counts,
         resume=body.resume if body.resume is not None else True,
         task_id=body.task_id,
     )

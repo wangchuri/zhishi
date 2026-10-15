@@ -8,6 +8,15 @@ from typing import Optional
 from pydantic import BaseModel
 
 
+class QuizQuestionMaterial(BaseModel):
+    id: str
+    kind: str
+    title: Optional[str] = None
+    content: Optional[str] = None
+    pages: Optional[list[int]] = None
+    chapter_id: Optional[str] = None
+
+
 class QuizSessionQuestion(BaseModel):
     question_id: str
     order_index: int
@@ -17,6 +26,10 @@ class QuizSessionQuestion(BaseModel):
     source_type: Optional[str] = None
     html_content: Optional[str] = None
     answer_params: Optional[str] = None
+    # 材料题：所属材料（阅读/完形）+ 子题序号
+    material_id: Optional[str] = None
+    sub_index: Optional[int] = None
+    material: Optional[QuizQuestionMaterial] = None
     last_time_spent_seconds: Optional[int] = None
 
 
@@ -41,7 +54,9 @@ class QuizSessionCreate(BaseModel):
     question_ids: Optional[list[str]] = None
     title: Optional[str] = None
     filter: Optional[str] = "all"  # all/undone/wrong/unknown
-    tags: Optional[list[str]] = None  # 知识点；空/省略=全部；多选为并集（任一命中）
+    tags: Optional[list[str]] = None  # 知识点；不传=全部；多选为并集（任一命中）
+    # 试卷模式：按题型配额随机组卷，键为题型（material 表示材料题），值为数量
+    type_counts: Optional[dict[str, int]] = None
     resume: bool = True  # 同一批题有未完成会话则续刷
     task_id: Optional[str] = None  # 今日刷题任务 id，续刷后回写 href
 

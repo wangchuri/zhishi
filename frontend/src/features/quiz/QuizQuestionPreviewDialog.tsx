@@ -111,6 +111,28 @@ export function QuizQuestionPreviewDialog({
                       {i + 1}.
                     </span>
                     <div className="min-w-0 flex-1">
+                      {q.material?.content ? (
+                        <div className="mb-2 rounded-md border border-line-light bg-paper-2/50 p-2">
+                          <div className="flex items-center gap-1.5 mb-1">
+                            <span className="text-[11px] text-sea font-medium shrink-0">
+                              {q.material.kind === "cloze" ? "完形填空" : "阅读材料"}
+                            </span>
+                            {q.material.title ? (
+                              <span className="text-[11px] text-ink-tertiary truncate">
+                                {q.material.title}
+                              </span>
+                            ) : null}
+                            {q.sub_index != null ? (
+                              <span className="text-[11px] text-ink-tertiary ml-auto shrink-0">
+                                第 {q.sub_index} 小题
+                              </span>
+                            ) : null}
+                          </div>
+                          <div className="text-caption text-ink-soft leading-relaxed whitespace-pre-wrap break-words">
+                            {q.material.content}
+                          </div>
+                        </div>
+                      ) : null}
                       <MarkdownWithMath className="text-body text-ink-primary leading-relaxed" imageBaseUrl={imageBase}>
                         {q.stem || "（无题干）"}
                       </MarkdownWithMath>
