@@ -81,6 +81,12 @@ jobs:
         working-directory: frontend
         run: node scripts/enable-android-cleartext.mjs android/app/src/main/AndroidManifest.xml
 
+      - name: 固定 debug 签名（否则每次构建密钥都不同，装新版必须先卸载）
+        uses: actions/cache@v4
+        with:
+          path: ~/.android/debug.keystore
+          key: zhishi-debug-keystore-v1
+
       - name: 编译 debug APK
         working-directory: frontend/android
         run: ./gradlew assembleDebug --no-daemon
