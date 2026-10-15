@@ -67,6 +67,15 @@ jobs:
           npx cap add android
           npx cap sync android
 
+      - name: 生成应用图标与启动图
+        working-directory: frontend
+        run: |
+          # 素材：frontend/resources/icon.png（1024，深青满幅 + sage 面板）与 splash.png（2732，纸色 + logo）
+          # 不放进 package.json：只有打 APK 用得到，避免把 sharp 拖进应用依赖
+          npx --yes @capacitor/assets@3.0.5 generate --android \
+            --iconBackgroundColor '#1F5C5A' --iconBackgroundColorDark '#1F5C5A' \
+            --splashBackgroundColor '#F3EFE6' --splashBackgroundColorDark '#F3EFE6'
+
       - name: 允许明文 HTTP（仅当后端是 http:// 时）
         if: startsWith(steps.cfg.outputs.server_url, 'http://')
         working-directory: frontend
