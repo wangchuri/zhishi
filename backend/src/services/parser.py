@@ -140,6 +140,84 @@ def is_pdf_scanned(content: bytes) -> bool:
     return total < 20  # 全文档几乎无文本 → 扫描件
 
 
+# 「文本型 PDF」也常丢掉公式：公式要么是 Type3/数学字体（无 Unicode 映射被丢弃），
+# 要么是矢量图形，get_text 都拿不到。命中这些信号就改走 MinerU（渲染+OCR+公式识别）。
+_MATH_FONT_MARKERS = (
+    "cmmi", "cmsy", "cmex", "cmr", "cmbx", "cmti", "cmss",
+    "msam", "msbm", "math", "euclid", "mtmi", "mtsy", "mt extra",
+    "symbol", "stix", "xits", "asana", "mathematica",
+    "latin modern math", "cambria math",
+)
+_DETECT_MAX_PAGES = 8  # 只抽样前几页，够判断且不慢
+_DRAWING_MIN = 50  # 矢量图绝对下限，避免把表格线/背景误判为公式
+
+
+class PdfInspection:
+    """一次开文档得到的 PDF 检查结果。"""
+
+    __slots__ = ("text", "pages", "is_scanned", "needs_mineru", "reason")
+
+    def __init__(
+        self,
+        text: str,
+        pages: list[str],
+        is_scanned: bool,
+        needs_mineru: bool,
+        reason: str,
+    ) -> None:
+        self.text = text
+        self.pages = pages
+        self.is_scanned = is_scanned
+        self.needs_mineru = needs_mineru
+        self.reason = reason
+
+
+def _font_is_math(basefont: str) -> bool:
+    name = (basefont or "").lower()
+    return any(marker in name for marker in _MATH_FONT_MARKERS)
+
+
+def _detect_needs_mineru(doc) -> tuple[bool, str]:
+    """启发式判断 native PDF 是否「文本层拿不到公式/结构」。"""
+    reasons: list[str] = []
+    for idx in range(min(doc.page_count, _DETECT_MAX_PAGES)):
+        page = doc[idx]
+        for font in page.get_fonts(full=True) or []:
+            ftype = font[2] if len(font) > 2 else ""
+            base = font[3] if len(font) > 3 else ""
+            if ftype == "Type3":
+                reasons.append(f"p{idx + 1}:Type3字体")
+            elif _font_is_math(base):
+                reasons.append(f"p{idx + 1}:数学字体 {base}")
+        try:
+            drawings = len(page.get_drawings())
+        except Exception:
+            drawings = 0
+        text_len = len(page.get_text("text").strip())
+        if drawings > max(_DRAWING_MIN, text_len // 10):
+            reasons.append(f"p{idx + 1}:大量矢量图形 {drawings}")
+        if len(reasons) >= 4:
+            break
+    if reasons:
+        return True, "；".join(reasons[:4])
+    return False, ""
+
+
+def inspect_pdf(content: bytes) -> PdfInspection:
+    """一次开文档：文本、是否扫描、是否需要走 MinerU（含原因）。"""
+    import fitz
+
+    doc = fitz.open(stream=content, filetype="pdf")
+    try:
+        pages = [page.get_text("text") for page in doc]
+        combined = "\n".join(pages).strip()
+        is_scanned = len(combined) < 20
+        needs, reason = (False, "") if is_scanned else _detect_needs_mineru(doc)
+    finally:
+        doc.close()
+    return PdfInspection(combined, pages, is_scanned, needs, reason)
+
+
 def parse_zip_markdown(content: bytes) -> tuple[str, dict[str, bytes]]:
     """解压 md.zip：返回 (合并 markdown, 附带图片 {文件名: bytes})。
 

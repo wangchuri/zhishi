@@ -98,12 +98,21 @@ class MineruService:
         *,
         lang: str = "ch",
         formula_enable: bool = True,
+        parse_method: str = "auto",
     ) -> dict:
-        """提交 PDF 解析，返回 {total_pages, page_mds, images}。"""
+        """提交 PDF 解析，返回 {total_pages, page_mds, images}。
+
+        parse_method（本地 mineru-api）：auto=自动 / txt=只用文本层 / ocr=强制渲染+OCR。
+        文本型但公式丢失的 PDF 应传 "ocr"，否则会沿用坏掉的文本层。
+        """
         if config.mineru_mode == "cloud":
             return self._parse_pdf_cloud(content, lang=lang, formula_enable=formula_enable)
         return self._parse_pdf_local(
-            content, port=port, lang=lang, formula_enable=formula_enable
+            content,
+            port=port,
+            lang=lang,
+            formula_enable=formula_enable,
+            parse_method=parse_method,
         )
 
     def _parse_pdf_local(
@@ -113,6 +122,7 @@ class MineruService:
         port: int,
         lang: str,
         formula_enable: bool,
+        parse_method: str = "auto",
     ) -> dict:
         up = self.ensure_mineru_api(port)
         if not up:
@@ -144,7 +154,7 @@ class MineruService:
                 field("return_images", "true"),
                 field("return_content_list", "true"),
                 field("backend", "pipeline"),
-                field("parse_method", "auto"),
+                field("parse_method", parse_method or "auto"),
                 f"--{boundary}--\r\n".encode(),
             ]
         )
@@ -152,7 +162,7 @@ class MineruService:
         req = urllib.request.Request(f"{base}/file_parse", method="POST")
         req.add_header("Content-Type", f"multipart/form-data; boundary={boundary}")
 
-        logger.info("MinerU 本地解析: %s", filename)
+        logger.info("MinerU 本地解析: %s (parse_method=%s)", filename, parse_method or "auto")
         try:
             with urllib.request.urlopen(req, data=body, timeout=1800) as resp:
                 payload = json.loads(resp.read().decode("utf-8"))

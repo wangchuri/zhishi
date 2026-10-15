@@ -28,6 +28,8 @@ _DEFAULTS = {
     "mineru_api_token": "",
     "mineru_api_base": "https://mineru.net",
     "mineru_model_version": "vlm",
+    # PDF 解析策略：smart=可疑(公式/结构缺失)走 MinerU；all=全部 PDF 走 MinerU；scanned_only=仅扫描件
+    "pdf_parse_policy": "smart",
 }
 
 class Config:
@@ -159,6 +161,16 @@ class Config:
         ver = str(raw).strip().lower()
         return ver if ver in {"pipeline", "vlm"} else "vlm"
 
+    @property
+    def pdf_parse_policy(self) -> str:
+        raw = (
+            os.environ.get("PDF_PARSE_POLICY")
+            or self._data.get("pdf_parse_policy")
+            or "smart"
+        )
+        policy = str(raw).strip().lower()
+        return policy if policy in {"smart", "all", "scanned_only"} else "smart"
+
     def mineru_settings_public(self) -> dict:
         """给前端的配置视图（含 token，本机单用户）。"""
         return {
@@ -166,6 +178,7 @@ class Config:
             "api_token": self.mineru_api_token,
             "api_base": self.mineru_api_base,
             "model_version": self.mineru_model_version,
+            "pdf_parse_policy": self.pdf_parse_policy,
             "config_path": str(self.config_path()),
         }
 

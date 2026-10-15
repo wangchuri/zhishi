@@ -281,13 +281,9 @@ export function OnboardingPage() {
 
   const takeFile = async (file: File | undefined) => {
     if (!file || uploading) return
-    const isPdf = file.name.toLowerCase().endsWith(".pdf")
-    const forceScanned = isPdf
-      ? window.confirm(`「${file.name}」是扫描件吗？\n\n确定 → 走 OCR\n取消 → 按普通 PDF`)
-      : undefined
     setUploading(true)
     try {
-      const res = await kbApi.upload(file, undefined, forceScanned)
+      const res = await kbApi.upload(file)
       notifyCompletedTasks(res)
       setMessages((prev) =>
         prev.map((m) =>

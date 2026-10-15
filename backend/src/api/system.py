@@ -18,6 +18,7 @@ class MineruSettingsOut(BaseModel):
     api_token: str = ""
     api_base: str = "https://mineru.net"
     model_version: Literal["pipeline", "vlm"] = "vlm"
+    pdf_parse_policy: Literal["smart", "all", "scanned_only"] = "smart"
     config_path: str = ""
 
 
@@ -26,6 +27,7 @@ class MineruSettingsUpdate(BaseModel):
     api_token: Optional[str] = None
     api_base: Optional[str] = Field(default=None, description="如 https://mineru.net")
     model_version: Optional[Literal["pipeline", "vlm"]] = None
+    pdf_parse_policy: Optional[Literal["smart", "all", "scanned_only"]] = None
 
 
 @router.get("/mineru", response_model=MineruSettingsOut)
@@ -46,6 +48,8 @@ def put_mineru_settings(body: MineruSettingsUpdate) -> MineruSettingsOut:
         updates["mineru_api_base"] = base or "https://mineru.net"
     if "model_version" in data and data["model_version"] is not None:
         updates["mineru_model_version"] = data["model_version"]
+    if "pdf_parse_policy" in data and data["pdf_parse_policy"] is not None:
+        updates["pdf_parse_policy"] = data["pdf_parse_policy"]
 
     if not updates:
         return MineruSettingsOut(**config.mineru_settings_public())

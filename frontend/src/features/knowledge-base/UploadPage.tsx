@@ -71,6 +71,7 @@ export function UploadPage() {
   const [dragging, setDragging] = useState(false)
   const [tasks, setTasks] = useState<UploadTask[]>([])
   const [uploading, setUploading] = useState(false)
+  const [forceOcr, setForceOcr] = useState(false)
   const [maxUploadSize, setMaxUploadSize] = useState("")
   const [collections, setCollections] = useState<KbCollection[]>([])
   const [selectedCollectionId, setSelectedCollectionId] = useState("")
@@ -268,10 +269,9 @@ export function UploadPage() {
         // 判断是否为图片（需要 OCR）
         const isImage = /\.(png|jpg|jpeg|webp|bmp)$/i.test(file.name)
 
-        // 判断是否为 PDF：询问用户是否扫描件（自动判断不可靠时人工确认）
+        // PDF：默认自动判断（可疑/公式卷自动走 MinerU OCR）；开启强制则一律按扫描件 OCR
         const isPdf = /\.pdf$/i.test(file.name)
-        const forceScanned =
-          isPdf && window.confirm(`「${file.name}」是扫描件吗？\n\n确定 → 走 OCR 扫描件识别\n取消 → 按普通 PDF 处理`)
+        const forceScanned = isPdf && forceOcr
 
         // 添加临时任务
         const tempId = `uploading-${Date.now()}-${file.name}`
@@ -343,7 +343,7 @@ export function UploadPage() {
 
       setUploading(false)
     },
-    [active, pollStatus, selectedCollectionId, selectedGroupId]
+    [active, forceOcr, pollStatus, selectedCollectionId, selectedGroupId]
   )
 
   const onDrop = useCallback(
@@ -659,6 +659,17 @@ export function UploadPage() {
           </>
         )}
       </div>
+
+      {/* PDF 强制 OCR 选项 */}
+      <label className="mt-3 flex items-center gap-2 text-small text-ink-soft cursor-pointer select-none">
+        <input
+          type="checkbox"
+          checked={forceOcr}
+          onChange={(e) => setForceOcr(e.target.checked)}
+          className="h-4 w-4"
+        />
+        强制 OCR：把 PDF 当扫描件整篇走 MinerU（公式/结构缺失的会自动识别，一般无需勾选）
+      </label>
 
       {/* 任务区 */}
       <div className="mt-8">

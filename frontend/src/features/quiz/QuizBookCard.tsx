@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { FileText, Trash2 } from "lucide-react"
+import { FileText, RotateCw, Trash2 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { getThumbnailUrl } from "@/lib/api"
 import type { KnowledgeDoc } from "@/types"
@@ -17,6 +17,7 @@ type QuizBookCardProps = {
   stats?: BookCardStats | null
   onClick?: () => void
   onDelete?: (e: React.MouseEvent) => void
+  onReparse?: (e: React.MouseEvent) => void
 }
 
 function genStatusBadge(doc: KnowledgeDoc, hasQuestions?: boolean) {
@@ -32,7 +33,7 @@ function genStatusBadge(doc: KnowledgeDoc, hasQuestions?: boolean) {
   return <Badge variant="neutral" size="sm">未出题</Badge>
 }
 
-export function QuizBookCard({ doc, stats, onClick, onDelete }: QuizBookCardProps) {
+export function QuizBookCard({ doc, stats, onClick, onDelete, onReparse }: QuizBookCardProps) {
   const [imgError, setImgError] = useState(false)
 
   const coverUrl = getThumbnailUrl(doc.id)
@@ -62,31 +63,61 @@ export function QuizBookCard({ doc, stats, onClick, onDelete }: QuizBookCardProp
           </div>
         )}
 
-        {onDelete && (
-          <span
-            role="button"
-            tabIndex={0}
-            onClick={(e) => {
-              e.stopPropagation()
-              e.preventDefault()
-              onDelete(e)
-            }}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" || e.key === " ") {
-                e.stopPropagation()
-                e.preventDefault()
-                onDelete(e as unknown as React.MouseEvent)
-              }
-            }}
-            className="absolute top-2 left-2 z-20 inline-flex h-8 w-8 items-center justify-center rounded-lg
-                       bg-surface/90 text-ink-tertiary shadow-xs backdrop-blur-sm
-                       opacity-100 sm:opacity-0 sm:group-hover:opacity-100 focus:opacity-100
-                       hover:bg-danger-soft hover:text-danger transition-all"
-            title="删除资料"
-            aria-label={`删除 ${doc.name}`}
-          >
-            <Trash2 className="w-4 h-4" strokeWidth={2} />
-          </span>
+        {(onReparse || onDelete) && (
+          <div className="absolute top-2 left-2 z-20 flex gap-2">
+            {onReparse && (
+              <span
+                role="button"
+                tabIndex={0}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  e.preventDefault()
+                  onReparse(e)
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.stopPropagation()
+                    e.preventDefault()
+                    onReparse(e as unknown as React.MouseEvent)
+                  }
+                }}
+                className="inline-flex h-8 w-8 items-center justify-center rounded-lg
+                           bg-surface/90 text-ink-tertiary shadow-xs backdrop-blur-sm
+                           opacity-100 sm:opacity-0 sm:group-hover:opacity-100 focus:opacity-100
+                           hover:bg-primary-soft hover:text-primary transition-all"
+                title="重新解析"
+                aria-label={`重新解析 ${doc.name}`}
+              >
+                <RotateCw className="w-4 h-4" strokeWidth={2} />
+              </span>
+            )}
+            {onDelete && (
+              <span
+                role="button"
+                tabIndex={0}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  e.preventDefault()
+                  onDelete(e)
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.stopPropagation()
+                    e.preventDefault()
+                    onDelete(e as unknown as React.MouseEvent)
+                  }
+                }}
+                className="inline-flex h-8 w-8 items-center justify-center rounded-lg
+                           bg-surface/90 text-ink-tertiary shadow-xs backdrop-blur-sm
+                           opacity-100 sm:opacity-0 sm:group-hover:opacity-100 focus:opacity-100
+                           hover:bg-danger-soft hover:text-danger transition-all"
+                title="删除资料"
+                aria-label={`删除 ${doc.name}`}
+              >
+                <Trash2 className="w-4 h-4" strokeWidth={2} />
+              </span>
+            )}
+          </div>
         )}
 
         {/* 浮动统计覆盖层 */}

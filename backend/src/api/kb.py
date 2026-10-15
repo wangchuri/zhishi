@@ -122,6 +122,7 @@ def list_documents(
             segment_status=d.segment_status,
             question_gen_status=d.question_gen_status,
             ocr_status=ocr_status,
+            parse_reason=d.parse_reason,
             pdf_page_count=d.pdf_page_count,
             zone=d.zone,
             group_id=d.group_id,
@@ -155,6 +156,35 @@ def document_status(doc_id: str, db: Session = Depends(get_db)):
 def delete_document(doc_id: str, db: Session = Depends(get_db)):
     kb_service.delete_document(db, doc_id)
     return kb_schemas.DeleteResult(message="已删除", doc_id=doc_id)
+
+
+@router.post("/documents/{doc_id}/reparse", response_model=kb_schemas.UploadResult)
+def reparse_document(
+    doc_id: str,
+    force: bool = Query(False),
+    db: Session = Depends(get_db),
+):
+    """用当前解析策略重新解析已入库文档（覆盖解析稿/分段/向量索引）。"""
+    doc = kb_service.reparse_document(db, doc_id, force_scanned=force)
+    return kb_schemas.UploadResult(
+        message="已触发重新解析",
+        batch_id=doc.id,
+        document_id=doc.id,
+        id=doc.id,
+        file_name=doc.display_name,
+        collection_id=doc.collection_id,
+        status=doc.indexing_status,
+        ocr_status="processing",
+    )
+
+
+@router.get("/tasks/active")
+def list_active_tasks(
+    limit: int = Query(50, ge=1, le=200),
+    db: Session = Depends(get_db),
+):
+    """全局解析/上传任务：仍在 pending/processing 的文档（跨集合）。"""
+    return {"tasks": kb_service.list_active_tasks(db, limit=limit)}
 
 
 def _reading_preview_mode(doc) -> str:
@@ -196,6 +226,7 @@ def document_content(
         preview_mode=preview_mode,
         has_raw_file=storage.original_path(doc.id) is not None,
         is_scanned_pdf=bool(getattr(doc, "is_scanned_pdf", False)),
+        parse_reason=doc.parse_reason,
         pdf_page_count=doc.pdf_page_count,
         warning=warning,
     )

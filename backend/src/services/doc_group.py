@@ -40,6 +40,7 @@ def _doc_out(d: Document) -> dict:
         "segment_status": d.segment_status,
         "question_gen_status": d.question_gen_status,
         "ocr_status": ocr_status,
+        "parse_reason": d.parse_reason,
         "pdf_page_count": d.pdf_page_count,
         "zone": d.zone,
         "group_id": d.group_id,

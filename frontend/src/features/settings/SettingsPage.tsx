@@ -31,6 +31,7 @@ export function SettingsPage() {
   const [mineruToken, setMineruToken] = useState("")
   const [mineruBase, setMineruBase] = useState("https://mineru.net")
   const [mineruModel, setMineruModel] = useState<"pipeline" | "vlm">("vlm")
+  const [mineruPolicy, setMineruPolicy] = useState<"smart" | "all" | "scanned_only">("smart")
   const [mineruConfigPath, setMineruConfigPath] = useState("")
   const [savingMineru, setSavingMineru] = useState(false)
 
@@ -68,6 +69,7 @@ export function SettingsPage() {
     setMineruToken(m.api_token || "")
     setMineruBase(m.api_base || "https://mineru.net")
     setMineruModel(m.model_version === "pipeline" ? "pipeline" : "vlm")
+    setMineruPolicy(m.pdf_parse_policy || "smart")
     setMineruConfigPath(m.config_path || "")
   }
   const saveProfile = async () => {
@@ -137,6 +139,7 @@ export function SettingsPage() {
         api_token: mineruToken.trim(),
         api_base: mineruBase.trim() || "https://mineru.net",
         model_version: mineruModel,
+        pdf_parse_policy: mineruPolicy,
       })
       applyMineru(saved)
       toast.success("MinerU 配置已写入服务器配置文件")
@@ -305,10 +308,9 @@ export function SettingsPage() {
           </div>
           <div className="p-5 space-y-4">
             <p className="text-small text-ink-soft">
-              扫描件 / 图片 PDF 走 MinerU。本地模式拉起本机 mineru-api（无需 Token）；云端模式调用 mineru.net，需在官网创建 Token。云端超过 200 页或 200MB 时会自动拆段上传再合并。保存后写入服务器{" "}
+              扫描件 / 图片 PDF 走 MinerU；文本型 PDF 若公式/结构缺失（数学、理工卷子）也会按下方策略自动走 MinerU。本地模式拉起本机 mineru-api（无需 Token）；云端模式调用 mineru.net，需在官网创建 Token。云端超过 200 页或 200MB 时会自动拆段上传再合并。保存后写入服务器{" "}
               <span className="font-mono text-ink">config.yml</span>。
-            </p>
-            {loading ? (
+            </p>            {loading ? (
               <p className="text-body text-ink-soft">加载中…</p>
             ) : (
               <>
@@ -337,6 +339,37 @@ export function SettingsPage() {
                       </button>
                     ))}
                   </div>
+                </div>
+
+                <div>
+                  <div className="text-small text-ink-soft mb-1.5 font-medium">PDF 解析策略</div>
+                  <div className="flex flex-wrap gap-2">
+                    {(
+                      [
+                        { value: "smart" as const, label: "智能（可疑走 MinerU）" },
+                        { value: "all" as const, label: "全部 PDF 走 MinerU" },
+                        { value: "scanned_only" as const, label: "仅扫描件" },
+                      ] as const
+                    ).map((opt) => (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        disabled={savingMineru}
+                        onClick={() => setMineruPolicy(opt.value)}
+                        className={cn(
+                          "h-9 px-3.5 rounded-full text-small font-medium border transition-colors",
+                          mineruPolicy === opt.value
+                            ? "bg-sea text-paper border-sea"
+                            : "bg-paper border-line text-ink-soft hover:border-sea/40 hover:text-sea",
+                        )}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                  <p className="text-caption text-ink-tertiary mt-1.5">
+                    公式/结构缺失的文本型 PDF（数学、理工卷子）在「智能」下会自动改用 MinerU（强制 OCR）转成带 LaTeX 的解析稿。
+                  </p>
                 </div>
 
                 {mineruMode === "cloud" ? (

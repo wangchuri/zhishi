@@ -43,6 +43,10 @@ export function KnowledgeBasePage() {
   const [deleteTarget, setDeleteTarget] = useState<KnowledgeDoc | null>(null)
   const [deleting, setDeleting] = useState(false)
   const [deleteError, setDeleteError] = useState<string | null>(null)
+  const [reparseTarget, setReparseTarget] = useState<KnowledgeDoc | null>(null)
+  const [reparseForce, setReparseForce] = useState(false)
+  const [reparsing, setReparsing] = useState(false)
+  const [reparseError, setReparseError] = useState<string | null>(null)
 
   const selectedCollection = collections.find((c) => c.id === selectedCollectionId)
 
@@ -98,6 +102,28 @@ export function KnowledgeBasePage() {
     e.stopPropagation()
     setDeleteError(null)
     setDeleteTarget(doc)
+  }
+
+  const handleReparseClick = (doc: KnowledgeDoc, e: React.MouseEvent) => {
+    e.stopPropagation()
+    setReparseError(null)
+    setReparseForce(false)
+    setReparseTarget(doc)
+  }
+
+  const handleConfirmReparse = async () => {
+    if (!reparseTarget || !selectedCollectionId) return
+    setReparsing(true)
+    setReparseError(null)
+    try {
+      await kbApi.reparseDocument(reparseTarget.id, reparseForce)
+      setReparseTarget(null)
+      await loadDocuments(selectedCollectionId, selectedCollection?.zone, true)
+    } catch (err) {
+      setReparseError(err instanceof Error ? err.message : "触发重新解析失败")
+    } finally {
+      setReparsing(false)
+    }
   }
 
   const handleConfirmDelete = async () => {
@@ -210,6 +236,7 @@ export function KnowledgeBasePage() {
                 key={doc.id}
                 doc={doc}
                 onView={(e) => handleViewDoc(doc, e)}
+                onReparse={(e) => handleReparseClick(doc, e)}
                 onDelete={(e) => handleDeleteClick(doc, e)}
               />
             ))}
@@ -247,6 +274,47 @@ export function KnowledgeBasePage() {
               className="bg-danger text-white hover:bg-danger/90"
             >
               {deleting ? "删除中..." : "删除"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog
+        open={!!reparseTarget}
+        onOpenChange={(open) => {
+          if (!open && !reparsing) {
+            setReparseTarget(null)
+            setReparseError(null)
+          }
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>重新解析文档？</AlertDialogTitle>
+            <AlertDialogDescription>
+              将用当前「PDF 解析策略」重新解析「{reparseTarget?.name}」，覆盖原解析稿、分段与向量索引（题库、笔记等不受影响）。扫描件或公式卷可能耗时数分钟。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <label className="flex items-center gap-2 text-small text-ink-soft px-1 select-none">
+            <input
+              type="checkbox"
+              checked={reparseForce}
+              onChange={(e) => setReparseForce(e.target.checked)}
+              className="h-4 w-4"
+            />
+            强制 OCR（把 PDF 当扫描件整篇走 MinerU）
+          </label>
+          {reparseError && <p className="text-small text-danger px-1">{reparseError}</p>}
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={reparsing}>取消</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault()
+                void handleConfirmReparse()
+              }}
+              disabled={reparsing}
+            >
+              {reparsing ? "触发中..." : "重新解析"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

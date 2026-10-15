@@ -28,6 +28,7 @@ import { toast } from "sonner"
 import { QuizBookCard, type BookCardStats } from "./QuizBookCard"
 import { QuizGroupCard } from "./QuizGroupCard"
 import { QuestionGenJobsBanner } from "./QuestionGenJobsBanner"
+import { ParsingTasksBanner } from "./ParsingTasksBanner"
 import type { DocumentGroupItem, KnowledgeDoc, QuestionGenJob } from "@/types"
 
 export function QuizBookListPage() {
@@ -51,6 +52,10 @@ export function QuizBookListPage() {
   const [deleteTarget, setDeleteTarget] = useState<KnowledgeDoc | null>(null)
   const [deleting, setDeleting] = useState(false)
   const [deleteError, setDeleteError] = useState<string | null>(null)
+  const [reparseTarget, setReparseTarget] = useState<KnowledgeDoc | null>(null)
+  const [reparseForce, setReparseForce] = useState(false)
+  const [reparsing, setReparsing] = useState(false)
+  const [reparseError, setReparseError] = useState<string | null>(null)
   const [groups, setGroups] = useState<DocumentGroupItem[]>([])
   const [createOpen, setCreateOpen] = useState(false)
   const [newGroupName, setNewGroupName] = useState("")
@@ -91,6 +96,23 @@ export function QuizBookListPage() {
       setDeleteError(err instanceof Error ? err.message : "删除失败，请稍后重试")
     } finally {
       setDeleting(false)
+    }
+  }
+
+  const handleConfirmReparse = async () => {
+    if (!reparseTarget) return
+    setReparsing(true)
+    setReparseError(null)
+    try {
+      await kbApi.reparseDocument(reparseTarget.id, reparseForce)
+      setReparseTarget(null)
+      toast.success("已触发重新解析，稍后刷新查看")
+      await refreshDocuments()
+      setStatsEpoch((n) => n + 1)
+    } catch (err) {
+      setReparseError(err instanceof Error ? err.message : "触发重新解析失败")
+    } finally {
+      setReparsing(false)
     }
   }
 
@@ -249,6 +271,7 @@ export function QuizBookListPage() {
             </button>
           ) : null}
           <QuestionGenJobsBanner jobs={genJobs} />
+          <ParsingTasksBanner />
           {collections.length > 1 && (
             <div className="flex flex-wrap gap-2">
               {collections.map((coll) => (
@@ -290,6 +313,12 @@ export function QuizBookListPage() {
                 }
                 stats={statsMap[doc.id] ?? null}
                 onClick={() => navigate(`/quiz/doc/${doc.id}`)}
+                onReparse={(e) => {
+                  e.stopPropagation()
+                  setReparseError(null)
+                  setReparseForce(false)
+                  setReparseTarget(doc)
+                }}
                 onDelete={(e) => {
                   e.stopPropagation()
                   setDeleteError(null)
@@ -359,6 +388,47 @@ export function QuizBookListPage() {
               className="bg-danger text-white hover:bg-danger/90"
             >
               {deleting ? "删除中..." : "删除"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog
+        open={!!reparseTarget}
+        onOpenChange={(open) => {
+          if (!open && !reparsing) {
+            setReparseTarget(null)
+            setReparseError(null)
+          }
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>重新解析资料？</AlertDialogTitle>
+            <AlertDialogDescription>
+              将用当前「PDF 解析策略」重新解析「{reparseTarget?.name}」，覆盖原解析稿、分段与向量索引（题库、刷题记录等不受影响）。扫描件或公式卷可能耗时数分钟。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <label className="flex items-center gap-2 text-small text-ink-soft px-1 select-none">
+            <input
+              type="checkbox"
+              checked={reparseForce}
+              onChange={(e) => setReparseForce(e.target.checked)}
+              className="h-4 w-4"
+            />
+            强制 OCR（把 PDF 当扫描件整篇走 MinerU）
+          </label>
+          {reparseError && <p className="text-small text-danger px-1">{reparseError}</p>}
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={reparsing}>取消</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault()
+                void handleConfirmReparse()
+              }}
+              disabled={reparsing}
+            >
+              {reparsing ? "触发中..." : "重新解析"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

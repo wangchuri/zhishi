@@ -13,8 +13,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
+from sqlalchemy import inspect as sa_inspect, text as sql_text
 from sqlalchemy.orm import Session
 
+from ..core.config import config
 from ..core.errors import AppError, NotFoundError
 from ..core.storage import storage
 from ..models import (
@@ -50,6 +52,34 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _resolve_pdf_parse(
+    content: bytes, *, force_scanned: bool
+) -> tuple[bool, str, str, "parser.PdfInspection"]:
+    """决定 PDF 怎么解析。
+
+    返回 (use_mineru, parse_method, reason, inspection)。
+    - 扫描件（无文本层）→ MinerU，parse_method=auto；
+    - 有文本层但公式/结构缺失（可疑）或策略=all → MinerU，parse_method=ocr；
+    - 否则 → PyMuPDF。
+    """
+    inspection = parser.inspect_pdf(content)
+    if force_scanned:
+        return (
+            True,
+            "auto" if inspection.is_scanned else "ocr",
+            "手动强制 OCR",
+            inspection,
+        )
+    if inspection.is_scanned:
+        return True, "auto", "扫描件（无文本层）", inspection
+    policy = config.pdf_parse_policy
+    if policy == "all":
+        return True, "ocr", "策略：全部 PDF 走 MinerU", inspection
+    if policy == "smart" and inspection.needs_mineru:
+        return True, "ocr", f"可疑：{inspection.reason}", inspection
+    return False, "", "", inspection
+
+
 def _background_parse(doc_id: str, filename: str, content: bytes, collection_id: Optional[str], force_scanned: bool) -> None:
     """后台线程执行文档解析（MinerU 可能耗时数分钟）。
 
@@ -59,14 +89,22 @@ def _background_parse(doc_id: str, filename: str, content: bytes, collection_id:
 
     # 重活先在无 Session 下做：扫描 PDF 的 MinerU 可能长达数十分钟
     pre_mineru: dict | None = None
+    pre_reason: str | None = None
     ext = parser.file_extension(filename)
     try:
         if ext in parser.PDF_EXTENSIONS:
-            text, pages = parser.parse_pdf_text(content)
-            is_scanned = force_scanned or parser.is_pdf_scanned(content) or not text.strip()
-            if is_scanned:
-                logger.info("后台 MinerU 开始（不占 DB）doc=%s", doc_id)
-                pre_mineru = mineru_service.parse_pdf(content)
+            use_mineru, parse_method, reason, _insp = _resolve_pdf_parse(
+                content, force_scanned=force_scanned
+            )
+            if use_mineru:
+                logger.info(
+                    "后台 MinerU 开始（不占 DB）doc=%s parse_method=%s reason=%s",
+                    doc_id,
+                    parse_method,
+                    reason,
+                )
+                pre_mineru = mineru_service.parse_pdf(content, parse_method=parse_method)
+                pre_reason = reason
     except Exception as e:
         logger.warning("后台 MinerU 失败 doc=%s: %s", doc_id, e)
         db = SessionLocal()
@@ -99,6 +137,7 @@ def _background_parse(doc_id: str, filename: str, content: bytes, collection_id:
                 p["markdown"] = rewritten
             storage.save_pages(doc.id, rewritten_pages)
             doc.is_scanned_pdf = True
+            doc.parse_reason = pre_reason
         else:
             kb._parse_and_ingest(db, doc, content, force_scanned=force_scanned)
         doc.indexing_status = "completed"
@@ -393,6 +432,54 @@ class KnowledgeBaseService:
         db.commit()
         return doc
 
+    def reparse_document(
+        self,
+        db: Session,
+        doc_id: str,
+        *,
+        force_scanned: bool = False,
+    ) -> Document:
+        """用当前策略重新解析已入库文档：覆盖解析稿/分段/向量索引。
+
+        旧的分段与图片注册表先清空；原始文件已在库时直接复用。
+        """
+        doc = self.get_document(db, doc_id)
+        content = storage.read_original(doc_id)
+        if not content:
+            raise AppError("原始文件不存在，无法重新解析")
+
+        # 旧分段将被替换：先解除挂在分段上的引用（旧库对 document_segments 有外键约束）
+        existing_tables = set(sa_inspect(db.get_bind()).get_table_names())
+        for table in ("question_provenance", "user_question_refs", "tutor_sessions"):
+            if table in existing_tables:
+                db.execute(
+                    sql_text(f"UPDATE {table} SET segment_id = NULL WHERE document_id = :d"),
+                    {"d": doc_id},
+                )
+        db.query(DocumentSegment).filter(DocumentSegment.document_id == doc_id).delete(
+            synchronize_session=False
+        )
+        db.query(DocumentImage).filter(DocumentImage.document_id == doc_id).delete(
+            synchronize_session=False
+        )
+        doc.indexing_status = "processing"
+        doc.segment_status = "not_started"
+        doc.is_scanned_pdf = False
+        doc.parse_reason = None
+        doc.pdf_page_count = None
+        doc.updated_at = datetime.now(timezone.utc)
+        db.commit()
+
+        _spawn_background(
+            _background_parse,
+            doc_id,
+            doc.display_name,
+            content,
+            doc.collection_id,
+            force_scanned,
+        )
+        return doc
+
     def _parse_and_ingest(
         self,
         db: Session,
@@ -427,10 +514,12 @@ class KnowledgeBaseService:
 
         # 3) PDF
         if ext in parser.PDF_EXTENSIONS:
-            text, pages = parser.parse_pdf_text(content)
-            is_scanned = force_scanned or parser.is_pdf_scanned(content) or not text.strip()
-            if is_scanned:
-                mineru = mineru_service.parse_pdf(content)
+            use_mineru, parse_method, reason, inspection = _resolve_pdf_parse(
+                content, force_scanned=force_scanned
+            )
+            text, pages = inspection.text, inspection.pages
+            if use_mineru:
+                mineru = mineru_service.parse_pdf(content, parse_method=parse_method)
                 pages_md = mineru["page_mds"]
                 all_images = mineru["images"] or {}
                 name_map = self._persist_mineru_images_once(db, doc, all_images)
@@ -442,6 +531,7 @@ class KnowledgeBaseService:
                 storage.save_pages(doc.id, rewritten_pages)
                 result["pages"] = pages_md
                 doc.is_scanned_pdf = True
+                doc.parse_reason = reason
                 return result
             if pages:
                 storage.save_pages(doc.id, pages)
@@ -609,6 +699,32 @@ class KnowledgeBaseService:
         total = q.count()
         docs = q.order_by(Document.created_at.desc()).offset((page - 1) * limit).limit(limit).all()
         return {"documents": docs, "total": total, "page": page, "limit": limit}
+
+    def list_active_tasks(self, db: Session, limit: int = 50) -> list[dict]:
+        """全局解析/上传任务：仍在 pending/processing 的文档（跨集合）。"""
+        rows = (
+            db.query(Document)
+            .filter(Document.indexing_status.in_(("pending", "processing")))
+            .order_by(Document.updated_at.desc())
+            .limit(limit)
+            .all()
+        )
+        col_names = {c.id: c.name for c in db.query(KBCollection).all()}
+        return [
+            {
+                "id": d.id,
+                "name": d.display_name,
+                "file_type": d.file_type or "txt",
+                "status": d.indexing_status,
+                "is_scanned_pdf": bool(d.is_scanned_pdf),
+                "parse_reason": d.parse_reason,
+                "collection_id": d.collection_id,
+                "collection_name": col_names.get(d.collection_id),
+                "zone": d.zone,
+                "updated_at": d.updated_at,
+            }
+            for d in rows
+        ]
 
     def get_document(self, db: Session, doc_id: str) -> Document:
         doc = db.get(Document, doc_id)

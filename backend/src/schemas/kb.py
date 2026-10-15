@@ -46,6 +46,7 @@ class KnowledgeDoc(BaseModel):
     ocr_status: Optional[str] = None
     ocr_current_page: Optional[int] = None
     ocr_total_pages: Optional[int] = None
+    parse_reason: Optional[str] = None
     pdf_page_count: Optional[int] = None
     warning: Optional[str] = None
     questionCount: Optional[int] = None
@@ -117,6 +118,7 @@ class DocumentContentMeta(BaseModel):
     preview_mode: Optional[str] = None  # pdf/docx/markdown/text
     has_raw_file: Optional[bool] = None
     is_scanned_pdf: Optional[bool] = None
+    parse_reason: Optional[str] = None
     mock: Optional[bool] = None
     pdf_page_count: Optional[int] = None
     warning: Optional[str] = None

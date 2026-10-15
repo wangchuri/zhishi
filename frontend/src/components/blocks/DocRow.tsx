@@ -1,5 +1,5 @@
 import type { KnowledgeDoc } from "@/types"
-import { Trash2, Eye } from "lucide-react"
+import { Trash2, Eye, RotateCw } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { DocumentPipelineBadge } from "@/components/blocks/DocumentPipelineBadge"
 import { cn } from "@/lib/utils"
@@ -37,10 +37,11 @@ interface DocRowProps {
   className?: string
   onDelete?: (e: React.MouseEvent) => void
   onView?: (e: React.MouseEvent) => void
+  onReparse?: (e: React.MouseEvent) => void
 }
 
 /** 知识库文档行 · 表格风格要轻，不像传统后台厚重表格 */
-export function DocRow({ doc, className, onDelete, onView }: DocRowProps) {
+export function DocRow({ doc, className, onDelete, onView, onReparse }: DocRowProps) {
   const status = statusConfig[doc.status]
   return (
     <div
@@ -107,6 +108,17 @@ export function DocRow({ doc, className, onDelete, onView }: DocRowProps) {
             aria-label={`查看 ${doc.name}`}
           >
             <Eye className="w-4 h-4" strokeWidth={2} />
+          </button>
+        )}
+        {onReparse && (
+          <button
+            type="button"
+            onClick={onReparse}
+            className="w-9 h-9 rounded-md flex items-center justify-center text-ink-tertiary opacity-100 can-hover:sm:opacity-0 can-hover:sm:group-hover:opacity-100 hover:bg-primary-soft hover:text-primary transition-all"
+            title="重新解析"
+            aria-label={`重新解析 ${doc.name}`}
+          >
+            <RotateCw className="w-4 h-4" strokeWidth={2} />
           </button>
         )}
         {onDelete && (

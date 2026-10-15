@@ -85,6 +85,8 @@ class Document(Base):
     file_type: Mapped[str | None] = mapped_column(String(20))
     pdf_page_count: Mapped[int | None] = mapped_column(Integer)
     is_scanned_pdf: Mapped[bool] = mapped_column(Boolean, default=False)
+    # 为什么走 MinerU（OCR）解析：扫描件/策略/命中的检测信号；走 PyMuPDF 时为 NULL
+    parse_reason: Mapped[str | None] = mapped_column(String(255))
     tags: Mapped[str | None] = mapped_column(Text)
     indexing_status: Mapped[str] = mapped_column(String(20), default="pending")
     segment_status: Mapped[str] = mapped_column(String(20), default="not_started")
