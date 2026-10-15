@@ -293,6 +293,19 @@ export const uploadsApi = {
     }
     return (await res.json()) as { id: string; url: string; filename?: string }
   },
+
+  /** 图片缓存用量（设置页展示） */
+  stats() {
+    return request<{ count: number; bytes: number }>("GET", "/api/v1/uploads/stats")
+  },
+
+  /** 手动清理上传图片；days=0 表示全部（清掉后历史消息/错题回顾里对应的图会看不到） */
+  cleanup(days = 30) {
+    return request<{ deleted: number; freed_bytes: number }>(
+      "POST",
+      `/api/v1/uploads/cleanup?days=${days}`,
+    )
+  },
 }
 
 // ─── Chat ──────────────────────────────────────────────

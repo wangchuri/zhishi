@@ -803,13 +803,25 @@ class QuizService:
             else:
                 prov = db.query(QuestionProvenance).filter_by(question_id=question_id).first()
             ref_doc_id = prov.document_id if prov else None
+
+        # 拍照作答：图片记进答题记录（错题回顾里能看到），没文字时给个占位
+        from pathlib import Path as _Path
+
+        saved_ids = [_Path(p).name for p in image_paths]
+        stored_answer = user_answer
+        if (not user_answer or not user_answer.strip()) and saved_ids:
+            stored_answer = "（图片作答）"
+        stored_attachments = json.dumps(saved_ids, ensure_ascii=False) if saved_ids else None
+
         if existing:
             old_status = existing.status
-            existing.user_answer = user_answer
+            existing.user_answer = stored_answer
             existing.status = status
             existing.grade_method = grade_method
             existing.string_match_status = string_match_status
             existing.ai_reason = ai_reason
+            if stored_attachments is not None:
+                existing.attachments = stored_attachments
             if time_spent_seconds is not None:
                 existing.time_spent_seconds = time_spent_seconds
             existing.answered_at = datetime.now(timezone.utc)
@@ -818,12 +830,13 @@ class QuizService:
             answer = QuizAnswer(
                 session_id=session.id,
                 question_id=question_id,
-                user_answer=user_answer,
+                user_answer=stored_answer,
                 status=status,
                 grade_method=grade_method,
                 string_match_status=string_match_status,
                 ai_reason=ai_reason,
                 time_spent_seconds=time_spent_seconds,
+                attachments=stored_attachments,
             )
             db.add(answer)
             self.update_ref_stats(db, question_id, ref_doc_id, status)
@@ -848,6 +861,7 @@ class QuizService:
             "grade_method": grade_method,
             "string_match_status": string_match_status,
             "ai_reason": ai_reason,
+            "attachments": saved_ids,
             "answered_count": answered,
             "total_questions": total,
             "session_status": session_status,
@@ -957,6 +971,7 @@ class QuizService:
                     "status": a.status,
                     "correct_answer": gq.answer,
                     "explanation": gq.explanation,
+                    "attachments": json.loads(a.attachments) if a.attachments else [],
                 })
         total = db.query(QuizSessionQuestion).filter(QuizSessionQuestion.session_id == session.id).count()
         time_rows = (

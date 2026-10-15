@@ -10,7 +10,7 @@ import re
 import uuid
 from pathlib import Path
 
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import APIRouter, File, HTTPException, Query, UploadFile
 from fastapi.responses import Response
 
 from ..core.storage import storage
@@ -48,6 +48,28 @@ async def upload_image(file: UploadFile = File(...)):
         "url": f"/api/v1/uploads/{name}",
         "filename": file.filename,
     }
+
+
+@router.get("/stats")
+def upload_stats():
+    """图片缓存用量（设置页展示用）。"""
+    files = storage.list_uploads()
+    total = 0
+    for p in files:
+        try:
+            total += p.stat().st_size
+        except OSError:
+            continue
+    return {"count": len(files), "bytes": total}
+
+
+@router.post("/cleanup")
+def cleanup_uploads(
+    days: int = Query(30, ge=0, description="删除多少天前的图片；0 = 全部（注意：清掉后回顾里就看不到图了）"),
+):
+    """手动清理上传图片（对话/答题里的照片）。已入库的判分结果不受影响。"""
+    deleted, freed = storage.delete_uploads_older_than(days)
+    return {"deleted": deleted, "freed_bytes": freed}
 
 
 @router.get("/{name}")

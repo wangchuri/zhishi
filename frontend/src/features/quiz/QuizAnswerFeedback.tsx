@@ -2,6 +2,7 @@ import type { ReactNode } from "react"
 import { CheckCircle2, ChevronRight, HelpCircle, Sparkles, XCircle } from "lucide-react"
 import { MarkdownWithMath } from "@/components/blocks/MarkdownWithMath"
 import { CitationCard } from "@/components/blocks/CitationCard"
+import { MessageImages } from "@/components/blocks/ImageAttachments"
 import { QuizQuestionReflection } from "./QuizQuestionReflection"
 import { getApiBase } from "@/lib/api"
 import { Button } from "@/components/ui/button"
@@ -69,6 +70,9 @@ export function QuizAnswerFeedback({
 
   return (
     <div className="space-y-3">
+      {lastResult.attachments && lastResult.attachments.length > 0 && (
+        <MessageImages ids={lastResult.attachments} />
+      )}
       <div className={cn("flex items-start gap-2 text-body font-medium", info.className)}>
         <span className="mt-0.5 shrink-0">{info.icon}</span>
         <span className="min-w-0">{info.text}</span>

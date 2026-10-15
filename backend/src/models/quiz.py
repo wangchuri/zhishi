@@ -62,6 +62,7 @@ class QuizAnswer(Base):
     string_match_status: Mapped[str | None] = mapped_column(String(20))
     ai_reason: Mapped[str | None] = mapped_column(Text)
     time_spent_seconds: Mapped[int | None] = mapped_column(Integer)
+    attachments: Mapped[str | None] = mapped_column(Text)  # JSON：拍照作答的图片（上传 id 列表）
     answered_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
 
 

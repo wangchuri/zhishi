@@ -376,6 +376,7 @@ export function QuizPage() {
         correct_answer: result.correct_answer || "—",
         explanation: result.explanation,
         citation: result.citation,
+        attachments: result.attachments,
       }
       setReviewItems((prev) => {
         if (prev.some((x) => x.question_id === item.question_id)) {

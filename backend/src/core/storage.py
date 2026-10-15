@@ -21,6 +21,7 @@ from __future__ import annotations
 import json
 import re
 import shutil
+import time
 from pathlib import Path
 
 from .config import config
@@ -190,6 +191,29 @@ class StorageService:
             return None
         path = self.upload_path(file_name)
         return path if path.is_file() else None
+
+    def list_uploads(self) -> list[Path]:
+        d = self.base / "uploads"
+        if not d.is_dir():
+            return []
+        return [p for p in d.iterdir() if p.is_file()]
+
+    def delete_uploads_older_than(self, days: int) -> tuple[int, int]:
+        """删除 N 天前的上传图片（days<=0 表示全部），返回 (文件数, 释放字节数)。"""
+        now = time.time()
+        deleted = 0
+        freed = 0
+        for path in self.list_uploads():
+            try:
+                stat = path.stat()
+                if days > 0 and (now - stat.st_mtime) < days * 86400:
+                    continue
+                path.unlink()
+                deleted += 1
+                freed += stat.st_size
+            except OSError:
+                continue
+        return deleted, freed
 
     # ---- 缩略图 ----
 

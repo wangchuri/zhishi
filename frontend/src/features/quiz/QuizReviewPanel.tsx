@@ -1,5 +1,6 @@
 import type { QuizReviewItem } from "@/types"
 import { CitationCard } from "@/components/blocks/CitationCard"
+import { MessageImages } from "@/components/blocks/ImageAttachments"
 import { MarkdownWithMath } from "@/components/blocks/MarkdownWithMath"
 import { Badge } from "@/components/ui/badge"
 import { cn } from "@/lib/utils"
@@ -34,8 +35,13 @@ export function QuizReviewPanel({ items, onAskTutor, className }: QuizReviewPane
               {item.status === "unknown" ? "我不会" : "答错"}
             </Badge>
           </div>
+          {item.attachments && item.attachments.length > 0 && (
+            <MessageImages ids={item.attachments} />
+          )}
           <div className="text-small text-ink-secondary">
-            你的答案：{item.user_answer || "—"} · 正确答案：{item.correct_answer}
+            你的答案：
+            {item.user_answer || (item.attachments?.length ? "（图片作答）" : "—")} · 正确答案：
+            {item.correct_answer}
           </div>
           {item.explanation && (
             <div className="text-small text-ink-primary bg-surface rounded-md p-2.5 border border-line-soft">

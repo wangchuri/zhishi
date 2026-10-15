@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react"
+import { useCallback, useEffect, useState } from "react"
 import { useNavigate } from "react-router-dom"
-import { Server, Wifi, WifiOff, UserRound, Sparkles, ListTodo, FileScan } from "lucide-react"
+import { Server, Wifi, WifiOff, UserRound, Sparkles, ListTodo, FileScan, HardDrive } from "lucide-react"
 import { toast } from "sonner"
 import { AppShell } from "@/components/layout/AppShell"
 import { PageHeader } from "@/components/blocks/PageHeader"
@@ -9,7 +9,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { useAuth } from "@/context/AuthContext"
-import { getStoredApiBase, profileApi, systemApi, tasksApi, type MineruSettings } from "@/lib/api"
+import { getStoredApiBase, profileApi, systemApi, tasksApi, uploadsApi, type MineruSettings } from "@/lib/api"
 import { cn } from "@/lib/utils"
 
 export function SettingsPage() {
@@ -26,6 +26,41 @@ export function SettingsPage() {
   const [taskMaxCount, setTaskMaxCount] = useState("")
   const [taskMaxMinutes, setTaskMaxMinutes] = useState("")
   const [savingTasks, setSavingTasks] = useState(false)
+
+  // 图片缓存（对话 / 拍照作答上传的图，存在服务器本地）
+  const [imgStats, setImgStats] = useState<{ count: number; bytes: number } | null>(null)
+  const [imgBusy, setImgBusy] = useState(false)
+
+  const loadImgStats = useCallback(async () => {
+    try {
+      setImgStats(await uploadsApi.stats())
+    } catch {
+      setImgStats(null)
+    }
+  }, [])
+
+  useEffect(() => {
+    void loadImgStats()
+  }, [loadImgStats])
+
+  const cleanupImages = async (days: number) => {
+    const label = days > 0 ? `${days} 天前` : "全部"
+    const ok = window.confirm(
+      `确定清理${label}的图片吗？清理后历史消息、错题回顾里对应的图会显示不出来（已判分的结果不受影响）。`,
+    )
+    if (!ok) return
+    setImgBusy(true)
+    try {
+      const res = await uploadsApi.cleanup(days)
+      const mb = (res.freed_bytes / 1024 / 1024).toFixed(1)
+      toast.success(`已清理 ${res.deleted} 张（释放 ${mb} MB）`)
+      await loadImgStats()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "清理失败")
+    } finally {
+      setImgBusy(false)
+    }
+  }
 
   const [mineruMode, setMineruMode] = useState<"local" | "cloud">("local")
   const [mineruToken, setMineruToken] = useState("")
@@ -352,6 +387,48 @@ export function SettingsPage() {
                 </div>
               </>
             )}
+          </div>
+        </Card>
+
+        <Card className="overflow-hidden">
+          <div className="flex items-center gap-3 px-5 py-3.5 border-b border-line-light bg-paper-2/50">
+            <div className="w-8 h-8 rounded-md bg-sea-subtle text-sea flex items-center justify-center">
+              <HardDrive className="w-4 h-4" strokeWidth={2} />
+            </div>
+            <h3 className="text-card-title font-semibold text-ink">图片缓存</h3>
+          </div>
+          <div className="p-5 space-y-3">
+            <p className="text-small text-ink-soft">
+              对话里发的图和拍照作答的图都存在服务器本地，不会自动清理。清掉之后，
+              历史消息与错题回顾里对应的图会显示不出来 —— 但已判分的结论不受影响。
+            </p>
+            <div className="text-small text-ink">
+              当前占用：
+              {imgStats
+                ? `${imgStats.count} 张 · ${(imgStats.bytes / 1024 / 1024).toFixed(1)} MB`
+                : "统计中…"}
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button variant="secondary" size="sm" onClick={() => void loadImgStats()} disabled={imgBusy}>
+                刷新
+              </Button>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => void cleanupImages(30)}
+                disabled={imgBusy || !imgStats?.count}
+              >
+                {imgBusy ? "清理中…" : "清理 30 天前的"}
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => void cleanupImages(0)}
+                disabled={imgBusy || !imgStats?.count}
+              >
+                全部清理
+              </Button>
+            </div>
           </div>
         </Card>
 

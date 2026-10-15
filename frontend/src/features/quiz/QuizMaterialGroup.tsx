@@ -141,6 +141,7 @@ export function QuizMaterialGroup({
             correct_answer: res.correct_answer || "—",
             explanation: res.explanation,
             citation: res.citation,
+            attachments: res.attachments,
           })
         }
       }

@@ -89,6 +89,7 @@ class QuizAnswerResult(BaseModel):
     grade_method: Optional[str] = None  # string/ai
     string_match_status: Optional[str] = None
     ai_reason: Optional[str] = None
+    attachments: list[str] = []  # 拍照作答的图片（上传 id）
     answered_count: int = 0
     total_questions: int = 0
     session_status: str = "active"
@@ -104,6 +105,7 @@ class QuizReviewItem(BaseModel):
     correct_answer: Optional[str] = None
     explanation: Optional[str] = None
     citation: Optional[dict] = None
+    attachments: list[str] = []  # 拍照作答的图片（上传 id）
 
 
 class QuizResults(BaseModel):

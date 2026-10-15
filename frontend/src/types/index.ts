@@ -266,6 +266,8 @@ export interface QuizAnswerResult {
   grade_method?: "string" | "ai" | string | null
   string_match_status?: string | null
   ai_reason?: string | null
+  /** 拍照作答的图片（上传 id） */
+  attachments?: string[]
   answered_count: number
   total_questions: number
   session_status: string
@@ -292,6 +294,8 @@ export interface QuizReviewItem {
   correct_answer: string
   explanation?: string | null
   citation?: Citation | null
+  /** 拍照作答的图片（上传 id） */
+  attachments?: string[]
 }
 
 /** 刷题结果汇总 */
