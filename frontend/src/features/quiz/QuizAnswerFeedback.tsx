@@ -1,5 +1,6 @@
 import type { ReactNode } from "react"
-import { CheckCircle2, ChevronRight, HelpCircle, Sparkles, XCircle } from "lucide-react"
+import { Link } from "react-router-dom"
+import { CheckCircle2, ChevronRight, HelpCircle, History, Sparkles, XCircle } from "lucide-react"
 import { MarkdownWithMath } from "@/components/blocks/MarkdownWithMath"
 import { CitationCard } from "@/components/blocks/CitationCard"
 import { MessageImages } from "@/components/blocks/ImageAttachments"
@@ -117,6 +118,15 @@ export function QuizAnswerFeedback({
       )}
 
       <QuizQuestionReflection questionId={question.question_id} documentId={documentId} />
+
+      {/* 答题页原来没有通往题目详情的入口（详情页入口只在资料详情/错题回顾里） */}
+      <Link
+        to={`/quiz/question/${question.question_id}`}
+        className="inline-flex items-center gap-1.5 text-caption text-ink-tertiary hover:text-sea transition-colors"
+      >
+        <History className="w-3.5 h-3.5" strokeWidth={2} />
+        查看这道题的作答记录
+      </Link>
     </div>
   )
 }
