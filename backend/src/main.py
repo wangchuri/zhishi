@@ -64,11 +64,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 需要登录的白名单：这几个接口公开（首次初始化 / 登录 / 探活）
+# 需要登录的白名单：这几个接口公开（首次初始化 / 登录 / 探活 / 清缓存）
 _PUBLIC_API = {
     "/api/v1/auth/status",
     "/api/v1/auth/setup",
     "/api/v1/auth/login",
+    "/api/v1/pwa-reset",
 }
 
 

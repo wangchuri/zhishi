@@ -49,6 +49,7 @@ export interface KnowledgeDoc {
   ocr_status?: string
   ocr_current_page?: number
   ocr_total_pages?: number
+  parse_reason?: string | null
   pdf_page_count?: number
   warning?: string
   questionCount?: number
@@ -56,6 +57,19 @@ export interface KnowledgeDoc {
   group_id?: string | null
   wordCount: number
   updatedAt: string
+}
+
+export interface ActiveParseTask {
+  id: string
+  name: string
+  file_type: string
+  status: string
+  is_scanned_pdf: boolean
+  parse_reason?: string | null
+  collection_id?: string | null
+  collection_name?: string | null
+  zone?: string | null
+  updated_at?: string
 }
 
 export interface DocumentGroupStats {
@@ -178,6 +192,9 @@ export interface Question {
   created_at?: string
   user_answer_status?: "correct" | "wrong" | "unknown" | null
   attempt_count?: number
+  material_id?: string | null
+  sub_index?: number | null
+  material?: QuizQuestionMaterial | null
 }
 
 /** 题目列表（含做题统计） */
@@ -207,7 +224,20 @@ export interface QuizSessionQuestion {
   source_type?: string
   html_content?: string | null
   answer_params?: string | null
+  /** 材料题：所属材料 + 子题序号（从 1 起） */
+  material_id?: string | null
+  sub_index?: number | null
+  material?: QuizQuestionMaterial | null
   last_time_spent_seconds?: number | null
+}
+
+export interface QuizQuestionMaterial {
+  id: string
+  kind: string
+  title?: string | null
+  content?: string | null
+  pages?: number[]
+  chapter_id?: string | null
 }
 
 /** 刷题会话 */
@@ -508,6 +538,7 @@ export interface DocumentContentMeta {
   preview_mode?: "pdf" | "docx" | "text" | "markdown"
   has_raw_file?: boolean
   is_scanned_pdf?: boolean
+  parse_reason?: string | null
   mock?: boolean
   pdf_page_count?: number
   warning?: string

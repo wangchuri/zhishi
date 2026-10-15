@@ -423,6 +423,18 @@ export const kbApi = {
     return request<any>("DELETE", `/api/v1/kb/documents/${docId}`)
   },
 
+  reparseDocument(docId: string, force = false) {
+    const q = force ? "?force=true" : ""
+    return request<any>("POST", `/api/v1/kb/documents/${docId}/reparse${q}`)
+  },
+
+  listActiveTasks() {
+    return request<{ tasks: import("@/types").ActiveParseTask[] }>(
+      "GET",
+      "/api/v1/kb/tasks/active",
+    )
+  },
+
   getDocumentContent(docId: string, opts?: { metaOnly?: boolean }) {
     const q = opts?.metaOnly ? "?meta_only=true" : ""
     return request<DocumentContentMeta>("GET", `/api/v1/kb/documents/${docId}/content${q}`)
@@ -747,6 +759,8 @@ export const quizApi = {
     title?: string
     filter?: "all" | "undone" | "wrong" | "unknown"
     tags?: string[]
+    /** 试卷模式：按题型配额随机组卷（material=材料题） */
+    type_counts?: Record<string, number>
     resume?: boolean
     task_id?: string
   }) {
@@ -924,6 +938,7 @@ export type MineruSettings = {
   api_token: string
   api_base: string
   model_version: "pipeline" | "vlm"
+  pdf_parse_policy: "smart" | "all" | "scanned_only"
   config_path?: string
 }
 
