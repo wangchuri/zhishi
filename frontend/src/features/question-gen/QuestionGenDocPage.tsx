@@ -352,9 +352,9 @@ export function QuestionGenDocPage() {
           </div>
         )}
 
-        <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[200px_minmax(0,1fr)_320px] gap-0 overflow-hidden">
+        <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[200px_minmax(0,1fr)_320px] gap-0 overflow-y-auto scroll-thin lg:overflow-hidden">
           {/* 左：页码列表 */}
-          <div className="border-r border-line-light bg-paper/60 flex flex-col min-h-0 overflow-hidden">
+          <div className="border-b lg:border-b-0 lg:border-r border-line-light bg-paper/60 flex flex-col min-h-0 max-h-[45dvh] lg:max-h-none overflow-hidden">
             <div className="px-3 py-3 border-b border-line-light flex items-center justify-between shrink-0">
               <span className="text-small font-medium text-ink">页码</span>
               {pages.length > 0 && (
