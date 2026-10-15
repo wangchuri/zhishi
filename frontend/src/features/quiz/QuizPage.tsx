@@ -40,6 +40,7 @@ import {
 import { StatCard } from "@/components/ui/stat-card"
 import { questionsApi, quizApi } from "@/lib/api"
 import { notifyCompletedTasks } from "@/lib/taskNotify"
+import { cn } from "@/lib/utils"
 import { useKbDocuments } from "@/hooks/useKbDocuments"
 import type {
   KnowledgeDoc,
@@ -133,6 +134,8 @@ export function QuizPage() {
   const [submitting, setSubmitting] = useState(false)
   const [lastResult, setLastResult] = useState<QuizAnswerResult | null>(null)
   const attachments = useImageAttachments()
+  // 手机：题目 / 辅导 二选一（桌面两栏并排）
+  const [mobilePane, setMobilePane] = useState<"question" | "tutor">("question")
   const [reviewItems, setReviewItems] = useState<QuizReviewItem[]>([])
   const [resultsSummary, setResultsSummary] = useState<{
     correct: number
@@ -516,6 +519,7 @@ export function QuizPage() {
     setReviewItems([])
     setQuestionStartTime(Date.now())
     attachments.clear()
+    setMobilePane("question")
   }
 
   const handleGroupDone = async (summary: MaterialGroupSummary) => {
@@ -543,6 +547,7 @@ export function QuizPage() {
     setLastResult(null)
     setQuestionStartTime(Date.now())
     attachments.clear()
+    setMobilePane("question")
   }
 
   const submitAnswerCore = async (opts?: { requestAiGrade?: boolean }) => {
@@ -628,7 +633,8 @@ export function QuizPage() {
       // "我不会" 不展示答案，由 Tutor 窗口进行辅导，
       // 设置 lastResult 让反馈面板显示「已标记「我不会」」
       setLastResult(result)
-      // 发送辅导消息到当前题的 TutorPanel
+      // 发送辅导消息到当前题的 TutorPanel（手机上同时切到「辅导」）
+      setMobilePane("tutor")
       tutorPanelRef.current?.sendMessage("我不会做这道题，请给我一些提示")
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "标记失败"
@@ -652,8 +658,7 @@ export function QuizPage() {
       notifyCompletedTasks(result)
       setLastResult(result)
       addReviewItem(result, currentQuestion.stem, "我不会")
-      tutorPanelRef.current?.sendMessage("这道题我做错了，请帮我讲解一下")
-    } catch (err: unknown) {
+      tutorPanelRef.current?.sendMessage("这道题我做错了，请帮我讲解一下")    } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "标记失败"
       if (isSessionExpiredError(msg)) handleSessionExpired()
       else setError(msg)
@@ -899,11 +904,32 @@ export function QuizPage() {
 
       {phase === "quiz" && session && currentQuestion && (
         <div
-          className="grid grid-cols-1 lg:grid-cols-[1fr_340px] gap-6 lg:h-[calc(100dvh-9rem)] min-h-0"
+          className="flex flex-col gap-3 lg:grid lg:grid-cols-[1fr_340px] lg:gap-6 lg:h-[calc(100dvh-9rem)] min-h-0"
           data-tip-doc={selectedDocumentId || undefined}
           data-tip-doc-name={selectedDocument?.name || undefined}
         >
-          <div className="bg-surface border border-line-soft rounded-lg shadow-xs flex flex-col min-h-0 overflow-hidden">
+          {/* 手机：题目 / 辅导 二选一，避免「题目 + 420px 辅导」上下堆叠 */}
+          <div className="lg:hidden flex items-center gap-1 rounded-full border border-line bg-paper p-0.5 shrink-0">
+            {([["question", "题目"], ["tutor", "辅导"]] as const).map(([key, label]) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => setMobilePane(key)}
+                className={cn(
+                  "flex-1 h-8 rounded-full text-small font-medium transition-colors",
+                  mobilePane === key ? "bg-sea text-paper" : "text-ink-soft",
+                )}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          <div
+            className={cn(
+              "bg-surface border border-line-soft rounded-lg shadow-xs flex-col min-h-0 overflow-hidden",
+              mobilePane === "question" ? "flex" : "hidden lg:flex",
+            )}
+          >
             {/* 题目状态头 */}
             <div className="flex items-center justify-between gap-3 px-6 py-4 border-b border-line-soft shrink-0">
               <div className="flex items-center gap-2 flex-wrap">
@@ -1072,7 +1098,12 @@ export function QuizPage() {
             )}
           </div>
 
-          <div className="flex flex-col min-h-0 h-[420px] lg:h-full overflow-hidden">
+          <div
+            className={cn(
+              "flex-col min-h-0 overflow-hidden",
+              mobilePane === "tutor" ? "flex h-[65dvh]" : "hidden lg:flex lg:h-full",
+            )}
+          >
             <TutorPanel
               ref={tutorPanelRef}
               key={(materialGroup[0] ?? currentQuestion).question_id}
