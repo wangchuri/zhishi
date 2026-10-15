@@ -134,7 +134,73 @@
 
 ---
 
-## G. 结果汇总
+## G. 给 Agent 的脚本化做法（可选，比人肉看描红更彻底）
+
+如果执行方是带 **Playwright MCP** 的 Agent（`browser_run_code_unsafe` 可直接跑 JS），
+可以不依赖 `?overflow=1`，**一次调用扫完所有路由**并把结果打成表。逻辑与探测工具一致：
+
+```js
+// Playwright MCP: browser_run_code_unsafe
+async (page) => {
+  const origin = new URL(page.url()).origin
+  const routes = ["/", "/chat", "/notes", "/quiz", "/quiz/ongoing", "/tasks",
+                  "/analytics", "/settings", "/profile", "/knowledge/upload"]
+  const rows = []
+  for (const path of routes) {
+    await page.goto(origin + path, { waitUntil: "domcontentloaded" })
+    await page.waitForTimeout(1200)
+    // 滚到底触发懒加载，再量一次
+    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight))
+    await page.waitForTimeout(600)
+    rows.push(await page.evaluate((path) => {
+      const vw = document.documentElement.clientWidth
+      const main = document.querySelector("main")
+      const inFixed = (el) => {
+        for (let p = el.parentElement; p && p !== document.body; p = p.parentElement)
+          if (getComputedStyle(p).position === "fixed") return true
+        return false
+      }
+      const bad = []
+      document.querySelectorAll("body *").forEach((el) => {
+        const r = el.getBoundingClientRect()
+        if (!r.width || !r.height) return
+        if (r.right <= vw + 1 && r.left >= -1) return
+        if (inFixed(el)) return
+        bad.push({
+          tag: el.tagName.toLowerCase(),
+          cls: String(el.className || "").slice(0, 80),
+          right: Math.round(r.right),
+          w: Math.round(r.width),
+        })
+      })
+      return {
+        path,
+        vw,
+        docW: document.documentElement.scrollWidth,          // 不等于 vw 就是有页面级横向溢出
+        mainOverflow: main ? main.scrollWidth - main.clientWidth : null,
+        badCount: bad.length,
+        bad: bad.slice(0, 8),
+      }
+    }, path))
+  }
+  return rows
+}
+```
+
+**读结果**：`docW > vw` 或 `mainOverflow > 0` 或 `badCount > 0` 就是失败项，
+`bad[]` 里的 `cls` 就是我要的 class 名。
+
+注意事项：
+
+- 需要**已登录**状态；`/quiz/session`、`/quiz/doc/:id`、`/question-gen/doc/:id` 需要真实 id，
+  路由表里按实际数据补全后再跑。
+- 弹窗/抽屉类（如引用侧栏、题目列表弹窗）是独立 `fixed` 子树，**不会被上面的扫描覆盖**，
+  需要单独 `browser_click` 打开后再跑一次同一段量测。
+- 页面里有 iframe 的话（本应用没有），需要单独进 frame 量。
+
+---
+
+## H. 结果汇总
 
 | 区块 | 条数 | 通过 | 失败 | 阻塞 | 备注 |
 | --- | --- | --- | --- | --- | --- |
