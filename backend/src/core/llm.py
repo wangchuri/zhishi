@@ -29,7 +29,6 @@ except ImportError:  # pragma: no cover
 logger = logging.getLogger(__name__)
 
 _BACKEND_DIR = Path(__file__).resolve().parent.parent.parent
-_TINA_PARSER_PATCHED = False
 
 
 def format_agent_error(exc: BaseException) -> str:
@@ -39,36 +38,13 @@ def format_agent_error(exc: BaseException) -> str:
     return f"{name}: {detail}" if detail else name
 
 
-def _patch_tina_null_tool_calls() -> None:
-    """DeepSeek 结束 tool_calls 时常发 null；Tina 异步解析器会拿去 for-in 而崩。"""
-    global _TINA_PARSER_PATCHED
-    if _TINA_PARSER_PATCHED:
-        return
-    try:
-        from tina.utils import output_parser as parser
-    except Exception:
-        logger.warning("未能给 Tina 解析器打上 tool_calls=null 补丁", exc_info=True)
-        return
-
-    loads = parser.json.loads
-
-    def _loads(s, *args, **kwargs):
-        data = loads(s, *args, **kwargs)
-        if isinstance(data, dict):
-            for choice in data.get("choices") or []:
-                delta = choice.get("delta") if isinstance(choice, dict) else None
-                if isinstance(delta, dict) and delta.get("tool_calls") is None:
-                    delta.pop("tool_calls", None)
-        return data
-
-    parser.json.loads = _loads
-    _TINA_PARSER_PATCHED = True
-
-
 def _patch_tina_multimodal_add_assistant() -> None:
     """tina 0.7.3：Agent.add_message 会给 add_assistant_message 传 name，
     但 MultimodalContextManager 覆写的那版只收 message（基类 ContextManager 收 name）。
     多模态 Agent 回放历史时会 TypeError: takes 2 positional arguments but 3 were given。
+
+    已提给 tina：docs/bugs/2026-10-15-multimodal-add-assistant-message.md
+    tina 修好（预计 0.7.4）后即可删掉本补丁。
     """
     try:
         from tina.agent.core.context_manager import MultimodalContextManager
@@ -93,7 +69,6 @@ def _patch_tina_multimodal_add_assistant() -> None:
     MultimodalContextManager.add_assistant_message = add_assistant_message
 
 
-_patch_tina_null_tool_calls()
 _patch_tina_multimodal_add_assistant()
 
 
