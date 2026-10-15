@@ -47,36 +47,37 @@ class ChromaStore:
             import os
             import time as _time
             from pathlib import Path
-            from sentence_transformers import SentenceTransformer
+
+            from fastembed import TextEmbedding
 
             model_id = "BAAI/bge-small-zh-v1.5"
-            cache_dir = Path.home() / ".cache" / "huggingface" / "hub" / "models--BAAI--bge-small-zh-v1.5"
-            snapshot = None
-            snaps = cache_dir / "snapshots"
-            if snaps.is_dir():
-                for d in snaps.iterdir():
-                    if (d / "model.safetensors").exists() or (d / "pytorch_model.bin").exists():
-                        snapshot = d
-                        break
+            # 持久化缓存（默认 temp 目录会被清理）；模型约 100MB
+            cache_dir = str(Path.home() / ".cache" / "zhishi" / "fastembed")
+
+            def _load() -> "TextEmbedding":
+                return TextEmbedding(model_id, cache_dir=cache_dir)
+
             t0 = _time.time()
-            # 直接读本地 snapshot，并强制离线，否则仍会 HEAD huggingface.co
-            os.environ["HF_HUB_OFFLINE"] = "1"
-            os.environ["TRANSFORMERS_OFFLINE"] = "1"
-            load_path = str(snapshot) if snapshot is not None else model_id
             try:
-                model = SentenceTransformer(load_path, local_files_only=True)
-                source = "local_snapshot" if snapshot is not None else "local_id"
+                model = _load()
+                source = "cache"
             except Exception as e:
-                os.environ.pop("HF_HUB_OFFLINE", None)
-                os.environ.pop("TRANSFORMERS_OFFLINE", None)
-                logger.warning("本地嵌入模型不可用，尝试联网下载 %s: %s", model_id, e)
-                model = SentenceTransformer(model_id)
-                source = "download"
+                # 国内直连 huggingface 常失败：兜底走镜像再试一次
+                logger.warning("嵌入模型加载失败，改用 HF 镜像重试 %s: %s", model_id, e)
+                os.environ.setdefault("HF_ENDPOINT", "https://hf-mirror.com")
+                model = _load()
+                source = "mirror"
             elapsed_ms = int((_time.time() - t0) * 1000)
-            logger.info("嵌入模型就绪 source=%s elapsed_ms=%s path=%s", source, elapsed_ms, load_path)
-            self._embedding_fn = lambda texts: model.encode(
-                [t if isinstance(t, str) else str(t) for t in texts]
-            ).tolist()
+            logger.info("嵌入模型就绪(ONNX/fastembed) source=%s elapsed_ms=%s", source, elapsed_ms)
+
+            def _embed(texts):
+                items = [t if isinstance(t, str) else str(t) for t in texts]
+                out = []
+                for v in model.embed(items):
+                    out.append(v.tolist() if hasattr(v, "tolist") else list(v))
+                return out
+
+            self._embedding_fn = _embed
         return self._embedding_fn
 
     def _collection_name(self, doc_id: str) -> str:

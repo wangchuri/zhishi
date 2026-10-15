@@ -187,6 +187,23 @@ def list_active_tasks(
     return {"tasks": kb_service.list_active_tasks(db, limit=limit)}
 
 
+@router.post("/reindex")
+def reindex_vectors(
+    document_id: Optional[str] = Query(None),
+    db: Session = Depends(get_db),
+):
+    """用当前 embedding 重建向量索引（更换嵌入实现/模型后调用）。"""
+    n = kb_service.reindex_vectors(db, document_id=document_id)
+    return {"documents": n}
+
+
+@router.post("/tasks/retry-blocked")
+def retry_blocked_tasks(db: Session = Depends(get_db)):
+    """重试所有「等待 OCR」的资料（MinerU 就绪后；安装完成会自动调用）。"""
+    n = kb_service.retry_blocked(db)
+    return {"requeued": n}
+
+
 def _reading_preview_mode(doc) -> str:
     """阅读页打开方式：原 PDF / 原 DOCX / MD；扫描件 PDF 强制走解析稿。"""
     ft = (doc.file_type or "").lower()

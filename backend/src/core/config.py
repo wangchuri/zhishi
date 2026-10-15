@@ -30,6 +30,9 @@ _DEFAULTS = {
     "mineru_model_version": "vlm",
     # PDF 解析策略：smart=可疑(公式/结构缺失)走 MinerU；all=全部 PDF 走 MinerU；scanned_only=仅扫描件
     "pdf_parse_policy": "smart",
+    # MinerU 独立安装目录（留空则用 ~/.zhishi/mineru）；闲时自动释放进程
+    "mineru_install_dir": "",
+    "mineru_idle_seconds": 600,
 }
 
 class Config:
@@ -170,6 +173,21 @@ class Config:
         )
         policy = str(raw).strip().lower()
         return policy if policy in {"smart", "all", "scanned_only"} else "smart"
+
+    @property
+    def mineru_install_dir(self) -> Path:
+        """MinerU 独立环境目录（默认 ~/.zhishi/mineru）。"""
+        raw = (os.environ.get("MINERU_INSTALL_DIR") or self._data.get("mineru_install_dir") or "").strip()
+        base = Path(raw).expanduser() if raw else Path.home() / ".zhishi" / "mineru"
+        return base
+
+    @property
+    def mineru_idle_seconds(self) -> int:
+        raw = os.environ.get("MINERU_IDLE_SECONDS") or self._data.get("mineru_idle_seconds") or 600
+        try:
+            return max(0, int(raw))
+        except (TypeError, ValueError):
+            return 600
 
     def mineru_settings_public(self) -> dict:
         """给前端的配置视图（含 token，本机单用户）。"""

@@ -14,12 +14,14 @@ import os
 import socket
 import subprocess
 import sys
+import threading
 import time
 import urllib.error
 import urllib.request
 import uuid
 import zipfile
 from pathlib import Path
+from shutil import which
 from typing import Optional
 
 import requests
@@ -28,6 +30,10 @@ from ..core.config import config
 from ..core.errors import AppError
 
 logger = logging.getLogger(__name__)
+
+
+class MineruUnavailable(AppError):
+    """本机 MinerU 未安装/未就绪（需要 OCR 但当前不可用）。"""
 
 _BACKEND_DIR = Path(__file__).resolve().parent.parent.parent
 
@@ -43,12 +49,21 @@ _CLOUD_DOWNLOAD_RETRIES = 5
 _CLOUD_PUT_RETRIES = 3
 
 
-def _mineru_api_exe() -> str:
-    """定位 mineru-api 可执行文件（优先 venv/bin，其次系统 PATH）。"""
-    venv_bin = Path(sys.executable).parent / "mineru-api.exe"
-    if venv_bin.is_file():
-        return str(venv_bin)
-    return "mineru-api"
+def _venv_exe(venv_dir: Path, name: str) -> Path:
+    sub = "Scripts" if os.name == "nt" else "bin"
+    suffix = ".exe" if os.name == "nt" else ""
+    return venv_dir / sub / f"{name}{suffix}"
+
+
+def _mineru_api_exe() -> Optional[str]:
+    """定位 mineru-api：优先独立安装目录，其次当前环境，最后系统 PATH。"""
+    cand = _venv_exe(config.mineru_install_dir / "venv", "mineru-api")
+    if cand.is_file():
+        return str(cand)
+    here = Path(sys.executable).parent / ("mineru-api.exe" if os.name == "nt" else "mineru-api")
+    if here.is_file():
+        return str(here)
+    return which("mineru-api")
 
 
 def _is_mineru_up(port: int) -> bool:
@@ -60,36 +75,203 @@ def _is_mineru_up(port: int) -> bool:
 
 
 class MineruService:
-    """MinerU 解析服务。"""
+    """MinerU 解析服务。
+
+    - 按需才拉起 mineru-api（无任务不启动）；空闲超时自动释放
+    - 未安装时不报错失败，抛 MineruUnavailable 交给上层「排队等待」
+    - 可一键安装到独立环境（~/.zhishi/mineru），不污染应用依赖
+    """
+
+    def __init__(self) -> None:
+        self._proc: Optional[subprocess.Popen] = None
+        self._last_used = 0.0
+        self._lock = threading.Lock()
+        self._reaper_started = False
+        self._install_state = "idle"  # idle/installing/done/failed
+        self._install_log: list[str] = []
+        self._install_lock = threading.Lock()
+
+    # ---- 状态 ----
+
+    def is_installed(self) -> bool:
+        return _mineru_api_exe() is not None
+
+    def is_ready(self, port: int = DEFAULT_MINERU_PORT) -> bool:
+        return _is_mineru_up(port)
+
+    def install_status(self) -> dict:
+        return {
+            "state": self._install_state,
+            "log": self._install_log[-30:],
+            "install_dir": str(config.mineru_install_dir),
+            "installed": self.is_installed(),
+        }
+
+    # ---- 生命周期：按需启动 + 空闲释放 ----
+
+    def _start_reaper(self) -> None:
+        if self._reaper_started:
+            return
+        self._reaper_started = True
+        threading.Thread(target=self._reap_loop, daemon=True, name="mineru-reaper").start()
+
+    def _reap_loop(self) -> None:
+        while True:
+            time.sleep(30)
+            try:
+                self.release_if_idle()
+            except Exception:
+                pass
+
+    def _stop_locked(self) -> None:
+        proc, self._proc = self._proc, None
+        if proc is None:
+            return
+        try:
+            proc.terminate()
+            try:
+                proc.wait(timeout=10)
+            except Exception:
+                proc.kill()
+        except Exception:
+            pass
+
+    def release_if_idle(self) -> bool:
+        """空闲超过阈值则释放 mineru-api 进程（只关我们自己拉起的）。"""
+        idle = config.mineru_idle_seconds
+        if idle <= 0:
+            return False
+        with self._lock:
+            proc = self._proc
+            if proc is None or proc.poll() is not None:
+                return False
+            if time.time() - self._last_used < idle:
+                return False
+            logger.info("MinerU 空闲超过 %ss，释放进程", idle)
+            self._stop_locked()
+            return True
+
+    def release(self) -> bool:
+        with self._lock:
+            if self._proc is None:
+                return False
+            self._stop_locked()
+            return True
 
     def ensure_mineru_api(self, port: int = DEFAULT_MINERU_PORT, timeout: int = 300) -> bool:
-        """确保 mineru-api 已启动（懒拉起），返回是否就绪。"""
+        """按需拉起 mineru-api；已就绪则直接返回。未安装返回 False。"""
         if _is_mineru_up(port):
+            self._last_used = time.time()
             return True
 
         exe = _mineru_api_exe()
-        cmd = [exe, "--host", MINERU_HOST, "--port", str(port)]
-        env = dict(os.environ)
-        logger.info("拉起 mineru-api: %s", " ".join(cmd))
-        try:
-            subprocess.Popen(
-                cmd,
-                env=env,
-                cwd=str(_BACKEND_DIR),
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
-            )
-        except Exception as e:
-            logger.warning("拉起 mineru-api 失败: %s", e)
+        if not exe:
             return False
+
+        self._start_reaper()
+        with self._lock:
+            if _is_mineru_up(port):
+                self._last_used = time.time()
+                return True
+            if self._proc is None or self._proc.poll() is not None:
+                cmd = [exe, "--host", MINERU_HOST, "--port", str(port)]
+                env = dict(os.environ)
+                env.setdefault("HF_ENDPOINT", "https://hf-mirror.com")
+                logger.info("拉起 mineru-api: %s", " ".join(cmd))
+                try:
+                    self._proc = subprocess.Popen(
+                        cmd,
+                        env=env,
+                        cwd=str(_BACKEND_DIR),
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                        creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
+                    )
+                except Exception as e:
+                    logger.warning("拉起 mineru-api 失败: %s", e)
+                    return False
 
         deadline = time.time() + timeout
         while time.time() < deadline:
             if _is_mineru_up(port):
+                self._last_used = time.time()
                 return True
             time.sleep(2)
         return False
+
+    # ---- 安装到独立环境 ----
+
+    def _log(self, line: str) -> None:
+        text = (line or "").rstrip()
+        if not text:
+            return
+        self._install_log.append(text)
+        if len(self._install_log) > 500:
+            del self._install_log[:-200]
+
+    def _run(self, cmd: list[str]) -> None:
+        proc = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            cwd=str(config.mineru_install_dir),
+        )
+        assert proc.stdout is not None
+        for line in proc.stdout:
+            self._log(line)
+        code = proc.wait()
+        if code != 0:
+            raise RuntimeError(f"命令失败({code}): {' '.join(cmd)}")
+
+    def install_mineru(self) -> dict:
+        """后台安装 MinerU 到独立环境（不阻塞请求）。"""
+        with self._install_lock:
+            if self._install_state == "installing":
+                return self.install_status()
+            self._install_state = "installing"
+            self._install_log = ["开始安装 MinerU（独立环境，约 2–4GB，需联网）…"]
+        threading.Thread(target=self._do_install, daemon=True, name="mineru-install").start()
+        return self.install_status()
+
+    def _do_install(self) -> None:
+        try:
+            target = config.mineru_install_dir
+            target.mkdir(parents=True, exist_ok=True)
+            venv_dir = target / "venv"
+            if not venv_dir.is_dir():
+                self._log(f"创建独立环境: {venv_dir}")
+                self._run([sys.executable, "-m", "venv", str(venv_dir)])
+            pip = str(_venv_exe(venv_dir, "pip"))
+            self._log("升级 pip …")
+            self._run([pip, "install", "-U", "pip"])
+            self._log("安装 mineru（体积较大，请耐心等待）…")
+            self._run([pip, "install", "-U", "mineru"])
+            self._install_state = "done"
+            self._log("安装完成，启动服务并重试排队中的资料…")
+            try:
+                self.ensure_mineru_api()
+                self._retry_blocked()
+            except Exception as e:
+                self._log(f"安装后重试失败: {e}")
+        except Exception as e:
+            self._install_state = "failed"
+            self._log(f"安装失败: {e}")
+
+    def _retry_blocked(self) -> None:
+        from ..core.database import SessionLocal
+
+        db = SessionLocal()
+        try:
+            from .kb import kb_service
+
+            n = kb_service.retry_blocked(db)
+            self._log(f"已重新入队 {n} 份等待 OCR 的文档")
+        finally:
+            db.close()
+
 
     def parse_pdf(
         self,
@@ -124,9 +306,14 @@ class MineruService:
         formula_enable: bool,
         parse_method: str = "auto",
     ) -> dict:
+        if not self.is_installed():
+            raise MineruUnavailable(
+                "本机未安装 MinerU（可在设置中一键安装，或改用云端 mineru.net）"
+            )
         up = self.ensure_mineru_api(port)
         if not up:
-            raise AppError("MinerU 服务启动失败，请检查 mineru-api 是否可运行，或在设置中改用云端")
+            raise MineruUnavailable("MinerU 服务启动失败（可改用云端 mineru.net）")
+        self._last_used = time.time()
 
         base = f"http://{MINERU_HOST}:{port}"
         filename = f"doc_{uuid.uuid4().hex[:8]}.pdf"

@@ -39,7 +39,7 @@ from ..models import (
 )
 from ..utils import image_file_name, sha256_hex
 from . import parser
-from .mineru import mineru_service
+from .mineru import MineruUnavailable, mineru_service
 from .question_gen_jobs import question_gen_jobs
 from .rag import chroma_store
 
@@ -90,6 +90,7 @@ def _background_parse(doc_id: str, filename: str, content: bytes, collection_id:
     # 重活先在无 Session 下做：扫描 PDF 的 MinerU 可能长达数十分钟
     pre_mineru: dict | None = None
     pre_reason: str | None = None
+    blocked_reason: str | None = None
     ext = parser.file_extension(filename)
     try:
         if ext in parser.PDF_EXTENSIONS:
@@ -97,14 +98,18 @@ def _background_parse(doc_id: str, filename: str, content: bytes, collection_id:
                 content, force_scanned=force_scanned
             )
             if use_mineru:
-                logger.info(
-                    "后台 MinerU 开始（不占 DB）doc=%s parse_method=%s reason=%s",
-                    doc_id,
-                    parse_method,
-                    reason,
-                )
-                pre_mineru = mineru_service.parse_pdf(content, parse_method=parse_method)
-                pre_reason = reason
+                try:
+                    logger.info(
+                        "后台 MinerU 开始（不占 DB）doc=%s parse_method=%s reason=%s",
+                        doc_id,
+                        parse_method,
+                        reason,
+                    )
+                    pre_mineru = mineru_service.parse_pdf(content, parse_method=parse_method)
+                    pre_reason = reason
+                except MineruUnavailable as exc:
+                    # 需要 OCR 但本机不可用：排队等待，不算失败
+                    blocked_reason = f"{reason}（等待 OCR：{exc.message}）"
     except Exception as e:
         logger.warning("后台 MinerU 失败 doc=%s: %s", doc_id, e)
         db = SessionLocal()
@@ -116,6 +121,21 @@ def _background_parse(doc_id: str, filename: str, content: bytes, collection_id:
                 db.commit()
         except Exception:
             pass
+        finally:
+            db.close()
+        return
+
+    if blocked_reason is not None:
+        # 需要 OCR 但本机 MinerU 不可用：排队等待，不占资源、不自动重试
+        db = SessionLocal()
+        try:
+            doc = db.query(Document).filter(Document.id == doc_id).first()
+            if doc:
+                doc.indexing_status = "blocked"
+                doc.parse_reason = blocked_reason
+                doc.updated_at = datetime.now(timezone.utc)
+                db.commit()
+                logger.info("文档等待 OCR（MinerU 未就绪）doc=%s", doc_id)
         finally:
             db.close()
         return
@@ -519,7 +539,13 @@ class KnowledgeBaseService:
             )
             text, pages = inspection.text, inspection.pages
             if use_mineru:
-                mineru = mineru_service.parse_pdf(content, parse_method=parse_method)
+                try:
+                    mineru = mineru_service.parse_pdf(content, parse_method=parse_method)
+                except MineruUnavailable as exc:
+                    doc.indexing_status = "blocked"
+                    doc.parse_reason = f"{reason}（等待 OCR：{exc.message}）"
+                    doc.updated_at = datetime.now(timezone.utc)
+                    return result
                 pages_md = mineru["page_mds"]
                 all_images = mineru["images"] or {}
                 name_map = self._persist_mineru_images_once(db, doc, all_images)
@@ -677,6 +703,45 @@ class KnowledgeBaseService:
         db.commit()
         return len(sections)
 
+    def reindex_vectors(self, db: Session, *, document_id: Optional[str] = None) -> int:
+        """用当前 embedding 重建向量索引（更换嵌入实现后调用）。返回处理的文档数。"""
+        q = db.query(Document).filter(Document.indexing_status == "completed")
+        if document_id:
+            q = q.filter(Document.id == document_id)
+        done = 0
+        for doc in q.all():
+            text = storage.read_parsed(doc.id) or ""
+            if not text.strip():
+                continue
+            try:
+                chroma_store.index_document(doc.id, text)
+                done += 1
+            except Exception as e:
+                logger.warning("重建向量失败 doc=%s: %s", doc.id, e)
+        return done
+
+    def retry_blocked(self, db: Session, *, document_id: Optional[str] = None) -> int:
+        """把「等待 OCR」的文档重新入队解析（MinerU 就绪后调用）。返回入队数量。"""
+        q = db.query(Document).filter(Document.indexing_status == "blocked")
+        if document_id:
+            q = q.filter(Document.id == document_id)
+        n = 0
+        for doc in q.all():
+            content = storage.read_original(doc.id)
+            if not content:
+                doc.indexing_status = "failed"
+                doc.parse_reason = "原始文件不存在，无法重试"
+                db.commit()
+                continue
+            doc.indexing_status = "processing"
+            doc.updated_at = datetime.now(timezone.utc)
+            db.commit()
+            _spawn_background(
+                _background_parse, doc.id, doc.display_name, content, doc.collection_id, False
+            )
+            n += 1
+        return n
+
     # ---- 查询 ----
 
     def list_documents(
@@ -701,10 +766,10 @@ class KnowledgeBaseService:
         return {"documents": docs, "total": total, "page": page, "limit": limit}
 
     def list_active_tasks(self, db: Session, limit: int = 50) -> list[dict]:
-        """全局解析/上传任务：仍在 pending/processing 的文档（跨集合）。"""
+        """全局解析/上传任务：仍待处理（pending/processing）或等待 OCR（blocked）的文档。"""
         rows = (
             db.query(Document)
-            .filter(Document.indexing_status.in_(("pending", "processing")))
+            .filter(Document.indexing_status.in_(("pending", "processing", "blocked")))
             .order_by(Document.updated_at.desc())
             .limit(limit)
             .all()

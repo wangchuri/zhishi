@@ -21,6 +21,7 @@ const statusConfig: Record<
   processing: { label: "处理中", variant: "warning" },
   failed: { label: "解析失败", variant: "danger" },
   pending: { label: "待整理", variant: "neutral" },
+  blocked: { label: "等待 OCR", variant: "warning" },
 }
 
 function statusLabel(doc: KnowledgeDoc): string {

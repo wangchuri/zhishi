@@ -33,6 +33,12 @@ export function SettingsPage() {
   const [mineruModel, setMineruModel] = useState<"pipeline" | "vlm">("vlm")
   const [mineruPolicy, setMineruPolicy] = useState<"smart" | "all" | "scanned_only">("smart")
   const [mineruConfigPath, setMineruConfigPath] = useState("")
+  const [mineruInstalled, setMineruInstalled] = useState(false)
+  const [mineruAvailable, setMineruAvailable] = useState(false)
+  const [mineruInstalling, setMineruInstalling] = useState(false)
+  const [mineruInstallDir, setMineruInstallDir] = useState("")
+  const [mineruLog, setMineruLog] = useState<string[]>([])
+  const [mineruBusy, setMineruBusy] = useState(false)
   const [savingMineru, setSavingMineru] = useState(false)
 
   useEffect(() => {
@@ -71,7 +77,57 @@ export function SettingsPage() {
     setMineruModel(m.model_version === "pipeline" ? "pipeline" : "vlm")
     setMineruPolicy(m.pdf_parse_policy || "smart")
     setMineruConfigPath(m.config_path || "")
+    setMineruInstalled(!!m.installed)
+    setMineruAvailable(!!m.available)
+    setMineruInstalling(!!m.installing)
+    setMineruInstallDir(m.install_dir || "")
   }
+
+  const startMineruInstall = async () => {
+    setMineruBusy(true)
+    try {
+      const st = await systemApi.installMineru()
+      setMineruInstalling(st.state === "installing")
+      setMineruLog(st.log || [])
+      toast.success("已开始安装 MinerU（独立环境，后台进行）")
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "安装启动失败")
+    } finally {
+      setMineruBusy(false)
+    }
+  }
+
+  const releaseMineru = async () => {
+    setMineruBusy(true)
+    try {
+      await systemApi.releaseMineru()
+      toast.success("已释放 MinerU 进程")
+      const m = await systemApi.getMineru().catch(() => null)
+      if (m) applyMineru(m)
+    } finally {
+      setMineruBusy(false)
+    }
+  }
+
+  useEffect(() => {
+    if (!mineruInstalling) return
+    const timer = window.setInterval(() => {
+      void systemApi
+        .mineruInstallStatus()
+        .then(async (st) => {
+          setMineruLog(st.log || [])
+          if (st.state !== "installing") {
+            setMineruInstalling(false)
+            const m = await systemApi.getMineru().catch(() => null)
+            if (m) applyMineru(m)
+            if (st.state === "done") toast.success("MinerU 安装完成，等待 OCR 的资料会自动重试")
+            else if (st.state === "failed") toast.error("MinerU 安装失败，详情见日志")
+          }
+        })
+        .catch(() => {})
+    }, 2500)
+    return () => window.clearInterval(timer)
+  }, [mineruInstalling])
   const saveProfile = async () => {
     const name = nickname.trim()
     if (!name) {
@@ -418,10 +474,53 @@ export function SettingsPage() {
                     </div>
                   </>
                 ) : (
-                  <p className="text-small text-ink-soft rounded-[4px] border border-line bg-paper-2 px-3 py-2.5">
-                    本地模式不需要 Token。请确保本机已安装并可运行{" "}
-                    <span className="font-mono text-ink">mineru-api</span>（首次解析会自动尝试拉起）。
-                  </p>
+                  <div className="space-y-3">
+                    <p className="text-small text-ink-soft rounded-[4px] border border-line bg-paper-2 px-3 py-2.5">
+                      本地模式不需要 Token：按需才拉起 <span className="font-mono text-ink">mineru-api</span>（无任务不启动），空闲自动释放。未安装时可一键装到独立环境，不污染应用依赖。
+                    </p>
+                    <div className="rounded-[4px] border border-line bg-paper-2 px-3 py-2.5 space-y-2">
+                      <div className="text-small text-ink-soft">
+                        MinerU 状态：
+                        {mineruInstalled
+                          ? mineruAvailable
+                            ? "已安装 · 运行中"
+                            : "已安装 · 未运行（按需启动）"
+                          : "未安装"}
+                      </div>
+                      {mineruInstallDir ? (
+                        <div className="text-caption text-ink-disabled break-all">
+                          安装目录：{mineruInstallDir}
+                        </div>
+                      ) : null}
+                      <div className="flex flex-wrap gap-2">
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          onClick={() => void startMineruInstall()}
+                          disabled={mineruBusy || mineruInstalling}
+                        >
+                          {mineruInstalling
+                            ? "安装中…"
+                            : mineruInstalled
+                              ? "重新安装 MinerU"
+                              : "一键安装 MinerU（独立环境）"}
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => void releaseMineru()}
+                          disabled={mineruBusy}
+                        >
+                          释放进程
+                        </Button>
+                      </div>
+                      {mineruLog.length > 0 ? (
+                        <pre className="max-h-40 overflow-auto text-caption text-ink-tertiary bg-black/5 rounded p-2 whitespace-pre-wrap">
+                          {mineruLog.slice(-12).join("\n")}
+                        </pre>
+                      ) : null}
+                    </div>
+                  </div>
                 )}
 
                 {mineruConfigPath ? (

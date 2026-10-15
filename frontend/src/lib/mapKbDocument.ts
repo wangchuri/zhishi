@@ -16,6 +16,7 @@ export function mapStatus(d: Record<string, unknown>): KnowledgeDoc["status"] {
   if (s === "processing" || s === "parsing" || s === "splitting" || s === "indexing")
     return "processing"
   if (s === "error" || s === "failed") return "failed"
+  if (s === "blocked") return "blocked"
   return "pending"
 }
 
