@@ -6,7 +6,6 @@ import { AuthProvider } from "@/context/AuthContext"
 import { TinaCrisisProvider } from "@/context/TinaCrisisContext"
 import { AppRoutes } from "@/routes"
 import { Toaster } from "@/components/ui/sonner"
-import { FullscreenSuggestion } from "@/components/blocks/FullscreenSuggestion"
 import { TinaEscapeOverlay } from "@/components/layout/TinaEscapeOverlay"
 import { TinaCrisisLock } from "@/components/layout/TinaCrisisLock"
 import { GlobalTipCapture } from "@/components/layout/GlobalTipCapture"
@@ -80,7 +79,6 @@ function App() {
             <GlobalTipCapture />
             <AchievementWatcher />
             <TaskWatcher />
-            <FullscreenSuggestion />
             <Toaster closeButton />
             <TinaEscapeOverlay />
           </TinaCrisisProvider>
