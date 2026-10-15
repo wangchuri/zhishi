@@ -833,6 +833,14 @@ export const quizApi = {
     )
   },
 
+  /** 单题详情：题目 + 累计统计 + 历次作答（含照片）+ 来源文档 */
+  questionHistory(questionId: string) {
+    return request<import("@/types").QuestionHistory>(
+      "GET",
+      `/api/v1/quiz/questions/${encodeURIComponent(questionId)}/history`,
+    )
+  },
+
   addQuestionNote(questionId: string, contentMd: string, documentId?: string) {
     return request<import("@/types").QuestionNote>(
       "POST",

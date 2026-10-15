@@ -58,6 +58,12 @@ def add_question_note(
     return note_service.note_to_item(db, note)
 
 
+@router.get("/questions/{question_id}/history")
+def question_history(question_id: str, db: Session = Depends(get_db)):
+    """单题详情：题目 + 累计统计 + 历次作答（含照片）+ 来源文档。"""
+    return quiz_service.question_history(db, question_id)
+
+
 @router.get("/active-sessions")
 def list_active_sessions(db: Session = Depends(get_db)):
     """未答完的刷题会话，供续刷页使用。"""

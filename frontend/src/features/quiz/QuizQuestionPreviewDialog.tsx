@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react"
+import { useNavigate } from "react-router-dom"
 import { Loader2, Search } from "lucide-react"
 import {
   Dialog,
@@ -46,6 +47,7 @@ export function QuizQuestionPreviewDialog({
   loading?: boolean
 }) {
   const [keyword, setKeyword] = useState("")
+  const navigate = useNavigate()
   const imageBase = documentId
     ? `${getApiBase().replace(/\/$/, "")}/api/v1/kb/documents/${encodeURIComponent(documentId)}/images`
     : undefined
@@ -102,9 +104,16 @@ export function QuizQuestionPreviewDialog({
             filtered.map((q, i) => {
               const status = statusBadge(q)
               return (
-                <div
+                <button
                   key={q.id || `${i}`}
-                  className="rounded-lg border border-line-soft bg-surface p-3.5"
+                  type="button"
+                  onClick={() => {
+                    if (!q.id) return
+                    onOpenChange(false)
+                    navigate(`/quiz/question/${q.id}`)
+                  }}
+                  title="查看这道题（含历次作答）"
+                  className="w-full text-left rounded-lg border border-line-soft bg-surface p-3.5 hover:border-sea/40 transition-colors"
                 >
                   <div className="flex items-start gap-2 mb-2">
                     <span className="text-caption text-ink-tertiary shrink-0 mt-0.5 w-6">
@@ -147,7 +156,7 @@ export function QuizQuestionPreviewDialog({
                       <Badge key={tag} variant="neutral" size="sm">{tag}</Badge>
                     ))}
                   </div>
-                </div>
+                </button>
               )
             })
           )}

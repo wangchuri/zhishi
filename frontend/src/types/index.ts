@@ -209,6 +209,49 @@ export interface QuestionListResult {
   unknown_count?: number
   best_streak?: number
 }
+
+/** 单题的一次作答记录 */
+export interface QuestionAnswerRecord {
+  id: string
+  session_id?: string | null
+  status: string
+  user_answer?: string | null
+  ai_reason?: string | null
+  grade_method?: string | null
+  /** 拍照作答的图片（上传 id） */
+  attachments?: string[]
+  time_spent_seconds?: number | null
+  answered_at?: string | null
+}
+
+/** 单题累计统计 */
+export interface QuestionHistoryStats {
+  attempt_count: number
+  correct_count: number
+  wrong_count: number
+  unknown_count: number
+  accuracy_rate?: number | null
+  current_streak?: number
+  last_status?: string | null
+  last_answered_at?: string | null
+}
+
+/** 题目来源（一道题可来自多个文档） */
+export interface QuestionProvenanceItem {
+  document_id?: string | null
+  document_name?: string | null
+  page_number?: number | null
+  chapter_id?: string | null
+  excerpt?: string | null
+}
+
+/** 单题详情（题目 + 统计 + 历次作答 + 来源） */
+export interface QuestionHistory {
+  question: Question
+  stats: QuestionHistoryStats
+  answers: QuestionAnswerRecord[]
+  provenance: QuestionProvenanceItem[]
+}
 export interface AnswerParam {
   key: string
   label: string

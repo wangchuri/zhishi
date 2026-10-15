@@ -1,4 +1,5 @@
 import type { QuizReviewItem } from "@/types"
+import { Link } from "react-router-dom"
 import { CitationCard } from "@/components/blocks/CitationCard"
 import { MessageImages } from "@/components/blocks/ImageAttachments"
 import { MarkdownWithMath } from "@/components/blocks/MarkdownWithMath"
@@ -54,6 +55,12 @@ export function QuizReviewPanel({ items, onAskTutor, className }: QuizReviewPane
             <CitationCard citation={item.citation} variant="compact" />
           )}
           <div className="flex flex-wrap items-center gap-3 pt-1">
+            <Link
+              to={`/quiz/question/${item.question_id}`}
+              className="text-small text-ink-soft hover:text-sea transition-colors"
+            >
+              查看这道题 →
+            </Link>
             {onAskTutor && (
               <button
                 type="button"

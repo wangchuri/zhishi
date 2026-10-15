@@ -992,5 +992,90 @@ class QuizService:
         }
 
 
+    # ---- 单题详情（题目 + 统计 + 历次作答 + 来源）----
+
+    def question_history(self, db: Session, question_id: str) -> dict:
+        """题目详情页用：题目本身、累计统计、历次作答（含拍照的图）、来源文档。"""
+        question = db.get(GlobalQuestion, question_id)
+        if not question:
+            raise NotFoundError("题目不存在")
+
+        answers = (
+            db.query(QuizAnswer)
+            .filter(QuizAnswer.question_id == question_id)
+            .order_by(QuizAnswer.answered_at.desc())
+            .all()
+        )
+        correct = sum(1 for a in answers if a.status == "correct")
+        wrong = sum(1 for a in answers if a.status == "wrong")
+        unknown = sum(1 for a in answers if a.status == "unknown")
+        attempt = len(answers)
+
+        provs = (
+            db.query(QuestionProvenance)
+            .filter(QuestionProvenance.question_id == question_id)
+            .all()
+        )
+        doc_ids = [p.document_id for p in provs if p.document_id]
+        doc_names: dict[str, str] = {}
+        if doc_ids:
+            for d in db.query(Document).filter(Document.id.in_(doc_ids)).all():
+                doc_names[d.id] = d.display_name or d.id
+
+        return {
+            "question": {
+                "id": question.id,
+                "question_type": question.question_type,
+                "stem": question.stem,
+                "options": json.loads(question.options) if question.options else None,
+                "answer": question.answer,
+                "explanation": question.explanation,
+                "tags": parse_tags(question.tags) if question.tags else [],
+                "html_content": question.html_content,
+                "answer_params": question.answer_params,
+                "material_id": question.material_id,
+                "sub_index": question.sub_index,
+            },
+            "stats": {
+                "attempt_count": attempt,
+                "correct_count": correct,
+                "wrong_count": wrong,
+                "unknown_count": unknown,
+                "accuracy_rate": round(correct / attempt, 3) if attempt else None,
+                "current_streak": _current_streak(db, question_id),
+                "last_status": answers[0].status if answers else None,
+                "last_answered_at": (
+                    answers[0].answered_at.isoformat()
+                    if answers and answers[0].answered_at
+                    else None
+                ),
+            },
+            "answers": [
+                {
+                    "id": a.id,
+                    "session_id": a.session_id,
+                    "status": a.status,
+                    "user_answer": a.user_answer,
+                    "ai_reason": a.ai_reason,
+                    "grade_method": a.grade_method,
+                    "attachments": json.loads(a.attachments) if a.attachments else [],
+                    "time_spent_seconds": a.time_spent_seconds,
+                    "answered_at": a.answered_at.isoformat() if a.answered_at else None,
+                }
+                for a in answers
+            ],
+            "provenance": [
+                {
+                    "document_id": p.document_id,
+                    "document_name": doc_names.get(p.document_id or ""),
+                    "page_number": p.page_number,
+                    "chapter_id": p.chapter_id,
+                    "excerpt": ((p.excerpt or "")[:200] or None),
+                }
+                for p in provs
+            ],
+        }
+
+
 # 模块级单例：调用方仍用 quiz_service.xxx()
 quiz_service = QuizService()
