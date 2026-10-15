@@ -1,5 +1,5 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react"
-import { ChevronDown, ChevronRight, Loader2, Send, Sparkles, X } from "lucide-react"
+import { ChevronDown, ChevronRight, Loader2, Send, X } from "lucide-react"
 import { tutorApi } from "@/lib/api"
 import type { TutorMessage, TutorSession } from "@/types"
 import { Button } from "@/components/ui/button"
@@ -304,14 +304,9 @@ export const TutorPanel = forwardRef<TutorPanelHandle, TutorPanelProps>(function
                 "text-body leading-relaxed",
                 m.role === "user"
                   ? "flex justify-end"
-                  : "flex gap-2 mr-2"
+                  : "flex mr-2"
               )}
             >
-              {m.role === "assistant" && (
-                <div className="w-7 h-7 rounded-full bg-gradient-to-br from-sea to-sea-bright flex items-center justify-center shrink-0 mt-0.5">
-                  <Sparkles className="w-3.5 h-3.5 text-white" strokeWidth={2} />
-                </div>
-              )}
               <div
                 className={cn(
                   "rounded-lg px-3 py-2 max-w-[85%]",
