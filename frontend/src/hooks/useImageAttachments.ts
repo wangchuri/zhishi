@@ -15,8 +15,15 @@ export function useImageAttachments() {
   const [error, setError] = useState<string | null>(null)
 
   const addFiles = useCallback(async (files: FileList | File[] | null | undefined) => {
-    const list = files ? Array.from(files).filter((f) => f.type.startsWith("image/")) : []
-    if (list.length === 0) return
+    const all = files ? Array.from(files) : []
+    if (all.length === 0) return
+    const list = all.filter((f) => f.type.startsWith("image/"))
+    const skipped = all.length - list.length
+    if (list.length === 0) {
+      // 以前是静默丢弃，用户以为点了没反应
+      setError("只能上传图片文件（jpg / png / webp / heic 等）")
+      return
+    }
     setUploading(true)
     setError(null)
     try {
@@ -28,6 +35,7 @@ export function useImageAttachments() {
         uploaded.push({ id: res.id, url: res.url, name: res.filename })
       }
       setItems((prev) => [...prev, ...uploaded])
+      if (skipped > 0) setError(`已忽略 ${skipped} 个非图片文件`)
     } catch (err) {
       setError(err instanceof Error ? err.message : "图片上传失败")
     } finally {

@@ -152,8 +152,8 @@ export function DashboardPage() {
         </div>
       </section>
 
-      {/* 快捷卡：手机上底部 tab 已覆盖这些入口，隐藏以免重复 */}
-      <div className="hidden sm:grid grid-cols-1 sm:grid-cols-3 gap-3 mb-5 md:mb-8 short:mb-4">
+      {/* 快捷卡：手机上底部 tab 已覆盖这些入口（tab 栏 lg 以下都显示）→ lg 以下隐藏 */}
+      <div className="hidden lg:grid grid-cols-1 sm:grid-cols-3 gap-3 mb-5 md:mb-8 short:mb-4">
         {quickActions.map((action, i) => (
           <QuickActionCard
             key={action.id}

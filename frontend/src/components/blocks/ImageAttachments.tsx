@@ -1,4 +1,5 @@
-import { useState } from "react"
+import { useEffect, useState } from "react"
+import { createPortal } from "react-dom"
 import { Camera, ImagePlus, X } from "lucide-react"
 import { uploadUrl } from "@/lib/api"
 import { cn } from "@/lib/utils"
@@ -84,14 +85,34 @@ export function CaptureImageButton({
 }
 
 function ImagePreview({ src, onClose }: { src: string; onClose: () => void }) {
-  return (
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose()
+    }
+    window.addEventListener("keydown", onKey)
+    return () => window.removeEventListener("keydown", onKey)
+  }, [onClose])
+
+  // 必须 portal 到 body：消息气泡上的 .animate-msg-in 带 transform，
+  // 会为 position:fixed 建立包含块，预览层就会被限制在气泡大小里（只剩 860×228）。
+  return createPortal(
     <div
       className="fixed inset-0 z-[100] bg-ink/70 flex items-center justify-center p-6"
       onClick={onClose}
-      role="presentation"
+      role="dialog"
+      aria-modal="true"
     >
       <img src={src} alt="预览" className="max-w-full max-h-full rounded-lg shadow-lg" />
-    </div>
+      <button
+        type="button"
+        onClick={onClose}
+        aria-label="关闭预览"
+        className="absolute top-4 right-4 w-9 h-9 rounded-full bg-white/15 text-white flex items-center justify-center hover:bg-white/25"
+      >
+        <X className="w-5 h-5" strokeWidth={2} />
+      </button>
+    </div>,
+    document.body,
   )
 }
 

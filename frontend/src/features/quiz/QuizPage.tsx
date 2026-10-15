@@ -658,7 +658,10 @@ export function QuizPage() {
       notifyCompletedTasks(result)
       setLastResult(result)
       addReviewItem(result, currentQuestion.stem, "我不会")
-      tutorPanelRef.current?.sendMessage("这道题我做错了，请帮我讲解一下")    } catch (err: unknown) {
+      // 手机上同时切到「辅导」，否则讲解发出去了但用户看不到
+      setMobilePane("tutor")
+      tutorPanelRef.current?.sendMessage("这道题我做错了，请帮我讲解一下")
+    } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "标记失败"
       if (isSessionExpiredError(msg)) handleSessionExpired()
       else setError(msg)

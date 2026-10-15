@@ -276,11 +276,17 @@ export const uploadsApi = {
   async uploadImage(file: File): Promise<{ id: string; url: string; filename?: string }> {
     const form = new FormData()
     form.append("file", file)
-    const res = await fetch(`${getApiBase()}/api/v1/uploads/image`, {
-      method: "POST",
-      credentials: "include",
-      body: form,
-    })
+    let res: Response
+    try {
+      res = await fetch(`${getApiBase()}/api/v1/uploads/image`, {
+        method: "POST",
+        credentials: "include",
+        body: form,
+      })
+    } catch {
+      // fetch 只在网络/跨源失败时 reject，message 是浏览器原文（Failed to fetch），换成人话
+      throw new Error("连不上服务器，图片没传上去。请检查网络或服务器地址后重试")
+    }
     if (!res.ok) {
       let detail = "图片上传失败"
       try {
@@ -289,6 +295,7 @@ export const uploadsApi = {
       } catch {
         /* ignore */
       }
+      if (res.status === 413) detail = "图片太大，服务器拒绝了这次上传"
       throw new Error(detail)
     }
     return (await res.json()) as { id: string; url: string; filename?: string }
