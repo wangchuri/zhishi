@@ -55,8 +55,7 @@ export function Topbar() {
   return (
     <header
       data-no-tip
-      className="relative z-[55] h-16 shrink-0 border-b border-line bg-header-glass flex items-center gap-3 px-4 md:px-6"
-      style={{ height: "calc(4rem + env(safe-area-inset-top))", paddingTop: "env(safe-area-inset-top)" }}
+      className="relative z-[55] shrink-0 border-b border-line bg-header-glass flex items-center gap-3 px-4 md:px-6 h-[calc(3.5rem+env(safe-area-inset-top))] lg:h-[calc(4rem+env(safe-area-inset-top))] pt-[env(safe-area-inset-top)]"
     >
       {/* 平板端：汉堡菜单 */}
       <button
@@ -79,7 +78,7 @@ export function Topbar() {
         <button
           onClick={toggle}
           className={cn(
-            "inline-flex items-center justify-center w-10 h-10 rounded-[4px] transition-colors",
+            "hidden lg:inline-flex items-center justify-center w-10 h-10 rounded-[4px] transition-colors",
             isFs ? "text-sea bg-sea-subtle" : "text-ink-soft hover:bg-sea-subtle hover:text-sea",
           )}
           aria-label={isFs ? "退出全屏" : "进入全屏"}
@@ -95,7 +94,7 @@ export function Topbar() {
         <button
           onClick={toggleRightPanel}
           className={cn(
-            "inline-flex items-center justify-center gap-1.5 h-9 px-2.5 sm:px-3 rounded-full border transition-colors",
+            "hidden lg:inline-flex items-center justify-center gap-1.5 h-9 px-2.5 sm:px-3 rounded-full border transition-colors",
             rightPanelOpen
               ? "text-paper bg-sea border-sea"
               : "text-ink-soft border-line bg-paper hover:text-sea hover:border-sea/40 hover:bg-sea-subtle",
@@ -108,7 +107,7 @@ export function Topbar() {
           <span className="hidden sm:inline text-caption font-medium">今日状态</span>
         </button>
 
-        <div className="w-px h-6 bg-line mx-1" />
+        <div className="hidden lg:block w-px h-6 bg-line mx-1" />
 
         <div ref={menuRef} className="relative">
           <button

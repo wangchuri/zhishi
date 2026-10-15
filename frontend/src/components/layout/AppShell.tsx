@@ -2,6 +2,7 @@ import type { ReactNode } from "react"
 import { Sidebar } from "./Sidebar"
 import { Topbar } from "./Topbar"
 import { StatusRail } from "./StatusRail"
+import { MobileTabBar } from "./MobileTabBar"
 import { useUI } from "@/context/UIContext"
 import { cn } from "@/lib/utils"
 
@@ -22,7 +23,7 @@ export function AppShell({ children, maxWidth = 1180, noPadding = false }: AppSh
   const { mobileMenuOpen, setMobileMenuOpen } = useUI()
 
   return (
-    <div className="relative flex h-dvh overflow-hidden bg-paper pb-[env(safe-area-inset-bottom)]">
+    <div className="relative flex h-dvh overflow-hidden bg-paper">
       {/* 平板端：侧边栏抽屉遮罩 */}
       {mobileMenuOpen && (
         <div
@@ -54,6 +55,7 @@ export function AppShell({ children, maxWidth = 1180, noPadding = false }: AppSh
           </div>
         </main>
         <StatusRail />
+        <MobileTabBar />
       </div>
     </div>
   )

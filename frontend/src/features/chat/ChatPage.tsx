@@ -916,7 +916,7 @@ export function ChatPage() {
             </div>
           </div>
 
-          <div className="px-4 sm:px-8 pt-3 pb-4" style={{ paddingBottom: "calc(0.75rem + env(safe-area-inset-bottom))" }}>
+          <div className="px-4 sm:px-8 pt-3 pb-3">
             <div className="max-w-[860px] mx-auto">
               <div className="relative rounded-[24px] border border-line bg-surface shadow-xs focus-within:border-primary/50 focus-within:ring-2 focus-within:ring-primary/10 transition-all">
                 {slashOpen && (
