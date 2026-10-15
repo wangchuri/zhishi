@@ -138,9 +138,13 @@ zhishi/
 
 `data/`、`backend/storage/`、`.venv/`、`node_modules/` 都是本机文件，不要提交。
 
-## 可选：PDF 扫描件
+## 可选：PDF 扫描件 / 公式卷（MinerU）
 
-普通 PDF / Word 用仓库依赖即可。扫描版会尝试拉起本机 `mineru-api`（需自行另装）。没装不影响其它功能。
+普通 PDF / Word 用仓库依赖即可，**基础安装不含 PyTorch**（RAG 走 ONNX/fastembed）。扫描件或公式/结构缺失的 PDF 需要 OCR 时会用到 MinerU：
+
+- 本机使用 **按需启动**（无任务不启动），空闲一段时间自动释放进程；
+- 未安装时**不报错**——该资料会置为「等待 OCR」排队；到「设置 → MinerU 文档解析」可**一键安装到独立环境**（`~/.zhishi/mineru`），装好后自动重试排队资料；
+- 也可改用**云端 mineru.net**（免安装，填 Token 即可）。
 
 ## 常见问题
 

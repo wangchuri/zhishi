@@ -43,7 +43,7 @@ export interface KnowledgeDoc {
   name: string
   type: "pdf" | "txt" | "md" | "docx" | "image" | "ocr"
   tags: string[]
-  status: "indexed" | "processing" | "failed" | "pending"
+  status: "indexed" | "processing" | "failed" | "pending" | "blocked"
   segment_status?: string
   question_gen_status?: string
   ocr_status?: string
@@ -271,6 +271,16 @@ export interface QuizAnswerResult {
   session_status: string
   current_streak?: number
   completed_tasks?: Array<{ id: string; title: string }>
+}
+
+/** 每题「思路/灵感」条目（只增不改，按时间排序） */
+export interface QuestionNote {
+  id: string
+  title?: string | null
+  content_md?: string | null
+  question_id?: string | null
+  document_id?: string | null
+  created_at?: string | null
 }
 
 /** 错题回顾项 */

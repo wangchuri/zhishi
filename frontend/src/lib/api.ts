@@ -435,6 +435,15 @@ export const kbApi = {
     )
   },
 
+  retryBlockedTasks() {
+    return request<{ requeued: number }>("POST", "/api/v1/kb/tasks/retry-blocked")
+  },
+
+  reindexVectors(documentId?: string) {
+    const q = documentId ? `?document_id=${encodeURIComponent(documentId)}` : ""
+    return request<{ documents: number }>("POST", `/api/v1/kb/reindex${q}`)
+  },
+
   getDocumentContent(docId: string, opts?: { metaOnly?: boolean }) {
     const q = opts?.metaOnly ? "?meta_only=true" : ""
     return request<DocumentContentMeta>("GET", `/api/v1/kb/documents/${docId}/content${q}`)
@@ -756,6 +765,10 @@ export const quizApi = {
     collection_id?: string
     group_id?: string
     question_ids?: string[]
+    /** 按书本章节刷题（仅取该章题目） */
+    chapter_id?: string
+    /** "type"=按题型排序（单选→…→应用） */
+    sort?: "type"
     title?: string
     filter?: "all" | "undone" | "wrong" | "unknown"
     tags?: string[]
@@ -765,6 +778,21 @@ export const quizApi = {
     task_id?: string
   }) {
     return request<any>("POST", "/api/v1/quiz/sessions", data)
+  },
+
+  listQuestionNotes(questionId: string) {
+    return request<{ notes: import("@/types").QuestionNote[] }>(
+      "GET",
+      `/api/v1/quiz/questions/${encodeURIComponent(questionId)}/notes`,
+    )
+  },
+
+  addQuestionNote(questionId: string, contentMd: string, documentId?: string) {
+    return request<import("@/types").QuestionNote>(
+      "POST",
+      `/api/v1/quiz/questions/${encodeURIComponent(questionId)}/notes`,
+      { content_md: contentMd, document_id: documentId },
+    )
   },
 
   getSession(sessionId: string) {
@@ -940,6 +968,18 @@ export type MineruSettings = {
   model_version: "pipeline" | "vlm"
   pdf_parse_policy: "smart" | "all" | "scanned_only"
   config_path?: string
+  /** 运行时状态 */
+  installed?: boolean
+  available?: boolean
+  installing?: boolean
+  install_dir?: string
+}
+
+export type MineruInstallStatus = {
+  state: "idle" | "installing" | "done" | "failed"
+  log: string[]
+  install_dir: string
+  installed: boolean
 }
 
 export const systemApi = {
@@ -948,6 +988,15 @@ export const systemApi = {
   },
   putMineru(data: Partial<MineruSettings>) {
     return request<MineruSettings>("PUT", "/api/v1/system/mineru", data)
+  },
+  installMineru() {
+    return request<MineruInstallStatus>("POST", "/api/v1/system/mineru/install")
+  },
+  mineruInstallStatus() {
+    return request<MineruInstallStatus>("GET", "/api/v1/system/mineru/install/status")
+  },
+  releaseMineru() {
+    return request<{ released: boolean }>("POST", "/api/v1/system/mineru/release")
   },
 }
 
