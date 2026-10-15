@@ -157,27 +157,31 @@ zhishi/
 
 **步骤**
 1. 仓库 `Settings → Secrets and variables → Actions → Variables` 新增
-   `ZHISHI_SERVER_URL`，值形如 `http://1.2.3.4:17777`
+   `ZHISHI_SERVER_URL` = 你后端的地址，例如 `https://1.2.3.4:17777`
+   （https 用 Let's Encrypt 的 **IP 证书**即可，公开信任、**不需要备案**；
+   若后端是 http，写成 `http://1.2.3.4:17777` 也能用，CI 会自动放行明文）
 2. `Actions → Build Android APK → Run workflow`
 3. 跑完后在该次运行的 **Artifacts** 下载 `zhishi-apk`（`app-debug.apk`），传到手机安装
 
 **本地自建（可选，需 JDK 21 + Android SDK）**
 ```bash
 cd frontend
-CAP_SERVER_URL=http://1.2.3.4:17777 npm run build
+CAP_SERVER_URL=https://1.2.3.4:17777 npm run build
 npm run cap:add && npm run cap:sync
-node scripts/enable-android-cleartext.mjs android/app/src/main/AndroidManifest.xml
+# 仅当后端是 http:// 时才需要：
+# node scripts/enable-android-cleartext.mjs android/app/src/main/AndroidManifest.xml
 cd android && ./gradlew assembleDebug
 ```
 
 **注意**
-- 后端是 **http 明文**：`capacitor.config.ts` 会开 `cleartext`，CI 再用
-  `frontend/scripts/enable-android-cleartext.mjs` 往 AndroidManifest 补
-  `usesCleartextTraffic`（API 28+ 默认禁明文，不加会白屏）
-- APK 必须能访问到该地址（同一网络或公网可达）；地址变了要重跑一次 workflow
+- **https 后端**：`cleartext` 自动为 false，无需内置 CA（公开信任的证书 WebView 直接认）
+- **http 后端**：`capacitor.config.ts` 会自动开 `cleartext`，CI 再补
+  `usesCleartextTraffic`（API 28+ 默认禁明文，不加会白屏）。**明文只适合内网/Tailscale**，
+  公网请务必用 https
+- 用 **Let's Encrypt IP 证书**要注意：有效期只有 **160 小时（约 6.7 天）**，必须配好
+  自动续期 + deploy-hook reload；一旦续期失败，App 会直接报证书错误打不开
+- APK 必须能访问到该地址（同一网络或公网可达）；地址/协议变了要重跑一次 workflow
 - `frontend/android/` 是 CI 现场生成的，不入库
-- 若哪天上了 HTTPS（仓库已带 `Caddyfile` + `docker-compose.prod.yml`），也可以改用
-  pwabuilder.com 直接生成 TWA —— 但那是另一条路，同源壳已经够用
 
 ## 常见问题
 

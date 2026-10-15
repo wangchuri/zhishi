@@ -67,7 +67,8 @@ jobs:
           npx cap add android
           npx cap sync android
 
-      - name: 允许明文 HTTP（server.url 走 http 时必需）
+      - name: 允许明文 HTTP（仅当后端是 http:// 时）
+        if: startsWith(steps.cfg.outputs.server_url, 'http://')
         working-directory: frontend
         run: node scripts/enable-android-cleartext.mjs android/app/src/main/AndroidManifest.xml
 

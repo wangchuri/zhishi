@@ -10,8 +10,11 @@ import type { CapacitorConfig } from "@capacitor/cli"
  * 而且后端一更新，APK 打开就是最新版，无需重新打包。
  *
  * 地址在构建时注入，不写死进仓库：
- *   CAP_SERVER_URL=http://1.2.3.4:17777 npm run build
+ *   CAP_SERVER_URL=https://1.2.3.4:17777 npm run build
  * CI（.github/workflows/android-apk.yml）用仓库变量 ZHISHI_SERVER_URL 注入。
+ *
+ * 明文只在后端确实是 http:// 时才开（例如内网/Tailscale 隧道）；
+ * 走 https（含 Let's Encrypt 的 IP 证书）时 cleartext 自动为 false，无需内置 CA。
  */
 const serverUrl = (process.env.CAP_SERVER_URL || "").trim().replace(/\/+$/, "")
 
@@ -28,9 +31,8 @@ const config: CapacitorConfig = {
 if (serverUrl) {
   config.server = {
     url: serverUrl,
-    // 纯 HTTP 后端：允许明文流量（会写进 AndroidManifest）
+    // 只有 http 后端才需要放行明文（https 时关掉更安全）
     cleartext: serverUrl.startsWith("http://"),
-    androidScheme: "http",
   }
 }
 
