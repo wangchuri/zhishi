@@ -1,11 +1,13 @@
 import { useState, useRef, useEffect, useCallback, useLayoutEffect, useMemo } from "react"
 import {
   ArrowUp,
+  History,
   PanelLeftClose,
   PanelLeftOpen,
   Plus,
   Trash2,
   ChevronRight,
+  X,
 } from "lucide-react"
 import { useSearchParams, useNavigate } from "react-router-dom"
 import { AppShell } from "@/components/layout/AppShell"
@@ -31,8 +33,13 @@ import {
   updateWidgetInPayload,
 } from "@/features/chat/chatBlocks"
 import type { ChatMessage, Citation } from "@/types"
-import { ChatCanvasSidebar, type ChatCanvasItem, type ChatHtmlCanvas } from "@/features/chat/ChatCanvasSidebar"
-import type { ChatPlotPayload } from "@/features/chat/ChatFunctionPlot"
+import {
+  ChatCanvasSidebar,
+  ChatHtmlFrame,
+  type ChatCanvasItem,
+  type ChatHtmlCanvas,
+} from "@/features/chat/ChatCanvasSidebar"
+import { ChatFunctionPlot, type ChatPlotPayload } from "@/features/chat/ChatFunctionPlot"
 import { createSmoothStream } from "@/features/chat/smoothStream"
 import { cn } from "@/lib/utils"
 import {
@@ -162,6 +169,9 @@ export function ChatPage() {
   const [activeCitation, setActiveCitation] = useState<Citation | null>(null)
   const [canvasSidebarOpen, setCanvasSidebarOpen] = useState(false)
   const [activeCanvas, setActiveCanvas] = useState<ChatCanvasItem | null>(null)
+  // 手机：历史走覆盖抽屉、画布走全屏层（桌面仍是左右内联侧栏）
+  const [mobileHistoryOpen, setMobileHistoryOpen] = useState(false)
+  const [canvasFullscreen, setCanvasFullscreen] = useState(false)
 
   const canvasHistory = useMemo(() => collectCanvasHistory(messages), [messages])
   const [loadingHistory, setLoadingHistory] = useState(true)
@@ -523,8 +533,9 @@ export function ChatPage() {
             const plot = chunk.plot as ChatPlotPayload
             if (!Array.isArray(plot.expressions)) return
             setActiveCanvas({ type: "plot", plot })
-            setCanvasSidebarOpen(true)
             setCitationSidebarOpen(false)
+            // 手机不弹侧栏：卡片已经内联出现在聊天流里，点它才放大
+            if (window.innerWidth >= 1024) setCanvasSidebarOpen(true)
             patchAssistant((m) => {
               const plots = m.payload?.plots || []
               if (plots.some((p) => p.id === plot.id)) return m
@@ -536,8 +547,8 @@ export function ChatPage() {
             const canvas = chunk.canvas as ChatHtmlCanvas
             if (typeof canvas.html !== "string" || !canvas.html.trim()) return
             setActiveCanvas({ type: "html", canvas })
-            setCanvasSidebarOpen(true)
             setCitationSidebarOpen(false)
+            if (window.innerWidth >= 1024) setCanvasSidebarOpen(true)
             patchAssistant((m) => {
               const canvases = m.payload?.canvases || []
               if (canvases.some((c) => c.id === canvas.id)) return m
@@ -745,12 +756,62 @@ export function ChatPage() {
     }
   }
 
+  /** 画布 / 函数图：窄屏开全屏层，宽屏开右侧栏。 */
+  const openCanvasItem = useCallback((item: ChatCanvasItem) => {
+    setActiveCanvas(item)
+    setCitationSidebarOpen(false)
+    if (typeof window !== "undefined" && window.innerWidth < 1024) setCanvasFullscreen(true)
+    else setCanvasSidebarOpen(true)
+  }, [])
+
+  // 会话列表：桌面内联栏与手机覆盖抽屉共用
+  const historyList = (
+    <div className="flex-1 overflow-y-auto scroll-thin px-2 py-2">
+      {sessions.length === 0 ? (
+        <div className="text-caption text-ink-tertiary text-center py-8">暂无历史会话</div>
+      ) : (
+        sessions.map(s => (
+          <div
+            key={s.id}
+            role="button"
+            tabIndex={0}
+            onClick={() => { handleSelectSession(s); setMobileHistoryOpen(false) }}
+            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { handleSelectSession(s); setMobileHistoryOpen(false) } }}
+            className={cn(
+              "w-full text-left px-3 py-2.5 rounded-[4px] flex items-center gap-2 group transition-colors mb-0.5 cursor-pointer",
+              s.id === sessionId
+                ? "bg-sea-subtle text-sea"
+                : "hover:bg-paper-2 text-ink-soft",
+            )}
+          >
+            <span className="flex-1 truncate text-small">
+              {s.kind === "onboarding" ? "引导 · " : ""}
+              {s.title || "新对话"}
+            </span>
+            <div className="flex items-center gap-1 shrink-0">
+              <span className="text-caption text-ink-tertiary">
+                {formatDate(s.updated_at || s.created_at)}
+              </span>
+              <button
+                onClick={(e) => handleDeleteSession(s, e)}
+                className="w-8 h-8 rounded flex items-center justify-center opacity-100 can-hover:opacity-0 can-hover:group-hover:opacity-100 hover:bg-danger-soft hover:text-danger transition-all"
+                title="删除会话"
+              >
+                <Trash2 className="w-3 h-3" strokeWidth={2} />
+              </button>
+            </div>
+          </div>
+        ))
+      )}
+    </div>
+  )
+
   return (
     <AppShell maxWidth={null} noPadding>
       <div className="flex h-full">
-        {/* ────── 左侧可折叠历史侧栏 ────── */}
+        {/* ────── 左侧历史：桌面内联可折叠；手机用「小按钮 + 覆盖抽屉」 ────── */}
         <div className={cn(
-          "shrink-0 border-r border-line-soft bg-surface/60 flex flex-col transition-all duration-200",
+          "shrink-0 border-r border-line-soft bg-surface/60 flex-col transition-all duration-200 hidden lg:flex",
           sidebarOpen ? "w-[260px]" : "w-[44px]",
         )}>
           <div className={cn("flex items-center gap-2 px-3 py-3 border-b border-line-soft", !sidebarOpen && "justify-center px-0")}>
@@ -778,46 +839,7 @@ export function ChatPage() {
             </button>
           </div>
 
-          {sidebarOpen && (
-            <div className="flex-1 overflow-y-auto scroll-thin px-2 py-2">
-              {sessions.length === 0 ? (
-                <div className="text-caption text-ink-tertiary text-center py-8">暂无历史会话</div>
-              ) : (
-                sessions.map(s => (
-                  <div
-                    key={s.id}
-                    role="button"
-                    tabIndex={0}
-                    onClick={() => handleSelectSession(s)}
-                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') handleSelectSession(s) }}
-                    className={cn(
-                      "w-full text-left px-3 py-2.5 rounded-[4px] flex items-center gap-2 group transition-colors mb-0.5 cursor-pointer",
-                      s.id === sessionId
-                        ? "bg-sea-subtle text-sea"
-                        : "hover:bg-paper-2 text-ink-soft",
-                    )}
-                  >
-                    <span className="flex-1 truncate text-small">
-                      {s.kind === "onboarding" ? "引导 · " : ""}
-                      {s.title || "新对话"}
-                    </span>
-                    <div className="flex items-center gap-1 shrink-0">
-                      <span className="text-caption text-ink-tertiary">
-                        {formatDate(s.updated_at || s.created_at)}
-                      </span>
-                      <button
-                        onClick={(e) => handleDeleteSession(s, e)}
-                        className="w-8 h-8 rounded flex items-center justify-center opacity-100 can-hover:opacity-0 can-hover:group-hover:opacity-100 hover:bg-danger-soft hover:text-danger transition-all"
-                        title="删除会话"
-                      >
-                        <Trash2 className="w-3 h-3" strokeWidth={2} />
-                      </button>
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-          )}
+          {sidebarOpen && historyList}
 
           {!sidebarOpen && (
             <div className="flex-1 flex items-center justify-center">
@@ -837,6 +859,26 @@ export function ChatPage() {
 
         {/* ────── 对话主区域 ────── */}
         <div className="flex-1 flex flex-col min-w-0">
+          {/* 手机：历史是覆盖抽屉，用不占聊天位的小按钮唤出 */}
+          <div className="lg:hidden shrink-0 flex items-center gap-2 px-3 pt-2">
+            <button
+              type="button"
+              onClick={() => setMobileHistoryOpen(true)}
+              className="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-full border border-line bg-paper text-caption text-ink-soft active:bg-paper-2"
+            >
+              <History className="w-3.5 h-3.5" strokeWidth={2} />
+              历史
+            </button>
+            <div className="flex-1" />
+            <button
+              type="button"
+              onClick={handleNewSession}
+              className="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-full border border-line bg-paper text-caption text-ink-soft active:bg-paper-2"
+            >
+              <Plus className="w-3.5 h-3.5" strokeWidth={2} />
+              新对话
+            </button>
+          </div>
           {tinaPresence && (
             <div className="shrink-0 px-4 sm:px-8 pt-1">
               <div className="max-w-[860px] mx-auto">
@@ -872,16 +914,8 @@ export function ChatPage() {
                       onCitationClick={handleCitationClick}
                       onWidgetResolved={handleWidgetResolved}
                       onOnboardingAction={(text) => void sendText(text)}
-                      onPlotOpen={(plot) => {
-                        setActiveCanvas({ type: "plot", plot })
-                        setCanvasSidebarOpen(true)
-                        setCitationSidebarOpen(false)
-                      }}
-                      onCanvasOpen={(canvas) => {
-                        setActiveCanvas({ type: "html", canvas })
-                        setCanvasSidebarOpen(true)
-                        setCitationSidebarOpen(false)
-                      }}
+                      onPlotOpen={(plot) => openCanvasItem({ type: "plot", plot })}
+                      onCanvasOpen={(canvas) => openCanvasItem({ type: "html", canvas })}
                       widgetsDisabled={isStreaming}
                       thinkingActive={
                         isStreaming &&
@@ -1027,26 +1061,90 @@ export function ChatPage() {
           </div>
         </div>
 
-        {/* ────── 右侧可折叠画布；点引用时临时换成引用来源 ────── */}
-        {citationSidebarOpen ? (
-          <ChatCitationSidebar
-            open={citationSidebarOpen}
-            onOpenChange={setCitationSidebarOpen}
-            citation={activeCitation}
-          />
-        ) : (
-          <ChatCanvasSidebar
-            open={canvasSidebarOpen}
-            onOpenChange={setCanvasSidebarOpen}
-            item={activeCanvas}
-            history={canvasHistory}
-            onSelectItem={(it) => {
-              setActiveCanvas(it)
-              setCanvasSidebarOpen(true)
-              setCitationSidebarOpen(false)
-            }}
-            onBack={() => setActiveCanvas(null)}
-          />
+        {/* ────── 右侧画布 / 引用来源（桌面内联侧栏） ────── */}
+        <div className="hidden lg:flex min-h-0 h-full">
+          {citationSidebarOpen ? (
+            <ChatCitationSidebar
+              open={citationSidebarOpen}
+              onOpenChange={setCitationSidebarOpen}
+              citation={activeCitation}
+            />
+          ) : (
+            <ChatCanvasSidebar
+              open={canvasSidebarOpen}
+              onOpenChange={setCanvasSidebarOpen}
+              item={activeCanvas}
+              history={canvasHistory}
+              onSelectItem={(it) => {
+                setActiveCanvas(it)
+                setCanvasSidebarOpen(true)
+                setCitationSidebarOpen(false)
+              }}
+              onBack={() => setActiveCanvas(null)}
+            />
+          )}
+        </div>
+
+        {/* ────── 手机：画布全屏层（聊天流里的小预览点开后进来） ────── */}
+        {canvasFullscreen && activeCanvas && (
+          <div className="lg:hidden fixed inset-0 z-[80] bg-paper flex flex-col pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]">
+            <div className="shrink-0 flex items-center gap-2 px-3 py-2 border-b border-line">
+              <span className="flex-1 truncate text-card-title font-semibold text-ink-primary">
+                {activeCanvas.type === "plot"
+                  ? activeCanvas.plot.title?.trim() || "函数图"
+                  : activeCanvas.canvas.title?.trim() || "交互画布"}
+              </span>
+              <button
+                type="button"
+                onClick={() => setCanvasFullscreen(false)}
+                className="w-8 h-8 rounded-md flex items-center justify-center text-ink-soft active:bg-paper-2"
+                aria-label="关闭"
+              >
+                <X className="w-4 h-4" strokeWidth={2} />
+              </button>
+            </div>
+            <div className="flex-1 min-h-0 p-2 overflow-hidden">
+              {activeCanvas.type === "plot" ? (
+                <div className="h-full overflow-y-auto scroll-thin">
+                  <ChatFunctionPlot plot={activeCanvas.plot} />
+                </div>
+              ) : (
+                <ChatHtmlFrame canvas={activeCanvas.canvas} zoom={1} />
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* ────── 手机：历史覆盖抽屉 ────── */}
+        {mobileHistoryOpen && (
+          <div className="lg:hidden fixed inset-0 z-[75]">
+            <div
+              className="absolute inset-0 bg-ink/40 backdrop-blur-[2px]"
+              onClick={() => setMobileHistoryOpen(false)}
+            />
+            <div className="absolute inset-y-0 left-0 w-[82%] max-w-[320px] bg-paper border-r border-line shadow-xl flex flex-col pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]">
+              <div className="shrink-0 flex items-center gap-1 px-3 py-3 border-b border-line-light">
+                <span className="flex-1 text-card-title font-semibold text-ink-primary">历史会话</span>
+                <button
+                  type="button"
+                  onClick={() => { handleNewSession(); setMobileHistoryOpen(false) }}
+                  className="w-8 h-8 rounded-md flex items-center justify-center text-ink-tertiary active:bg-paper-2"
+                  title="新建会话"
+                >
+                  <Plus className="w-4 h-4" strokeWidth={2} />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMobileHistoryOpen(false)}
+                  className="w-8 h-8 rounded-md flex items-center justify-center text-ink-tertiary active:bg-paper-2"
+                  aria-label="关闭"
+                >
+                  <X className="w-4 h-4" strokeWidth={2} />
+                </button>
+              </div>
+              {historyList}
+            </div>
+          </div>
         )}
       </div>
     </AppShell>

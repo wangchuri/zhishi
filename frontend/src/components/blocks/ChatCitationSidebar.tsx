@@ -10,15 +10,23 @@ interface ChatCitationSidebarProps {
   citation: Citation | null
 }
 
-/** 聊天页右侧可折叠引用侧栏 */
+/** 聊天页右侧引用侧栏；手机端改为覆盖层，关时完全隐藏 */
 export function ChatCitationSidebar({ open, onOpenChange, citation }: ChatCitationSidebarProps) {
   return (
-    <div
-      className={cn(
-        "shrink-0 border-l border-line-soft bg-surface/60 flex flex-col transition-all duration-200",
-        open ? "w-[320px]" : "w-[44px]"
+    <>
+      {open && (
+        <div
+          className="lg:hidden fixed inset-0 z-[65] bg-ink/40 backdrop-blur-[2px]"
+          onClick={() => onOpenChange(false)}
+        />
       )}
-    >
+      <div
+        className={cn(
+          "shrink-0 border-l border-line-soft bg-surface/60 flex-col transition-all duration-200",
+          open ? "w-[320px] flex" : "w-[44px] flex max-lg:hidden",
+          open && "max-lg:fixed max-lg:inset-y-0 max-lg:right-0 max-lg:z-[70] max-lg:w-[88%] max-lg:max-w-[380px] max-lg:bg-paper max-lg:shadow-xl max-lg:pt-[env(safe-area-inset-top)] max-lg:pb-[env(safe-area-inset-bottom)]",
+        )}
+      >
       <div
         className={cn(
           "flex items-center gap-2 px-3 py-3 border-b border-line-soft",
@@ -81,6 +89,7 @@ export function ChatCitationSidebar({ open, onOpenChange, citation }: ChatCitati
           </button>
         </div>
       )}
-    </div>
+      </div>
+    </>
   )
 }
