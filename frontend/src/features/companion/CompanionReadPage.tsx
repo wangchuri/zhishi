@@ -492,7 +492,9 @@ export function CompanionReadPage() {
           <aside
             className={cn(
               "shrink-0 border-r border-line-light bg-paper flex flex-col transition-all duration-200 overflow-hidden",
-              railOpen ? "w-56" : "w-0"
+              railOpen ? "w-56" : "w-0",
+              // 手机：目录也做覆盖层，不要挤压正文（关闭时 w-0 自然不可见）
+              "max-lg:fixed max-lg:inset-y-0 max-lg:left-0 max-lg:z-[70] max-lg:shadow-xl max-lg:pt-[env(safe-area-inset-top)]",
             )}
           >
             <div className="flex items-center justify-between px-3 h-12 border-b border-line-light shrink-0">

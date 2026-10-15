@@ -543,11 +543,12 @@ export function QuizDocDetailPage() {
   return (
     <AppShell maxWidth={1100}>
       {/* 顶部导航 */}
-      <div className="flex items-center gap-3 mb-6 short:mb-4">
+      <div className="flex flex-wrap items-center gap-2 md:gap-3 mb-4 md:mb-6 short:mb-4">
         <Button variant="ghost" size="md" onClick={() => navigate("/quiz")}>
           <ArrowLeft className="w-4 h-4" />返回
         </Button>
-        <div className="flex-1" />
+        {/* 手机：让 7 个按钮换行，缩进占位只在 md 以上起作用 */}
+        <div className="hidden md:block md:flex-1" />
         <Button variant="secondary" size="md" onClick={() => navigate(`/companion/doc/${doc.id}`)}>
           <BookOpen className="w-4 h-4 mr-2" />
           阅读

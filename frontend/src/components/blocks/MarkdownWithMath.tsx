@@ -174,6 +174,13 @@ export function MarkdownWithMath({
         rehypePlugins={[rehypeKatex]}
         urlTransform={urlTransform}
         components={{
+          // 宽表格自己横向滚动，别把整页撑宽（手机上尤其明显）
+          // 只传 children：避免 react-markdown 的 node 等非 DOM 属性落到 table 上
+          table: ({ children }) => (
+            <div className="overflow-x-auto scroll-thin">
+              <table>{children}</table>
+            </div>
+          ),
           img: ({ src, alt, ...props }) => (
             <img
               {...props}

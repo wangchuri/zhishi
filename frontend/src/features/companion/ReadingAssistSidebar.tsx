@@ -162,7 +162,11 @@ export function ReadingAssistSidebar({
       aria-hidden={!open}
       className={cn(
         "shrink-0 bg-paper flex flex-col overflow-hidden transition-[width] duration-300",
-        open ? "border-l border-line" : "border-l-0"
+        open ? "border-l border-line" : "border-l-0",
+        // 手机：做成覆盖层（与 ChatCitationSidebar 同一范式）。作为 flex 兄弟它会挤压正文，
+        // 并让整页横向滚动；inline style 里的宽度用 !important 覆盖掉。
+        open &&
+          "max-lg:fixed max-lg:inset-y-0 max-lg:right-0 max-lg:z-[70] max-lg:!w-[88%] max-lg:max-w-[380px] max-lg:shadow-xl max-lg:pt-[env(safe-area-inset-top)] max-lg:pb-[env(safe-area-inset-bottom)]",
       )}
       style={{ width: open ? `min(${SIDEBAR_WIDTH}px, 65vw)` : 0 }}
       role="dialog"

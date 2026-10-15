@@ -526,6 +526,13 @@
     min-height: 300px;
   }
 }
+
+/* 行间公式（KaTeX display）在窄屏上自己横向滚动，避免把整页撑宽 */
+.prose .katex-display {
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-bottom: 2px;
+}
 .tip-deck.is-expanded {
   width: 100%;
   height: auto;

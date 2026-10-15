@@ -1,4 +1,5 @@
 import type { ReactNode } from "react"
+import { createPortal } from "react-dom"
 import { X } from "lucide-react"
 import { cn } from "@/lib/utils"
 
@@ -13,7 +14,9 @@ export function RailOverlay({
   onClose: () => void
   children: ReactNode
 }) {
-  return (
+  // 必须 portal 到 body：祖先若有 transform（如页面入场动画 animate-page-in），
+  // fixed 会以那个祖先为包含块，抽屉的 right-0 就不再是视口右缘 → 关闭态也会把页面撑宽。
+  return createPortal(
     <div
       className={cn(
         "fixed left-0 right-0 bottom-0 z-50 transition-[visibility] duration-200",
@@ -51,6 +54,7 @@ export function RailOverlay({
         </div>
         <div className="flex-1 overflow-y-auto scroll-thin p-5">{children}</div>
       </aside>
-    </div>
+    </div>,
+    document.body,
   )
 }

@@ -7,8 +7,12 @@ import { useEffect } from "react"
  * 所有超出视口右边界的元素会被描红，控制台还会打印一份带 class 名与右边距的表格。
  * 看完刷新即可去掉（参数去掉就失效，不影响正常使用）。
  *
- * 只统计「能撑宽页面」的元素：跳过 fixed 定位（如手机抽屉、tab 栏）及其后代，
- * 它们在视口外是正常现象，会把结果刷屏。
+ * 只统计「能撑宽页面」的元素：
+ * - 跳过 `position: fixed` 及其后代（手机抽屉、tab 栏在视口外是正常现象）；
+ * - 跳过祖先已经裁剪掉的子树（祖先 `overflow-x != visible`，如 KaTeX 的 MathML 无障碍层
+ *   `width:1px; overflow-x:hidden`）——它们撑不宽页面，只会把结果刷屏；
+ * - 跳过 `aria-hidden="true"` 的子树（关掉的抽屉/弹窗）。
+ * 走到 `main` 就停：`main` 自己有 `overflow-y-auto`，它里面溢出**是真 bug**（会出滚动条）。
  */
 export function useOverflowDebug(active: boolean, key?: string) {
   useEffect(() => {
@@ -18,9 +22,13 @@ export function useOverflowDebug(active: boolean, key?: string) {
       const vw = document.documentElement.clientWidth
       const bad: HTMLElement[] = []
 
-      const inFixedSubtree = (el: HTMLElement): boolean => {
-        for (let p = el.parentElement; p && p !== document.body; p = p.parentElement) {
-          if (getComputedStyle(p).position === "fixed") return true
+      const isContained = (el: HTMLElement): boolean => {
+        for (let p = el.parentElement; p; p = p.parentElement) {
+          if (p.tagName === "MAIN" || p === document.body) return false
+          if (p.getAttribute("aria-hidden") === "true") return true
+          const cs = getComputedStyle(p)
+          if (cs.position === "fixed") return true
+          if (cs.overflowX !== "visible") return true
         }
         return false
       }
@@ -29,7 +37,7 @@ export function useOverflowDebug(active: boolean, key?: string) {
         const r = el.getBoundingClientRect()
         if (r.width === 0 || r.height === 0) return
         if (r.right <= vw + 1 && r.left >= -1) return
-        if (inFixedSubtree(el)) return
+        if (isContained(el)) return
         bad.push(el)
       })
 
