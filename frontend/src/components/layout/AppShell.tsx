@@ -1,9 +1,11 @@
 import type { ReactNode } from "react"
+import { useLocation } from "react-router-dom"
 import { Sidebar } from "./Sidebar"
 import { Topbar } from "./Topbar"
 import { StatusRail } from "./StatusRail"
 import { MobileTabBar } from "./MobileTabBar"
 import { useUI } from "@/context/UIContext"
+import { useOverflowDebug } from "@/lib/overflowDebug"
 import { cn } from "@/lib/utils"
 
 interface AppShellProps {
@@ -21,6 +23,9 @@ interface AppShellProps {
  */
 export function AppShell({ children, maxWidth = 1180, noPadding = false }: AppShellProps) {
   const { mobileMenuOpen, setMobileMenuOpen } = useUI()
+  const { pathname, search } = useLocation()
+  // 地址带 ?overflow=1 时启用「谁把页面顶宽了」探测（描红 + 控制台列表）
+  useOverflowDebug(new URLSearchParams(search).has("overflow"), pathname)
 
   return (
     <div className="relative flex h-dvh overflow-hidden bg-paper">
