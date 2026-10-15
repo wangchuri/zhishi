@@ -101,6 +101,7 @@ class NoteItem(BaseModel):
     folder: Optional[str] = None
     document_id: Optional[str] = None
     document_name: Optional[str] = None
+    question_id: Optional[str] = None
     page_number: Optional[int] = None
     tags: list[str] = []
     is_draft: bool = False

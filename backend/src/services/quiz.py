@@ -108,6 +108,16 @@ def _current_streak(db: Session, question_id: str) -> int:
     return streak
 
 
+_TYPE_ORDER = [
+    "single_choice",
+    "multiple_choice",
+    "fill_blank",
+    "short_answer",
+    "application",
+    "custom",
+]
+
+
 class QuizService:
     """刷题领域服务。"""
 
@@ -120,10 +130,12 @@ class QuizService:
         document_id: Optional[str],
         collection_id: Optional[str],
         group_id: Optional[str] = None,
+        chapter_id: Optional[str] = None,
         question_ids: Optional[list[str]],
         filter_mode: str = "all",
         tags: Optional[list[str]] = None,
         type_counts: Optional[dict] = None,
+        sort: Optional[str] = None,
     ) -> list[str]:
         """解析会话题目 ID 集合。"""
         if question_ids:
@@ -146,6 +158,8 @@ class QuizService:
             elif document_id:
                 scope_doc_ids = [document_id]
                 q = q.filter(QuestionProvenance.document_id == document_id)
+            if chapter_id:
+                q = q.filter(QuestionProvenance.chapter_id == chapter_id)
             ids = list(dict.fromkeys(r[0] for r in q.all()))
 
             if filter_mode in ("wrong", "unknown", "undone") and scope_doc_ids:
@@ -181,7 +195,29 @@ class QuizService:
             # 保持原顺序
             kept_set = set(kept)
             ids = [qid for qid in ids if qid in kept_set]
+        if sort == "type":
+            ids = self._order_ids_by_type(db, ids)
         return self._expand_material_questions(db, ids)
+
+    def _order_ids_by_type(self, db: Session, ids: list[str]) -> list[str]:
+        """按题型固定顺序稳定排序（单选→多选→填空→简答→应用→自定义），同类型保持原顺序。"""
+        if not ids:
+            return ids
+        rows = (
+            db.query(GlobalQuestion.id, GlobalQuestion.question_type)
+            .filter(GlobalQuestion.id.in_(ids))
+            .all()
+        )
+        type_by_qid = {qid: (qtype or "single_choice") for qid, qtype in rows}
+        pos = {qid: i for i, qid in enumerate(ids)}
+        rank = {t: i for i, t in enumerate(_TYPE_ORDER)}
+        return sorted(
+            ids,
+            key=lambda qid: (
+                rank.get(type_by_qid.get(qid, "single_choice"), len(_TYPE_ORDER)),
+                pos[qid],
+            ),
+        )
 
     def _resolve_by_type_counts(
         self,
@@ -305,11 +341,13 @@ class QuizService:
         document_id: Optional[str],
         collection_id: Optional[str] = None,
         group_id: Optional[str] = None,
+        chapter_id: Optional[str] = None,
         question_ids: Optional[list[str]] = None,
         title: Optional[str] = None,
         filter_mode: str = "all",
         tags: Optional[list[str]] = None,
         type_counts: Optional[dict] = None,
+        sort: Optional[str] = None,
         resume: bool = True,
         task_id: Optional[str] = None,
     ) -> QuizSession:
@@ -318,10 +356,12 @@ class QuizService:
             document_id=document_id,
             collection_id=collection_id,
             group_id=group_id,
+            chapter_id=chapter_id,
             question_ids=question_ids,
             filter_mode=filter_mode,
             tags=tags,
             type_counts=type_counts,
+            sort=sort,
         )
         if not ids:
             raise AppError("没有可刷的题目（可能该文档还没有生成题目）")

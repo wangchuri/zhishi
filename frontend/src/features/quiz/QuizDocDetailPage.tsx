@@ -368,11 +368,8 @@ export function QuizDocDetailPage() {
 
   const handleStartChapter = async (ch: LearningPathChapter) => {
     if (!docId || !ch.id) return
-    const ids = (questionsByChapter.get(ch.id) || [])
-      .filter((q) => matchesFilter(q, filterMode))
-      .map((q) => q.id)
-    if (!ids.length) {
-      toast.error(filterMode === "all" ? "这一章还没有题目" : "这一章没有符合筛选的题目")
+    if (!(questionsByChapter.get(ch.id) || []).length) {
+      toast.error("这一章还没有题目")
       return
     }
     setStartingChapter(ch.id)
@@ -380,7 +377,10 @@ export function QuizDocDetailPage() {
     try {
       const res = await quizApi.createSession({
         document_id: docId,
-        question_ids: ids,
+        chapter_id: ch.id,
+        sort: "type",
+        filter: filterMode,
+        tags: selectedTags.length ? selectedTags : undefined,
         title: ch.title || "本章练习",
       })
       const session = res as QuizSession

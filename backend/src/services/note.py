@@ -41,6 +41,8 @@ def _note_folder(n: UserNote) -> str:
         return "学习报告"
     if n.note_type == "tip":
         return "tip"
+    if n.note_type == "question_reflection":
+        return "题目思路"
     return ((getattr(n, "folder", None) or "我的笔记") or "").strip() or "我的笔记"
 
 
@@ -53,6 +55,7 @@ def _note_out(n: UserNote, names: dict[str, str] | None = None) -> dict:
         "folder": _note_folder(n),
         "document_id": n.document_id,
         "document_name": (names or {}).get(n.document_id or "") if n.document_id else None,
+        "question_id": getattr(n, "question_id", None),
         "page_number": n.page_number,
         "tags": parse_tags(getattr(n, "user_tags", None)),
         "is_draft": bool(getattr(n, "is_draft", False)),
@@ -106,6 +109,41 @@ class NoteService:
         db.commit()
         db.refresh(note)
         return note
+
+    def save_question_reflection(
+        self,
+        db: Session,
+        *,
+        question_id: str,
+        content_md: str,
+        document_id: Optional[str] = None,
+        title: Optional[str] = None,
+    ) -> UserNote:
+        """追加一条「做题思路」（只增不改；旧条不可编辑）。"""
+        note = UserNote(
+            question_id=question_id,
+            document_id=document_id or None,
+            title=(title or "").strip()[:255] or None,
+            content_md=content_md or "",
+            note_type="question_reflection",
+            folder="题目思路",
+        )
+        db.add(note)
+        db.commit()
+        db.refresh(note)
+        return note
+
+    def list_question_reflections(self, db: Session, question_id: str) -> list[UserNote]:
+        """某题的全部思路，按时间升序（旧 → 新）。"""
+        return (
+            db.query(UserNote)
+            .filter(
+                UserNote.note_type == "question_reflection",
+                UserNote.question_id == question_id,
+            )
+            .order_by(UserNote.created_at.asc())
+            .all()
+        )
 
     def create_note(
         self,

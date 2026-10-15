@@ -2,6 +2,7 @@ import type { ReactNode } from "react"
 import { CheckCircle2, ChevronRight, HelpCircle, Sparkles, XCircle } from "lucide-react"
 import { MarkdownWithMath } from "@/components/blocks/MarkdownWithMath"
 import { CitationCard } from "@/components/blocks/CitationCard"
+import { QuizQuestionReflection } from "./QuizQuestionReflection"
 import { getApiBase } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import type { QuizAnswerResult, QuizSessionQuestion } from "@/types"
@@ -110,6 +111,8 @@ export function QuizAnswerFeedback({
       {!isUnknown && lastResult.status !== "correct" && lastResult.citation && (
         <CitationCard citation={lastResult.citation} />
       )}
+
+      <QuizQuestionReflection questionId={question.question_id} documentId={documentId} />
     </div>
   )
 }

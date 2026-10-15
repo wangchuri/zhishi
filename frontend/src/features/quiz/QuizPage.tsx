@@ -979,6 +979,7 @@ export function QuizPage() {
                   <QuizAnswerFeedback
                     question={currentQuestion}
                     lastResult={lastResult}
+                    documentId={session?.document_id ?? null}
                   />
                 </div>
               )}

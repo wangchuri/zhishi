@@ -52,6 +52,8 @@ class QuizSessionCreate(BaseModel):
     collection_id: Optional[str] = None
     group_id: Optional[str] = None
     question_ids: Optional[list[str]] = None
+    chapter_id: Optional[str] = None  # 按书本章节刷题（仅取该章题目）
+    sort: Optional[str] = None  # "type"=按题型排序（单选→…→应用），同类型内保持原顺序
     title: Optional[str] = None
     filter: Optional[str] = "all"  # all/undone/wrong/unknown
     tags: Optional[list[str]] = None  # 知识点；不传=全部；多选为并集（任一命中）
@@ -59,6 +61,12 @@ class QuizSessionCreate(BaseModel):
     type_counts: Optional[dict[str, int]] = None
     resume: bool = True  # 同一批题有未完成会话则续刷
     task_id: Optional[str] = None  # 今日刷题任务 id，续刷后回写 href
+
+
+class QuizQuestionNoteCreate(BaseModel):
+    content_md: str
+    document_id: Optional[str] = None
+    title: Optional[str] = None
 
 
 class QuizAnswerSubmit(BaseModel):

@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from ..core.database import get_db
 from ..models import QuizSession
 from ..schemas import quiz as quiz_schemas
+from ..services.note import note_service
 from ..services.quiz import quiz_service
 
 router = APIRouter(prefix="/api/v1/quiz", tags=["quiz"])
@@ -20,15 +21,41 @@ def create_session(body: quiz_schemas.QuizSessionCreate, db: Session = Depends(g
         document_id=body.document_id,
         collection_id=body.collection_id,
         group_id=body.group_id,
+        chapter_id=body.chapter_id,
         question_ids=body.question_ids,
         title=body.title,
         filter_mode=body.filter or "all",
         tags=body.tags,
         type_counts=body.type_counts,
+        sort=body.sort,
         resume=body.resume if body.resume is not None else True,
         task_id=body.task_id,
     )
     return quiz_service._session_out(db, session)
+
+
+@router.get("/questions/{question_id}/notes")
+def list_question_notes(question_id: str, db: Session = Depends(get_db)):
+    """某题的全部「做题思路」，按时间升序（旧 → 新）。"""
+    notes = note_service.list_question_reflections(db, question_id)
+    return {"notes": [note_service.note_to_item(db, n) for n in notes]}
+
+
+@router.post("/questions/{question_id}/notes")
+def add_question_note(
+    question_id: str,
+    body: quiz_schemas.QuizQuestionNoteCreate,
+    db: Session = Depends(get_db),
+):
+    """追加一条「做题思路」（只增不改，旧条不可编辑）。"""
+    note = note_service.save_question_reflection(
+        db,
+        question_id=question_id,
+        content_md=body.content_md,
+        document_id=body.document_id,
+        title=body.title,
+    )
+    return note_service.note_to_item(db, note)
 
 
 @router.get("/active-sessions")

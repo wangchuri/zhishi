@@ -58,6 +58,8 @@ class UserNote(Base):
     user_id: Mapped[int] = mapped_column(Integer, default=1)
     collection_id: Mapped[str | None] = mapped_column(String(36), index=True)
     document_id: Mapped[str | None] = mapped_column(String(36), index=True)
+    # 刷题「思路/灵感」：关联的题目（note_type=question_reflection 时非空）
+    question_id: Mapped[str | None] = mapped_column(String(36), index=True)
     page_number: Mapped[int | None] = mapped_column(Integer)
     title: Mapped[str | None] = mapped_column(String(255))
     content_md: Mapped[str | None] = mapped_column(Text)
