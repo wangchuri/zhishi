@@ -65,6 +65,8 @@ Desktop.ini
 *.env.local
 backend/tina.env
 backend/.env
+# 本地配置（含真实 MinerU Token 等），不入库
+backend/config.yml
 assets/config/llm_config.json
 assets/config/dify_config.json
 
