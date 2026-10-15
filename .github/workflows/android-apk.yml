@@ -1,0 +1,84 @@
+name: Build Android APK
+
+# 手动触发即可出包（不需要本地装 Android Studio / JDK）。
+# 需要先配好后端地址：仓库 Settings → Secrets and variables → Actions → Variables
+# 新增 ZHISHI_SERVER_URL（如 http://1.2.3.4:17777），或手动触发时在 server_url 里填。
+on:
+  workflow_dispatch:
+    inputs:
+      server_url:
+        description: "知拾后端地址（如 http://1.2.3.4:17777）；留空则用仓库变量 ZHISHI_SERVER_URL"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  apk:
+    name: Assemble debug APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 解析后端地址
+        id: cfg
+        env:
+          INPUT_URL: ${{ github.event.inputs.server_url }}
+          VARS_URL: ${{ vars.ZHISHI_SERVER_URL }}
+        run: |
+          URL="${INPUT_URL:-$VARS_URL}"
+          URL="${URL%/}"
+          if [ -z "$URL" ]; then
+            echo "::error::未配置后端地址。请到 Settings → Secrets and variables → Actions → Variables 添加 ZHISHI_SERVER_URL（如 http://1.2.3.4:17777），或手动触发时填 server_url。"
+            exit 1
+          fi
+          echo "server_url=$URL" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21" # Capacitor 8 需要 JDK 21
+
+      - uses: android-actions/setup-android@v3
+
+      - name: 安装依赖
+        working-directory: frontend
+        run: npm ci
+
+      - name: 构建前端（注入后端地址）
+        working-directory: frontend
+        env:
+          CAP_SERVER_URL: ${{ steps.cfg.outputs.server_url }}
+        run: npm run build
+
+      - name: 生成并同步 Android 工程
+        working-directory: frontend
+        env:
+          CAP_SERVER_URL: ${{ steps.cfg.outputs.server_url }}
+        run: |
+          npx cap add android
+          npx cap sync android
+
+      - name: 允许明文 HTTP（server.url 走 http 时必需）
+        working-directory: frontend
+        run: node scripts/enable-android-cleartext.mjs android/app/src/main/AndroidManifest.xml
+
+      - name: 编译 debug APK
+        working-directory: frontend/android
+        run: ./gradlew assembleDebug --no-daemon
+
+      - name: 上传 APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: zhishi-apk
+          path: frontend/android/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          retention-days: 30

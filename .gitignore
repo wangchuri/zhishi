@@ -3,6 +3,10 @@ node_modules/
 frontend/dist/
 *.tsbuildinfo
 
+# Capacitor / Android：android/ 由 CI 现场生成（npx cap add android），不入库
+frontend/android/
+frontend/.capacitor/
+
 # 误放 / 临时脚本
 frontend/6.0
 _tmp_*

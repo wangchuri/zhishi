@@ -146,6 +146,39 @@ zhishi/
 - 未安装时**不报错**——该资料会置为「等待 OCR」排队；到「设置 → MinerU 文档解析」可**一键安装到独立环境**（`~/.zhishi/mineru`），装好后自动重试排队资料；
 - 也可改用**云端 mineru.net**（免安装，填 Token 即可）。
 
+## 打包成 Android APK（可选）
+
+不想装 Android Studio？仓库自带 GitHub Actions 工作流，**在网页上点一下就出 APK**。
+
+**为什么是「同源壳」**：知拾登录用的是 `SameSite=Lax` 的 cookie，且写请求有同源校验
+（`backend/src/main.py`）。所以 APK 用 Capacitor 的 `server.url` **直接加载后端地址**——
+页面 origin 就是后端 origin，登录与写操作全部照常、**后端零改动**；后端更新后打开 APK
+即最新版，不必重新打包。
+
+**步骤**
+1. 仓库 `Settings → Secrets and variables → Actions → Variables` 新增
+   `ZHISHI_SERVER_URL`，值形如 `http://1.2.3.4:17777`
+2. `Actions → Build Android APK → Run workflow`
+3. 跑完后在该次运行的 **Artifacts** 下载 `zhishi-apk`（`app-debug.apk`），传到手机安装
+
+**本地自建（可选，需 JDK 21 + Android SDK）**
+```bash
+cd frontend
+CAP_SERVER_URL=http://1.2.3.4:17777 npm run build
+npm run cap:add && npm run cap:sync
+node scripts/enable-android-cleartext.mjs android/app/src/main/AndroidManifest.xml
+cd android && ./gradlew assembleDebug
+```
+
+**注意**
+- 后端是 **http 明文**：`capacitor.config.ts` 会开 `cleartext`，CI 再用
+  `frontend/scripts/enable-android-cleartext.mjs` 往 AndroidManifest 补
+  `usesCleartextTraffic`（API 28+ 默认禁明文，不加会白屏）
+- APK 必须能访问到该地址（同一网络或公网可达）；地址变了要重跑一次 workflow
+- `frontend/android/` 是 CI 现场生成的，不入库
+- 若哪天上了 HTTPS（仓库已带 `Caddyfile` + `docker-compose.prod.yml`），也可以改用
+  pwabuilder.com 直接生成 TWA —— 但那是另一条路，同源壳已经够用
+
 ## 常见问题
 
 **找不到 `backend/config.yml`？**  
