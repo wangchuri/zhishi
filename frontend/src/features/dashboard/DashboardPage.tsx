@@ -122,17 +122,17 @@ export function DashboardPage() {
 
   return (
     <AppShell maxWidth={880}>
-      <section className="relative overflow-hidden rounded-3xl border border-line bg-paper mb-8 short:mb-5 px-6 py-7 md:px-8 md:py-8 shadow-[0_8px_28px_-16px_rgba(20,33,43,0.12)]">
-        <div className="paper-grain pointer-events-none absolute inset-0 opacity-50" />
-        <MistRings className="animate-mist pointer-events-none absolute -right-10 -top-12 w-56 h-56 text-sea" />
-        <SageSprig className="animate-sprig pointer-events-none absolute right-10 -bottom-4 w-[4.5rem] h-32 text-sea hidden sm:block" />
+      <section className="relative overflow-hidden rounded-2xl md:rounded-3xl border border-line bg-paper mb-5 md:mb-8 short:mb-4 px-4 py-5 md:px-8 md:py-8 shadow-[0_8px_28px_-16px_rgba(20,33,43,0.12)]">
+        <div className="paper-grain pointer-events-none absolute inset-0 opacity-50 hidden lg:block" />
+        <MistRings className="animate-mist pointer-events-none absolute -right-10 -top-12 w-56 h-56 text-sea hidden lg:block" />
+        <SageSprig className="animate-sprig pointer-events-none absolute right-10 -bottom-4 w-[4.5rem] h-32 text-sea hidden lg:block" />
         <div className="relative flex items-start gap-4">
-          <TimeMotif hour={new Date().getHours()} className="hidden sm:block w-14 h-12 text-sea shrink-0 mt-1" />
+          <TimeMotif hour={new Date().getHours()} className="hidden lg:block w-14 h-12 text-sea shrink-0 mt-1" />
           <div className="min-w-0">
-            <h1 className="font-display text-[2rem] md:text-[2.35rem] leading-tight text-ink mb-2">
+            <h1 className="font-display text-[1.5rem] md:text-[2.35rem] leading-tight text-ink mb-1.5 md:mb-2">
               {getTimeGreeting()}，{greetingName || "朋友"}
             </h1>
-            <p className="text-body text-ink-soft max-w-xl">
+            <p className="text-body text-ink-soft max-w-xl hidden sm:block">
               不知道该做什么的时候，不妨{" "}
               <button
                 type="button"
@@ -152,7 +152,8 @@ export function DashboardPage() {
         </div>
       </section>
 
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-8 short:mb-5">
+      {/* 快捷卡：手机上底部 tab 已覆盖这些入口，隐藏以免重复 */}
+      <div className="hidden sm:grid grid-cols-1 sm:grid-cols-3 gap-3 mb-5 md:mb-8 short:mb-4">
         {quickActions.map((action, i) => (
           <QuickActionCard
             key={action.id}
@@ -165,26 +166,26 @@ export function DashboardPage() {
         ))}
       </div>
 
-      <section className="mb-8 short:mb-5">
+      <section className="mb-5 md:mb-8 short:mb-4">
         {goalText && !editingGoal ? (
-          <div className="relative overflow-hidden rounded-3xl border border-sea/25 bg-gradient-to-br from-sea-subtle via-paper to-paper px-5 py-6 md:px-7 md:py-7 shadow-[0_10px_32px_-18px_rgba(31,92,90,0.35)]">
-            <div className="paper-grain pointer-events-none absolute inset-0 opacity-35" />
+          <div className="relative overflow-hidden rounded-2xl md:rounded-3xl border border-sea/25 bg-gradient-to-br from-sea-subtle via-paper to-paper px-4 py-4 md:px-7 md:py-7 shadow-[0_10px_32px_-18px_rgba(31,92,90,0.35)]">
+            <div className="paper-grain pointer-events-none absolute inset-0 opacity-35 hidden lg:block" />
             <div className="pointer-events-none absolute inset-x-5 top-0 h-px bg-gradient-to-r from-transparent via-sea/40 to-transparent md:inset-x-7" />
-            <MistRings className="pointer-events-none absolute -right-16 -top-16 w-48 h-48 text-sea opacity-30" />
-            <SealMark className="pointer-events-none absolute right-4 bottom-3 w-16 h-16 text-sea/20 md:right-6" label="向" />
+            <MistRings className="pointer-events-none absolute -right-16 -top-16 w-48 h-48 text-sea opacity-30 hidden lg:block" />
+            <SealMark className="pointer-events-none absolute right-4 bottom-3 w-16 h-16 text-sea/20 md:right-6 hidden lg:block" label="向" />
 
             <div className="relative flex items-start justify-between gap-4">
               <div className="min-w-0 flex-1">
-                <div className="mb-3 inline-flex items-center gap-2">
+                <div className="mb-2 md:mb-3 inline-flex items-center gap-2">
                   <span className="h-1.5 w-1.5 rounded-full bg-sea" />
                   <span className="text-[11px] font-semibold tracking-[0.14em] uppercase text-sea">
                     我的目标
                   </span>
                 </div>
-                <p className="font-display text-[1.45rem] md:text-[1.75rem] leading-snug text-ink max-w-2xl">
+                <p className="font-display text-[1.15rem] md:text-[1.75rem] leading-snug text-ink max-w-2xl">
                   {goalText}
                 </p>
-                <p className="mt-3 text-caption text-ink-soft">
+                <p className="mt-2 md:mt-3 text-caption text-ink-soft hidden sm:block">
                   今天的任务都围着这个方向走
                 </p>
               </div>
