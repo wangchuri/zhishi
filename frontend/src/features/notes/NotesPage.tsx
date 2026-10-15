@@ -273,7 +273,7 @@ export function NotesPage() {
               </div>
             </div>
           )}
-          <div className="rounded-2xl border border-line bg-paper-2/50 p-5 sm:p-6">
+          <div className="rounded-xl border-0 bg-transparent p-0 md:rounded-2xl md:border md:border-line md:bg-paper-2/50 md:p-5 lg:p-6">
             {tips.length === 0 ? (
               <EmptyState
                 icon={StickyNote}
@@ -290,7 +290,7 @@ export function NotesPage() {
               />
             ) : (
               <>
-                <p className="text-caption text-ink-disabled mb-4">
+                <p className="text-caption text-ink-disabled mb-4 hidden sm:block">
                   {expanded
                     ? "默认展开。点一张进入大卡堆叠，可看完整内容；点空白处或「下一张」翻牌。"
                     : "大卡显示全文。点卡片空白处抽到下一张；「全部展开」回到列表。"}

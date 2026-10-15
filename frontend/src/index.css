@@ -519,6 +519,13 @@
   height: min(68dvh, 520px);
   min-height: 360px;
 }
+/* 手机：堆叠牌别占满整屏 */
+@media (max-width: 640px) {
+  .tip-deck.is-stack {
+    height: min(56dvh, 420px);
+    min-height: 300px;
+  }
+}
 .tip-deck.is-expanded {
   width: 100%;
   height: auto;
