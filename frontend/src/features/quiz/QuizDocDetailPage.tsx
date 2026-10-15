@@ -611,7 +611,7 @@ export function QuizDocDetailPage() {
       <div className="grid grid-cols-1 md:grid-cols-[minmax(0,240px)_minmax(0,1fr)] gap-6 md:gap-8 mb-8 short:mb-6">
         {/* 左侧：封面 */}
         <div className="space-y-3">
-          <div className="aspect-[3/4] max-h-[340px] short:max-h-[300px] rounded-xl overflow-hidden border border-line-soft bg-gradient-to-br from-primary-soft/30 to-surface-soft shadow-xs">
+          <div className="aspect-[3/4] max-h-[340px] short:max-h-[300px] rounded-xl overflow-hidden border border-line-soft bg-gradient-to-br from-primary/10 to-surface-soft shadow-xs">
             <img src={getThumbnailUrl(doc.id)} alt={doc.name} className="w-full h-full object-cover"
               onError={(e) => {
                 const el = e.currentTarget; el.style.display = "none"

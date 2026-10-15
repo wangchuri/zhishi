@@ -265,7 +265,7 @@ export const TutorPanel = forwardRef<TutorPanelHandle, TutorPanelProps>(function
       )}
     >
       <div className="flex items-center gap-2 px-4 py-3 border-b border-line-soft shrink-0">
-        <div className="w-8 h-8 rounded-full bg-gradient-primary flex items-center justify-center shrink-0">
+        <div className="w-8 h-8 rounded-full bg-gradient-to-br from-sea to-sea-bright flex items-center justify-center shrink-0">
           <Sparkles className="w-4 h-4 text-white" strokeWidth={2} />
         </div>
         <div className="flex-1 min-w-0 text-card-title font-semibold text-ink-primary">
@@ -310,7 +310,7 @@ export const TutorPanel = forwardRef<TutorPanelHandle, TutorPanelProps>(function
               )}
             >
               {m.role === "assistant" && (
-                <div className="w-7 h-7 rounded-full bg-gradient-primary flex items-center justify-center shrink-0 mt-0.5">
+                <div className="w-7 h-7 rounded-full bg-gradient-to-br from-sea to-sea-bright flex items-center justify-center shrink-0 mt-0.5">
                   <Sparkles className="w-3.5 h-3.5 text-white" strokeWidth={2} />
                 </div>
               )}

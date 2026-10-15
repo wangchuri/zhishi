@@ -48,7 +48,7 @@ export function QuizBookCard({ doc, stats, onClick, onDelete, onReparse }: QuizB
                  focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 text-left w-full"
     >
       {/* 封面图 */}
-      <div className="relative aspect-[3/4] bg-gradient-to-br from-primary-soft/30 to-surface-soft overflow-hidden">
+      <div className="relative aspect-[3/4] bg-gradient-to-br from-primary/10 to-surface-soft overflow-hidden">
         {!imgError ? (
           <img
             src={coverUrl}
