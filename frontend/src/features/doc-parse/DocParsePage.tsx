@@ -166,7 +166,7 @@ export function DocParsePage() {
 
   return (
     <AppShell>
-      <div className="max-w-[1400px] mx-auto px-6 py-6">
+      <div className="max-w-[1400px] mx-auto px-4 py-5 md:px-6 md:py-6">
         <PageHeader
           title="扫描件解析"
           subtitle="上传扫描 PDF → MinerU 解析 → 逐页校对后一键导入知识库（不会自动入库）"

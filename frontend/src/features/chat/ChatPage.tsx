@@ -823,7 +823,7 @@ export function ChatPage() {
         {/* ────── 对话主区域 ────── */}
         <div className="flex-1 flex flex-col min-w-0">
           {tinaPresence && (
-            <div className="shrink-0 px-8 pt-1">
+            <div className="shrink-0 px-4 sm:px-8 pt-1">
               <div className="max-w-[860px] mx-auto">
                 <TinaFacePanel
                   key={faceEnterKey}
@@ -838,7 +838,7 @@ export function ChatPage() {
           <div
             ref={scrollRef}
             onScroll={onChatScroll}
-            className="flex-1 overflow-y-auto scroll-thin px-8 py-6 [overflow-anchor:none]"
+            className="flex-1 overflow-y-auto scroll-thin px-4 sm:px-8 py-5 sm:py-6 [overflow-anchor:none]"
           >
             <div className="max-w-[860px] mx-auto space-y-4">
               {loadingHistory ? (
@@ -901,7 +901,7 @@ export function ChatPage() {
             </div>
           </div>
 
-          <div className="px-8 pt-3 pb-4" style={{ paddingBottom: "calc(0.75rem + env(safe-area-inset-bottom))" }}>
+          <div className="px-4 sm:px-8 pt-3 pb-4" style={{ paddingBottom: "calc(0.75rem + env(safe-area-inset-bottom))" }}>
             <div className="max-w-[860px] mx-auto">
               <div className="relative rounded-[24px] border border-line bg-surface shadow-xs focus-within:border-primary/50 focus-within:ring-2 focus-within:ring-primary/10 transition-all">
                 {slashOpen && (

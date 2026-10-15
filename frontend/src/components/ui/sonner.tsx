@@ -10,6 +10,8 @@ const Toaster = ({ ...props }: ToasterProps) => {
       className="toaster group"
       gap={10}
       offset={16}
+      // 移动端把提示推到顶栏（含安全区）之下，避免遮住顶栏按钮
+      mobileOffset={{ top: "calc(env(safe-area-inset-top) + 4.5rem)", right: "0.75rem" }}
       icons={{
         success: <Check className="size-3.5 text-sea" strokeWidth={2.5} />,
       }}

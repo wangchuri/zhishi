@@ -187,7 +187,7 @@ export function RichNoteEditor({ value, onChange, onReady }: RichNoteEditorProps
   return (
     <div className="rounded-md border border-line-light bg-paper-2/40 overflow-hidden">
       <Toolbar editor={editor} />
-      <EditorContent editor={editor} className="px-3 py-2 min-h-[50vh]" />
+      <EditorContent editor={editor} className="px-3 py-2 min-h-[50dvh]" />
     </div>
   )
 }

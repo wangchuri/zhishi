@@ -311,7 +311,7 @@ export function NoteSidebar({ documentId, onInsert }: NoteSidebarProps) {
   const tabs = documentId ? [...TABS, { key: "outline" as TabKey, label: "目录" }] : TABS
 
   return (
-    <aside className="flex flex-col rounded-2xl border border-line bg-paper min-h-0 lg:sticky lg:top-20 lg:max-h-[calc(100vh-6rem)]">
+    <aside className="flex flex-col rounded-2xl border border-line bg-paper min-h-0 lg:sticky lg:top-20 lg:max-h-[calc(100dvh-6rem)]">
       <div className="flex rounded-t-2xl border-b border-line-light bg-paper-2/60 p-0.5 text-[12px] shrink-0">
         {tabs.map((t) => (
           <button

@@ -491,7 +491,7 @@
 }
 .tip-deck.is-stack {
   width: min(100%, 560px);
-  height: min(68vh, 520px);
+  height: min(68dvh, 520px);
   min-height: 360px;
 }
 .tip-deck.is-expanded {
@@ -610,7 +610,7 @@
 .tip-card.is-chat .tip-card-body {
   margin-bottom: 4px;
   padding-right: 4px;
-  max-height: min(42vh, 360px);
+  max-height: min(42dvh, 360px);
   overflow-y: auto;
 }
 .tip-card.is-chat .tip-card-body img {
@@ -622,7 +622,7 @@
    笔记富文本编辑器（Tiptap / ProseMirror）
    ============================================================ */
 .zhishi-editor {
-  min-height: 50vh;
+  min-height: 50dvh;
   outline: none;
   color: var(--ink);
   font-size: 15px;
@@ -691,4 +691,38 @@
 .zhishi-editor .ProseMirror-selectednode {
   outline: 2px solid var(--sea);
   border-radius: 6px;
+}
+
+/* ============================================================
+   移动端适配
+   ============================================================ */
+
+/* iOS Safari：聚焦字号 <16px 的输入框会自动放大整页，体验很差。
+   移动端统一把可输入元素抬到 16px（桌面保持原设计）。 */
+@media screen and (max-width: 768px) {
+  input,
+  textarea,
+  select,
+  [contenteditable="true"] {
+    font-size: 16px !important;
+  }
+
+  /* 极小字号（10/11px）在手机上几乎不可读，抬到 12px；仅移动端生效 */
+  .text-\[10px\],
+  .text-\[11px\] {
+    font-size: 12px !important;
+  }
+}
+
+/* 宽公式不撑破容器：块级公式自身横向滚动 */
+.katex-display {
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 2px 1px;
+}
+
+/* 长串（URL / 公式 / 英文单词）不撑破容器 */
+.prose,
+.zhishi-editor {
+  overflow-wrap: break-word;
 }

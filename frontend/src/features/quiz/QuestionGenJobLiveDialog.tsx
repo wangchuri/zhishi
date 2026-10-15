@@ -70,7 +70,7 @@ export function QuestionGenJobLiveDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-5xl max-h-[85vh] flex flex-col p-0 gap-0 overflow-hidden">
+      <DialogContent className="sm:max-w-5xl max-h-[85dvh] flex flex-col p-0 gap-0 overflow-hidden">
         <DialogHeader className="px-5 pt-5 pb-3 border-b border-line-soft shrink-0">
           <DialogTitle className="flex items-center gap-2 text-body">
             <Bot className="w-4 h-4 text-sea" />

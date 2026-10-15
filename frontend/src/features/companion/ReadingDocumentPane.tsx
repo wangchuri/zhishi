@@ -229,7 +229,7 @@ export function ReadingDocumentPane({
       <iframe
         title="PDF 阅读"
         src={blobUrl}
-        className={cn("w-full h-full min-h-[70vh] rounded-md border border-line-light bg-paper-2", className)}
+        className={cn("w-full h-full min-h-[70dvh] rounded-md border border-line-light bg-paper-2", className)}
       />
     )
   }

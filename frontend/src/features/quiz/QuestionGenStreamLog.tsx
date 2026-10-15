@@ -332,7 +332,7 @@ function AgentCard({
         column.phase === "done" && "border-line",
         column.phase === "error" && "border-danger/40",
         column.phase === "queued" && "border-line-light",
-        layout === "grid" && "min-w-[240px] max-h-[52vh]",
+        layout === "grid" && "min-w-[240px] max-h-[52dvh]",
         layout === "stack" && "max-h-[280px]",
       )}
     >

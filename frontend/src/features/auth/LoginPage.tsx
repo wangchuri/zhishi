@@ -67,7 +67,7 @@ export function LoginPage() {
           </p>
         </div>
 
-        <div className="bg-paper rounded-[4px] border border-line p-8">
+        <div className="bg-paper rounded-[4px] border border-line p-5 sm:p-8">
           <div className="flex items-center gap-2.5 mb-2">
             {isSetup ? (
               <ShieldCheck className="w-5 h-5 text-sea" strokeWidth={2} />

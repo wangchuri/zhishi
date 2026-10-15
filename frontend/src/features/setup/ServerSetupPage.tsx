@@ -74,7 +74,7 @@ export function ServerSetupPage() {
           <p className="text-caption text-mist tracking-[0.16em] uppercase mt-2">self-learning companion</p>
         </div>
 
-        <div className="bg-paper rounded-[4px] border border-line p-8">
+        <div className="bg-paper rounded-[4px] border border-line p-5 sm:p-8">
           <div className="flex items-center gap-2.5 mb-2">
             <Server className="w-5 h-5 text-sea" strokeWidth={2} />
             <h2 className="font-display text-display-m text-ink">连接服务器</h2>

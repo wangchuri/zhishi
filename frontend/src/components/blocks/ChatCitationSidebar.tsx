@@ -56,7 +56,7 @@ export function ChatCitationSidebar({ open, onOpenChange, citation }: ChatCitati
               {citation.snippet && (
                 <section>
                   <h4 className="text-small font-medium text-ink-secondary mb-2">文档片段</h4>
-                  <div className="rounded-lg border border-line-soft bg-surface-soft p-3 text-small text-ink-primary leading-relaxed max-h-[50vh] overflow-y-auto scroll-thin">
+                  <div className="rounded-lg border border-line-soft bg-surface-soft p-3 text-small text-ink-primary leading-relaxed max-h-[50dvh] overflow-y-auto scroll-thin">
                     <MarkdownWithMath proseClass="prose prose-sm max-w-none prose-p:my-1 prose-p:text-ink-primary">
                       {citation.snippet}
                     </MarkdownWithMath>

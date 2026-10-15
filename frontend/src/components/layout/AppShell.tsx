@@ -22,7 +22,7 @@ export function AppShell({ children, maxWidth = 1180, noPadding = false }: AppSh
   const { mobileMenuOpen, setMobileMenuOpen } = useUI()
 
   return (
-    <div className="relative flex h-dvh overflow-hidden bg-paper bg-paper-gradient">
+    <div className="relative flex h-dvh overflow-hidden bg-paper bg-paper-gradient pb-[env(safe-area-inset-bottom)]">
       {/* 平板端：侧边栏抽屉遮罩 */}
       {mobileMenuOpen && (
         <div

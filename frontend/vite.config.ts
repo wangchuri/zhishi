@@ -20,6 +20,7 @@ export default defineConfig({
         name: "知拾",
         short_name: "知拾",
         description: "自学习伙伴 — 上传资料、自动出题、刷题与苏格拉底式辅导",
+        lang: "zh-CN",
         theme_color: "#1F5C5A",
         background_color: "#F3EFE6",
         display: "standalone",
@@ -27,13 +28,19 @@ export default defineConfig({
         start_url: "/",
         icons: [
           {
+            src: "logo-192.png?v=3",
+            sizes: "192x192",
+            type: "image/png",
+            purpose: "any",
+          },
+          {
             src: "logo.png?v=3",
             sizes: "512x512",
             type: "image/png",
             purpose: "any",
           },
           {
-            src: "logo.png?v=3",
+            src: "logo-maskable.png?v=3",
             sizes: "512x512",
             type: "image/png",
             purpose: "maskable",

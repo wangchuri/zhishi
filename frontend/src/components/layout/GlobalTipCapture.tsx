@@ -481,7 +481,7 @@ export function GlobalTipCapture() {
           showCloseButton
           overlayClassName="z-[80]"
           onOpenAutoFocus={(e) => e.preventDefault()}
-          className="z-[80] flex h-[min(40rem,calc(100vh-3rem))] w-[min(56rem,calc(100vw-2rem))] max-w-[min(56rem,calc(100vw-2rem))] sm:max-w-[min(56rem,calc(100vw-2rem))] flex-col gap-0 overflow-hidden p-0"
+          className="z-[80] flex h-[min(40rem,calc(100dvh-3rem))] w-[min(56rem,calc(100vw-2rem))] max-w-[min(56rem,calc(100vw-2rem))] sm:max-w-[min(56rem,calc(100vw-2rem))] flex-col gap-0 overflow-hidden p-0"
         >
           <div className="shrink-0 border-b border-line px-5 py-4 pr-12">
             <DialogTitle className="font-display text-ink">收入 tip</DialogTitle>

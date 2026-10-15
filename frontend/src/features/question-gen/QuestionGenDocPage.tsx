@@ -310,7 +310,7 @@ export function QuestionGenDocPage() {
   return (
     <AppShell maxWidth={null} noPadding>
       <div className="flex flex-col h-full">
-        <div className="px-8 pt-6 pb-4 border-b border-line shrink-0">
+        <div className="px-4 sm:px-8 pt-5 sm:pt-6 pb-4 border-b border-line shrink-0">
           <PageHeader
             title={displayName}
             subtitle="按页浏览内容，选择页面后由 AI 自动生成题目"

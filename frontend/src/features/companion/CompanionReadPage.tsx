@@ -453,7 +453,7 @@ export function CompanionReadPage() {
         <div
           ref={scrollRef}
           onScroll={handleScroll}
-          className="relative flex-1 overflow-y-auto scroll-thin p-6 md:p-8 bg-paper"
+          className="relative flex-1 overflow-y-auto scroll-thin p-4 md:p-8 bg-paper"
         >
           {loadingPages ? (
             <div className="flex items-center justify-center py-24 text-ink-disabled gap-2">

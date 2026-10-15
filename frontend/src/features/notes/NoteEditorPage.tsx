@@ -366,7 +366,7 @@ export function NoteEditorPage() {
           </div>
 
           {preview ? (
-            <div className={cn("min-h-[50vh] rounded-md border border-line-light bg-paper-2/40 p-4")}>
+            <div className={cn("min-h-[50dvh] rounded-md border border-line-light bg-paper-2/40 p-4")}>
               {content.trim() ? (
                 <NoteContent content={content} />
               ) : (

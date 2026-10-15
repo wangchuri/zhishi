@@ -99,7 +99,7 @@ export function DocumentViewPage() {
         ) : error ? (
           <div className="p-8 text-body text-danger">{error}</div>
         ) : (
-          <div className={previewMode === "pdf" ? "p-2" : "p-8"}>
+          <div className={previewMode === "pdf" ? "p-2" : "p-4 sm:p-8"}>
             <DocumentContentViewer
               docId={docId}
               previewMode={previewMode}

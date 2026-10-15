@@ -149,6 +149,7 @@ export function Sidebar() {
       data-no-tip
       className={cn(
         "bg-paper border-r border-line-light flex flex-col shrink-0 h-dvh max-h-dvh transition-all duration-200",
+        "pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]",
         sidebarCollapsed ? "w-[72px]" : "w-[248px]",
       )}
     >

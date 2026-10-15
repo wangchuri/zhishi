@@ -208,7 +208,7 @@ export function TargetedTrainingSessionPage() {
 
   if (phase === "loading" && !error) {
     return (
-      <div className="h-full min-h-[calc(100vh-3rem)] flex flex-col items-center justify-center bg-bg gap-4">
+      <div className="h-full min-h-[calc(100dvh-3rem)] flex flex-col items-center justify-center bg-bg gap-4">
         <div className="w-12 h-12 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
         <p className="text-body text-ink-primary font-medium">加载训练会话…</p>
       </div>
@@ -217,7 +217,7 @@ export function TargetedTrainingSessionPage() {
 
   if (error && !session) {
     return (
-      <div className="h-full min-h-[calc(100vh-3rem)] flex flex-col items-center justify-center bg-bg gap-4 px-6">
+      <div className="h-full min-h-[calc(100dvh-3rem)] flex flex-col items-center justify-center bg-bg gap-4 px-6">
         <p className="text-body text-danger text-center max-w-md">{error}</p>
         <div className="flex gap-3">
           <Button variant="secondary" onClick={exitToReport}>
@@ -238,7 +238,7 @@ export function TargetedTrainingSessionPage() {
   }
 
   return (
-    <div className="h-full min-h-[calc(100vh-3rem)] flex flex-col bg-bg">
+    <div className="h-full min-h-[calc(100dvh-3rem)] flex flex-col bg-bg">
       <header className="shrink-0 border-b border-line-soft bg-surface px-4 py-3 flex items-center justify-between gap-4">
         <div className="flex items-center gap-2">
           <Target className="w-5 h-5 text-primary" strokeWidth={2} />
