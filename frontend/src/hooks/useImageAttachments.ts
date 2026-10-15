@@ -1,5 +1,6 @@
 import { useCallback, useState } from "react"
 import { uploadsApi } from "@/lib/api"
+import { compressImageFile } from "@/lib/imageCompress"
 
 export interface AttachmentItem {
   id: string
@@ -21,7 +22,9 @@ export function useImageAttachments() {
     try {
       const uploaded: AttachmentItem[] = []
       for (const file of list) {
-        const res = await uploadsApi.uploadImage(file)
+        // 手机照片动辄几 MB：先压到长边 1600px，失败则原样上传
+        const prepared = await compressImageFile(file)
+        const res = await uploadsApi.uploadImage(prepared)
         uploaded.push({ id: res.id, url: res.url, name: res.filename })
       }
       setItems((prev) => [...prev, ...uploaded])
