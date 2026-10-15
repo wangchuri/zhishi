@@ -31,7 +31,7 @@ macOS / Linux：
 bash install.sh
 ```
 
-脚本会：创建 `.venv` → 在 `backend/` 里 `pip install`（这样才能找到 Tina 的 wheel）→ `frontend` 里 `npm ci` → 若还没有 `backend/tina.env` 则从 example 复制一份。
+脚本会：创建 `.venv` → 在 `backend/` 里 `pip install`（tina-python 从 PyPI 安装）→ `frontend` 里 `npm ci` → 若还没有 `backend/tina.env` 则从 example 复制一份。
 
 然后编辑 `backend/tina.env`，把 `LLM_API_KEY` 换成你的 DeepSeek 密钥：
 
@@ -43,7 +43,7 @@ MODEL_NAME=deepseek-v4-flash
 
 没有有效密钥时后端仍能启动，但对话、出题、任务 Agent 不可用。
 
-手动安装（脚本失败时）注意：**必须先进入 `backend/` 再 pip**，否则会找不到 `./3rdParty/tina_python-….whl`。
+手动安装（脚本失败时）：`cd backend` 后 `pip install -r requirements.txt`（`tina-python` 从 PyPI 安装）。
 
 ## 启动
 
@@ -129,9 +129,8 @@ zhishi/
 ├── install.bat / install.sh   # 一键装依赖
 ├── start.bat / start.sh       # 启动后端 :7777
 ├── backend/                   # FastAPI
-│   ├── 3rdParty/              # Tina wheel（已入库）
 │   ├── tina.env.example       # 复制为 tina.env，勿提交密钥
-│   └── config.yml
+│   └── config.yml.example     # 复制为 config.yml，勿提交密钥
 ├── frontend/                  # Vite + React
 ├── data/                      # SQLite（本地生成，不入库）
 └── docs/                      # 笔记（部分可能落后于代码）
@@ -145,8 +144,8 @@ zhishi/
 
 ## 常见问题
 
-**`pip` 找不到 `tina_python-….whl`**  
-不要在仓库根目录直接 `pip install -r backend/requirements.txt`。用 `install.bat` / `install.sh`，或 `cd backend` 再装。
+**找不到 `backend/config.yml`？**  
+从 `backend/config.yml.example` 复制一份即可；也可以不建，程序会用内置默认值。
 
 **前端「无法连接服务器」**  
 后端是否已在 **7777** 监听（不是旧文档里的 8765）。

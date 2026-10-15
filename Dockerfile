@@ -30,9 +30,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       libgomp1 \
     && rm -rf /var/lib/apt/lists/*
 
-# 依赖（含本地 tina wheel）
+# 依赖（tina-python 从 PyPI 安装）
 COPY backend/requirements.txt /app/backend/requirements.txt
-COPY backend/3rdParty /app/backend/3rdParty
 WORKDIR /app/backend
 RUN pip install --upgrade pip \
  && pip install -r requirements.txt
@@ -40,7 +39,7 @@ RUN pip install --upgrade pip \
 # 应用代码与配置
 COPY backend/src /app/backend/src
 COPY backend/prompts /app/backend/prompts
-COPY backend/config.yml /app/backend/config.yml
+COPY backend/config.yml.example /app/backend/config.yml
 COPY docker/entrypoint.sh /app/entrypoint.sh
 
 # 前端静态资源（main.py 从 ../frontend/dist 托管）

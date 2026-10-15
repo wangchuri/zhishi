@@ -1,0 +1,15 @@
+# 知拾本地配置示例：复制为 config.yml 再按需修改（勿把真实密钥提交进仓库）
+# 相对路径均以 backend/ 为基准；也可在设置页修改 MinerU 等项。
+storage_dir: ./storage
+image_base_dir: ./storage/images
+database_url: sqlite:///./data/zhishi.db
+max_concurrency: 1
+question_gen_max_concurrency: 3
+question_gen_max_pages: 30
+# MinerU：local=本机 mineru-api；cloud=mineru.net
+mineru_mode: local
+mineru_api_token: ""
+mineru_api_base: https://mineru.net
+mineru_model_version: vlm
+# PDF 解析策略：smart=可疑(公式/结构缺失)走 MinerU；all=全部 PDF 走 MinerU；scanned_only=仅扫描件
+pdf_parse_policy: smart
