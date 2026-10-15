@@ -65,7 +65,36 @@ def _patch_tina_null_tool_calls() -> None:
     _TINA_PARSER_PATCHED = True
 
 
+def _patch_tina_multimodal_add_assistant() -> None:
+    """tina 0.7.3：Agent.add_message 会给 add_assistant_message 传 name，
+    但 MultimodalContextManager 覆写的那版只收 message（基类 ContextManager 收 name）。
+    多模态 Agent 回放历史时会 TypeError: takes 2 positional arguments but 3 were given。
+    """
+    try:
+        from tina.agent.core.context_manager import MultimodalContextManager
+    except Exception:  # pragma: no cover
+        logger.warning("未能给 MultimodalContextManager 打补丁", exc_info=True)
+        return
+
+    original = MultimodalContextManager.add_assistant_message
+    if getattr(original, "_zhishi_patched", False):
+        return
+
+    def add_assistant_message(self, message: str, name: str | None = None):
+        self.messages.append(
+            {"role": "assistant", "content": message}
+            if name is None
+            else {"role": "assistant", "content": message, "name": name}
+        )
+        self.limit_messages()
+        return self.messages
+
+    add_assistant_message._zhishi_patched = True  # type: ignore[attr-defined]
+    MultimodalContextManager.add_assistant_message = add_assistant_message
+
+
 _patch_tina_null_tool_calls()
+_patch_tina_multimodal_add_assistant()
 
 
 def create_llm(
