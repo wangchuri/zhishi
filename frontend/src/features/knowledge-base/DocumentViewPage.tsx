@@ -6,6 +6,7 @@ import { PageHeader } from "@/components/blocks/PageHeader"
 import { Button } from "@/components/ui/button"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { DocumentContentViewer } from "@/components/blocks/DocumentContentViewer"
+import { cn } from "@/lib/utils"
 import { kbApi } from "@/lib/api"
 import { toast } from "sonner"
 import type { DocumentContentMeta } from "@/types"
@@ -99,7 +100,7 @@ export function DocumentViewPage() {
         ) : error ? (
           <div className="p-8 text-body text-danger">{error}</div>
         ) : (
-          <div className={previewMode === "pdf" ? "p-2" : "p-4 sm:p-8"}>
+          <div className={cn("overflow-x-auto scroll-thin", previewMode === "pdf" ? "p-2" : "p-4 sm:p-8")}>
             <DocumentContentViewer
               docId={docId}
               previewMode={previewMode}

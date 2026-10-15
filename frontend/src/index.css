@@ -533,6 +533,12 @@
   overflow-y: hidden;
   padding-bottom: 2px;
 }
+
+/* 注意：行内公式（$…$）**不要**单独做滚动容器。
+   给行内元素设 overflow 会把它变成 inline-block，而 inline-block 带 overflow 时
+   基线取「底边」而不是「文字基线」→ 公式在行文中的垂直对齐立刻错位。
+   所以超宽行内公式统一交给外层容器横向滚动（.prose 本身 + 文档页的内容区），
+   只在真的放不下时才出现滚动条。 */
 .tip-deck.is-expanded {
   width: 100%;
   height: auto;

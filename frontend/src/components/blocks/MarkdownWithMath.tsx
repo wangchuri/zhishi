@@ -168,7 +168,7 @@ export function MarkdownWithMath({
   }
 
   return (
-    <div className={cn(proseClass, className)}>
+    <div className={cn(proseClass, "overflow-x-auto scroll-thin", className)}>
       <ReactMarkdown
         remarkPlugins={[remarkGfm, remarkMath]}
         rehypePlugins={[rehypeKatex]}
