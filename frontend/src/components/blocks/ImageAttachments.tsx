@@ -1,10 +1,11 @@
-import { useRef, useState } from "react"
+import { useState } from "react"
 import { Camera, ImagePlus, X } from "lucide-react"
 import { uploadUrl } from "@/lib/api"
 import { cn } from "@/lib/utils"
 import type { AttachmentItem } from "@/hooks/useImageAttachments"
 
-/** 「+ 图片」按钮（内含隐藏 file input）。 */
+/** 「+ 图片」按钮：<label> 包 input，靠原生 label 行为触发，不依赖 JS click
+ *  （部分手机浏览器对 display:none 的 file input 不弹选择器）。 */
 export function AttachImageButton({
   onFiles,
   disabled,
@@ -14,39 +15,36 @@ export function AttachImageButton({
   disabled?: boolean
   className?: string
 }) {
-  const inputRef = useRef<HTMLInputElement>(null)
   return (
-    <>
+    <label
+      role="button"
+      aria-label="添加图片"
+      title="添加图片（也可直接粘贴截图）"
+      className={cn(
+        "shrink-0 inline-flex items-center justify-center w-9 h-9 rounded-full text-ink-soft transition-colors cursor-pointer",
+        "hover:bg-sea-subtle hover:text-sea",
+        disabled && "opacity-50 pointer-events-none",
+        className,
+      )}
+    >
+      <ImagePlus className="w-[18px] h-[18px]" strokeWidth={2} />
       <input
-        ref={inputRef}
         type="file"
         accept="image/*"
         multiple
-        hidden
+        disabled={disabled}
+        className="sr-only"
         onChange={(e) => {
           if (e.target.files?.length) onFiles(e.target.files)
           e.target.value = ""
         }}
       />
-      <button
-        type="button"
-        onClick={() => inputRef.current?.click()}
-        disabled={disabled}
-        aria-label="添加图片"
-        title="添加图片（也可直接粘贴截图）"
-        className={cn(
-          "shrink-0 inline-flex items-center justify-center w-9 h-9 rounded-full text-ink-soft transition-colors",
-          "hover:bg-sea-subtle hover:text-sea disabled:opacity-50 disabled:pointer-events-none",
-          className,
-        )}
-      >
-        <ImagePlus className="w-[18px] h-[18px]" strokeWidth={2} />
-      </button>
-    </>
+    </label>
   )
 }
 
 /** 「拍照」按钮：手机上直接调起后置相机（capture 让系统跳过选择器）。
+ *  同样用 <label> 包 input，避免 JS click 在部分手机浏览器上不弹。
  *  桌面浏览器会忽略 capture，退化成普通文件选择，无副作用。 */
 export function CaptureImageButton({
   onFiles,
@@ -57,35 +55,31 @@ export function CaptureImageButton({
   disabled?: boolean
   className?: string
 }) {
-  const inputRef = useRef<HTMLInputElement>(null)
   return (
-    <>
+    <label
+      role="button"
+      aria-label="拍照"
+      title="拍照上传"
+      className={cn(
+        "shrink-0 inline-flex items-center justify-center w-9 h-9 rounded-full text-ink-soft transition-colors cursor-pointer",
+        "hover:bg-sea-subtle hover:text-sea",
+        disabled && "opacity-50 pointer-events-none",
+        className,
+      )}
+    >
+      <Camera className="w-[18px] h-[18px]" strokeWidth={2} />
       <input
-        ref={inputRef}
         type="file"
         accept="image/*"
         capture="environment"
-        hidden
+        disabled={disabled}
+        className="sr-only"
         onChange={(e) => {
           if (e.target.files?.length) onFiles(e.target.files)
           e.target.value = ""
         }}
       />
-      <button
-        type="button"
-        onClick={() => inputRef.current?.click()}
-        disabled={disabled}
-        aria-label="拍照"
-        title="拍照上传"
-        className={cn(
-          "shrink-0 inline-flex items-center justify-center w-9 h-9 rounded-full text-ink-soft transition-colors",
-          "hover:bg-sea-subtle hover:text-sea disabled:opacity-50 disabled:pointer-events-none",
-          className,
-        )}
-      >
-        <Camera className="w-[18px] h-[18px]" strokeWidth={2} />
-      </button>
-    </>
+    </label>
   )
 }
 
