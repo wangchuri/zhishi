@@ -45,6 +45,31 @@
     --info: #2A3A47;
     --info-soft: rgba(42, 58, 71, 0.08);
 
+    /* ============ 抬升面（卡片 / 输入框等浮在纸上的一层） ============ */
+    --surface: #FAF8F3;
+    --surface-soft: #E8E2D4;
+
+    /* ============ 透明度通道 ============
+       颜色值本身仍是上面的 hex（供 index.css 直接使用）；
+       这些 r g b 三元组让 Tailwind 的 rgb(var(--x-rgb) / <alpha-value>) 生效，
+       从而 /xx 透明度修饰符可用（此前形同虚设）。 */
+    --ink-rgb: 20 33 43;
+    --ink-soft-rgb: 42 58 71;
+    --ink-disabled-rgb: 140 147 152;
+    --sea-rgb: 31 92 90;
+    --sea-bright-rgb: 47 138 134;
+    --ember-rgb: 196 92 38;
+    --mist-rgb: 197 208 200;
+    --success-rgb: 44 122 90;
+    --warning-rgb: 196 92 38;
+    --danger-rgb: 160 53 43;
+    --info-rgb: 42 58 71;
+    --paper-rgb: 243 239 230;
+    --paper-2-rgb: 232 226 212;
+    --paper-deep-rgb: 221 213 197;
+    --surface-rgb: 250 248 243;
+    --surface-soft-rgb: 232 226 212;
+
     /* ============ 兼容 shadcn 既有令牌 ============ */
     --background: var(--paper);
     --foreground: var(--ink);

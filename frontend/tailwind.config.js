@@ -6,100 +6,116 @@ module.exports = {
     extend: {
       colors: {
         // 纸本设定集色彩系统
+        // 约定：颜色一律走 rgb(var(--x-rgb) / <alpha-value>)，这样 /xx 透明度修饰符才生效；
+        // 纯 rgba 令牌（-soft/-subtle/line）保持原样，不参与透明度修饰。
         // 墨色系 - 文字与主操作
         ink: {
-          DEFAULT: "var(--ink)",
-          soft: "var(--ink-soft)",
-          disabled: "var(--ink-disabled)",
+          DEFAULT: "rgb(var(--ink-rgb) / <alpha-value>)",
+          soft: "rgb(var(--ink-soft-rgb) / <alpha-value>)",
+          disabled: "rgb(var(--ink-disabled-rgb) / <alpha-value>)",
+          // 语义别名：primary/secondary/tertiary 与 DEFAULT/soft/disabled 同色，统一层级写法
+          primary: "rgb(var(--ink-rgb) / <alpha-value>)",
+          secondary: "rgb(var(--ink-soft-rgb) / <alpha-value>)",
+          tertiary: "rgb(var(--ink-disabled-rgb) / <alpha-value>)",
         },
         // 纸色系 - 背景
         paper: {
-          DEFAULT: "var(--paper)",
-          2: "var(--paper-2)",
-          deep: "var(--paper-deep)",
+          DEFAULT: "rgb(var(--paper-rgb) / <alpha-value>)",
+          2: "rgb(var(--paper-2-rgb) / <alpha-value>)",
+          deep: "rgb(var(--paper-deep-rgb) / <alpha-value>)",
         },
-        // 青绿 - 品牌强调色（替换原紫色）
+        // 抬升面 - 卡片/输入框等「浮在纸上」的一层
+        surface: {
+          DEFAULT: "rgb(var(--surface-rgb) / <alpha-value>)",
+          soft: "rgb(var(--surface-soft-rgb) / <alpha-value>)",
+        },
+        // 青绿 - 品牌强调色
         sea: {
-          DEFAULT: "var(--sea)",
-          bright: "var(--sea-bright)",
+          DEFAULT: "rgb(var(--sea-rgb) / <alpha-value>)",
+          bright: "rgb(var(--sea-bright-rgb) / <alpha-value>)",
           subtle: "var(--sea-subtle)",
         },
         // 赭石 - 点缀色
         ember: {
-          DEFAULT: "var(--ember)",
+          DEFAULT: "rgb(var(--ember-rgb) / <alpha-value>)",
           subtle: "var(--ember-subtle)",
         },
         // 柔和分隔
-        mist: "var(--mist)",
-        // 描边
+        mist: "rgb(var(--mist-rgb) / <alpha-value>)",
+        // 描边（rgba 令牌：不参与 /xx 修饰）
         line: {
           DEFAULT: "var(--line)",
           light: "var(--line-light)",
+          soft: "var(--line-light)",
         },
         // 语义色
         success: {
-          DEFAULT: "var(--success)",
+          DEFAULT: "rgb(var(--success-rgb) / <alpha-value>)",
           soft: "var(--success-soft)",
-          foreground: "var(--ink)",
+          foreground: "rgb(var(--ink-rgb) / <alpha-value>)",
         },
         warning: {
-          DEFAULT: "var(--warning)",
+          DEFAULT: "rgb(var(--warning-rgb) / <alpha-value>)",
           soft: "var(--warning-soft)",
-          foreground: "var(--ink)",
+          foreground: "rgb(var(--ink-rgb) / <alpha-value>)",
         },
         danger: {
-          DEFAULT: "var(--danger)",
+          DEFAULT: "rgb(var(--danger-rgb) / <alpha-value>)",
           soft: "var(--danger-soft)",
-          foreground: "var(--paper)",
+          foreground: "rgb(var(--paper-rgb) / <alpha-value>)",
         },
         info: {
-          DEFAULT: "var(--info)",
+          DEFAULT: "rgb(var(--info-rgb) / <alpha-value>)",
           soft: "var(--info-soft)",
-          foreground: "var(--ink)",
+          foreground: "rgb(var(--ink-rgb) / <alpha-value>)",
         },
         // 兼容 shadcn 既有令牌
         border: "var(--line)",
         input: "var(--line)",
-        ring: "var(--sea)",
-        background: "var(--paper)",
-        foreground: "var(--ink)",
+        ring: "rgb(var(--sea-rgb) / <alpha-value>)",
+        background: "rgb(var(--paper-rgb) / <alpha-value>)",
+        foreground: "rgb(var(--ink-rgb) / <alpha-value>)",
+        // 少数页面用 bg-bg 作页面底色
+        bg: "rgb(var(--paper-rgb) / <alpha-value>)",
         primary: {
-          DEFAULT: "var(--sea)",
-          foreground: "var(--paper)",
+          DEFAULT: "rgb(var(--sea-rgb) / <alpha-value>)",
+          foreground: "rgb(var(--paper-rgb) / <alpha-value>)",
+          soft: "var(--sea-subtle)",
         },
         secondary: {
-          DEFAULT: "var(--paper-2)",
-          foreground: "var(--ink)",
+          DEFAULT: "rgb(var(--paper-2-rgb) / <alpha-value>)",
+          foreground: "rgb(var(--ink-rgb) / <alpha-value>)",
         },
         muted: {
-          DEFAULT: "var(--paper-2)",
-          foreground: "var(--ink-soft)",
+          DEFAULT: "rgb(var(--paper-2-rgb) / <alpha-value>)",
+          foreground: "rgb(var(--ink-soft-rgb) / <alpha-value>)",
         },
         accent: {
           DEFAULT: "var(--sea-subtle)",
-          foreground: "var(--sea)",
+          foreground: "rgb(var(--sea-rgb) / <alpha-value>)",
         },
         destructive: {
-          DEFAULT: "var(--danger)",
-          foreground: "var(--paper)",
+          DEFAULT: "rgb(var(--danger-rgb) / <alpha-value>)",
+          foreground: "rgb(var(--paper-rgb) / <alpha-value>)",
         },
         card: {
-          DEFAULT: "var(--paper-2)",
-          foreground: "var(--ink)",
+          DEFAULT: "rgb(var(--surface-rgb) / <alpha-value>)",
+          elevated: "rgb(var(--surface-rgb) / <alpha-value>)",
+          foreground: "rgb(var(--ink-rgb) / <alpha-value>)",
         },
         popover: {
-          DEFAULT: "var(--paper)",
-          foreground: "var(--ink)",
+          DEFAULT: "rgb(var(--paper-rgb) / <alpha-value>)",
+          foreground: "rgb(var(--ink-rgb) / <alpha-value>)",
         },
         sidebar: {
-          DEFAULT: "var(--paper)",
-          foreground: "var(--ink-soft)",
-          primary: "var(--sea)",
-          "primary-foreground": "var(--paper)",
+          DEFAULT: "rgb(var(--paper-rgb) / <alpha-value>)",
+          foreground: "rgb(var(--ink-soft-rgb) / <alpha-value>)",
+          primary: "rgb(var(--sea-rgb) / <alpha-value>)",
+          "primary-foreground": "rgb(var(--paper-rgb) / <alpha-value>)",
           accent: "var(--sea-subtle)",
-          "accent-foreground": "var(--sea)",
+          "accent-foreground": "rgb(var(--sea-rgb) / <alpha-value>)",
           border: "var(--line-light)",
-          ring: "var(--sea)",
+          ring: "rgb(var(--sea-rgb) / <alpha-value>)",
         },
       },
       borderRadius: {
@@ -109,6 +125,8 @@ module.exports = {
         lg: "12px",
         xl: "16px",
         "2xl": "16px",
+        // 与 2xl 合一，收敛圆角档位（原 3xl 走 Tailwind 默认 24px，过大）
+        "3xl": "16px",
         full: "9999px",
       },
       boxShadow: {
@@ -122,7 +140,12 @@ module.exports = {
         "display-xl": ["48px", { lineHeight: "1.1", fontWeight: "700" }],
         "display-l": ["32px", { lineHeight: "1.15", fontWeight: "700" }],
         "display-m": ["24px", { lineHeight: "1.2", fontWeight: "700" }],
+        // 页头标题：单一真实档位（此前 text-page-title 未定义 → 页头其实是 15px 正文）
+        "page-title": ["22px", { lineHeight: "1.3", fontWeight: "700" }],
         "title-s": ["17px", { lineHeight: "1.3", fontWeight: "500" }],
+        // 卡片标题/区块标题：只加重不加粗放大，省纵向空间
+        "card-title": ["15px", { lineHeight: "1.4", fontWeight: "600" }],
+        "section-title": ["13px", { lineHeight: "1.4", fontWeight: "600" }],
         body: ["15px", { lineHeight: "1.6", fontWeight: "400" }],
         caption: ["13px", { lineHeight: "1.4", fontWeight: "400" }],
         small: ["12px", { lineHeight: "1.3", fontWeight: "400" }],
