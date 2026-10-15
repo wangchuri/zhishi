@@ -487,6 +487,8 @@ export interface TutorMessage {
   role: "user" | "assistant" | string
   content: string
   reasoning_content?: string
+  /** 用户消息附带的图片（上传 id） */
+  attachments?: string[]
   created_at?: string
 }
 
@@ -608,6 +610,8 @@ export interface ChatMessage {
   crimson?: boolean
   /** /tina? 演出：思考默认展开，正文预换行 */
   glitch?: boolean
+  /** 用户消息附带的图片（上传 id） */
+  attachments?: string[]
   payload?: {
     widgets?: Array<{
       question: {

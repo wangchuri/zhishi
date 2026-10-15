@@ -566,12 +566,21 @@ class QuizService:
 
     # ---- 判题 ----
 
-    async def _grade_by_ai(self, question: GlobalQuestion, user_answer: Optional[str], qtype: str) -> tuple[str, str]:
-        """AI 判题（走 tina 流式，消费全部 chunk）。"""
-        from ..core.llm import create_agent
+    async def _grade_by_ai(
+        self,
+        question: GlobalQuestion,
+        user_answer: Optional[str],
+        qtype: str,
+        *,
+        image_paths: Optional[list[str]] = None,
+        file_ids: Optional[list[str]] = None,
+    ) -> tuple[str, str]:
+        """AI 判题（走 tina 流式，消费全部 chunk）。可附图片（手写解答照片）。"""
+        from ..core.llm import create_agent, predict_stream
         from ..core.prompts import render_prompt
 
-        if not user_answer or not user_answer.strip():
+        multimodal = bool(image_paths)
+        if (not user_answer or not user_answer.strip()) and not multimodal:
             return "wrong", "未作答"
         try:
             type_label = {
@@ -585,16 +594,25 @@ class QuizService:
                 parts = _parse_multi_blank_values(question.answer)
                 correct_display = "；".join(parts)
 
-            agent = create_agent(system_prompt=render_prompt("quiz/grade_system.md.j2"))
+            agent = create_agent(
+                system_prompt=render_prompt("quiz/grade_system.md.j2"),
+                multimodal=multimodal,
+            )
             user_prompt = render_prompt(
                 "quiz/grade_prompt.md.j2",
                 type_label=type_label,
                 stem=question.stem or "",
                 correct_display=correct_display,
-                user_answer=user_answer,
+                user_answer=(user_answer or "").strip() or "（见附上的图片）",
             )
             result = ""
-            async for chunk in agent.apredict(user_prompt):
+            async for chunk in predict_stream(
+                agent,
+                user_prompt,
+                multimodal=multimodal,
+                file_ids=file_ids,
+                image_paths=image_paths,
+            ):
                 content = chunk.get("content", "") if isinstance(chunk, dict) else str(chunk)
                 result += content
             return _parse_ai_grade_response(result)
@@ -608,6 +626,8 @@ class QuizService:
         status_hint: Optional[str],
         *,
         request_ai_grade: bool = False,
+        image_paths: Optional[list[str]] = None,
+        file_ids: Optional[list[str]] = None,
     ) -> tuple[str, Optional[str], Optional[str], Optional[str]]:
         """返回 (status, grade_method, string_match_status, ai_reason)。"""
         if status_hint == "unknown":
@@ -618,12 +638,24 @@ class QuizService:
         if qtype == "fill_blank":
             string_status = _grade_fill_blank_string(question, user_answer)
             if request_ai_grade:
-                ai_status, ai_reason = await self._grade_by_ai(question, user_answer, qtype="fill_blank")
+                ai_status, ai_reason = await self._grade_by_ai(
+                    question,
+                    user_answer,
+                    qtype="fill_blank",
+                    image_paths=image_paths,
+                    file_ids=file_ids,
+                )
                 return ai_status, "ai", string_status, ai_reason or None
             return string_status, "string", string_status, None
 
         if qtype in ("short_answer", "application", "custom"):
-            ai_status, ai_reason = await self._grade_by_ai(question, user_answer, qtype=qtype)
+            ai_status, ai_reason = await self._grade_by_ai(
+                question,
+                user_answer,
+                qtype=qtype,
+                image_paths=image_paths,
+                file_ids=file_ids,
+            )
             return ai_status, "ai", None, ai_reason or None
 
         # single_choice / 其他：字符串匹配
@@ -699,17 +731,24 @@ class QuizService:
         status_hint: Optional[str],
         time_spent_seconds: Optional[int],
         request_ai_grade: Optional[bool],
+        attachments: Optional[list[str]] = None,
     ) -> dict:
         """提交答题并判题。"""
         question = db.get(GlobalQuestion, question_id)
         if not question:
             raise NotFoundError("题目不存在")
 
+        from ..core.llm import prepare_images
+
+        image_paths, file_ids = await prepare_images(attachments)
+
         status, grade_method, string_match_status, ai_reason = await self.grade_answer(
             question,
             user_answer,
             status_hint,
             request_ai_grade=bool(request_ai_grade),
+            image_paths=image_paths,
+            file_ids=file_ids,
         )
 
         # 答案/解析展示（错题给正确答案 + citation）
@@ -823,17 +862,24 @@ class QuizService:
         status_hint: Optional[str],
         document_id: Optional[str] = None,
         request_ai_grade: Optional[bool] = None,
+        attachments: Optional[list[str]] = None,
     ) -> dict:
         """对话里单题判分，不依赖刷题会话。"""
         question = db.get(GlobalQuestion, question_id)
         if not question:
             raise NotFoundError("题目不存在")
 
+        from ..core.llm import prepare_images
+
+        image_paths, file_ids = await prepare_images(attachments)
+
         status, grade_method, string_match_status, ai_reason = await self.grade_answer(
             question,
             user_answer,
             status_hint,
             request_ai_grade=bool(request_ai_grade),
+            image_paths=image_paths,
+            file_ids=file_ids,
         )
 
         if not document_id:

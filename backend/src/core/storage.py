@@ -26,6 +26,7 @@ from pathlib import Path
 from .config import config
 
 _PAGE_HEAD_RE = re.compile(r"^#{1,3}\s*第\s*(\d+)\s*页\b")
+_UPLOAD_NAME_RE = re.compile(r"^[A-Za-z0-9_-]+\.[A-Za-z0-9]+$")
 
 
 def _with_page_heading(num: int, text: str) -> str:
@@ -164,6 +165,32 @@ class StorageService:
             return path.read_bytes()
         return None
 
+    # ---- 对话/刷题上传的图片（不绑定文档）----
+
+    def uploads_dir(self) -> Path:
+        d = self.base / "uploads"
+        d.mkdir(parents=True, exist_ok=True)
+        return d
+
+    def upload_path(self, file_name: str) -> Path:
+        return self.uploads_dir() / file_name
+
+    def save_upload(self, file_name: str, content: bytes) -> Path:
+        path = self.upload_path(file_name)
+        path.write_bytes(content)
+        return path
+
+    def read_upload(self, file_name: str) -> bytes | None:
+        path = self.upload_path(file_name)
+        return path.read_bytes() if path.is_file() else None
+
+    def resolve_upload(self, file_name: str) -> Path | None:
+        """把上传 id 解析为本地路径（防目录穿越）；不存在返回 None。"""
+        if not _UPLOAD_NAME_RE.match(file_name or ""):
+            return None
+        path = self.upload_path(file_name)
+        return path if path.is_file() else None
+
     # ---- 缩略图 ----
 
     def thumbnail_dir(self) -> Path:
@@ -201,3 +228,13 @@ class StorageService:
 
 # 模块级单例
 storage = StorageService()
+
+
+def upload_paths(names: list[str] | None) -> list[str]:
+    """把上传 id 列表解析为本地绝对路径列表（非法/缺失的跳过）。"""
+    paths: list[str] = []
+    for name in names or []:
+        path = storage.resolve_upload(name)
+        if path is not None:
+            paths.append(str(path))
+    return paths

@@ -48,6 +48,10 @@ async def send_message(
 ):
     session = tutor_service.get_session(db, session_id)
 
+    from ..core.llm import prepare_images, predict_stream
+
+    image_paths, file_ids = await prepare_images(body.attachments)
+
     if body.stream:
         agent = tutor_service.ensure_agent(db, session)
         tutor_service.touch_session(db, session)
@@ -59,7 +63,13 @@ async def send_message(
 
         async def gen():
             try:
-                async for chunk in agent.apredict(body.content):
+                async for chunk in predict_stream(
+                    agent,
+                    body.content,
+                    multimodal=True,
+                    file_ids=file_ids,
+                    image_paths=image_paths,
+                ):
                     c, r = visible_assistant_delta(chunk)
                     if c:
                         yield _json_line({"content": c})
@@ -72,5 +82,7 @@ async def send_message(
 
         return StreamingResponse(gen(), media_type="text/event-stream")
 
-    content, reasoning = await tutor_service.send_message(db, session, body.content)
+    content, reasoning = await tutor_service.send_message(
+        db, session, body.content, body.attachments
+    )
     return {"role": "assistant", "content": content, "reasoning_content": reasoning}

@@ -265,6 +265,36 @@ export async function readSseStream(
   return fullContent
 }
 
+// ─── Uploads（对话/刷题传图）──────────────────────────────
+
+/** 上传图片的可访问 URL（带后端 base，dev 下也正确）。 */
+export function uploadUrl(id: string): string {
+  return `${getApiBase()}/api/v1/uploads/${encodeURIComponent(id)}`
+}
+
+export const uploadsApi = {
+  async uploadImage(file: File): Promise<{ id: string; url: string; filename?: string }> {
+    const form = new FormData()
+    form.append("file", file)
+    const res = await fetch(`${getApiBase()}/api/v1/uploads/image`, {
+      method: "POST",
+      credentials: "include",
+      body: form,
+    })
+    if (!res.ok) {
+      let detail = "图片上传失败"
+      try {
+        const body = (await res.json()) as { detail?: string }
+        if (body?.detail) detail = body.detail
+      } catch {
+        /* ignore */
+      }
+      throw new Error(detail)
+    }
+    return (await res.json()) as { id: string; url: string; filename?: string }
+  },
+}
+
 // ─── Chat ──────────────────────────────────────────────
 
 export interface ChatStreamOptions {
@@ -274,6 +304,7 @@ export interface ChatStreamOptions {
   crisis?: boolean
   remaining_pages?: string[]
   kickoff?: boolean
+  attachments?: string[]
   onChunk?: (data: Record<string, unknown>) => void
 }
 
@@ -283,12 +314,13 @@ export const chatApi = {
     session_id?: string
     stream: boolean
     collection_id?: string
+    attachments?: string[]
   }) {
     return request<any>("POST", "/api/v1/chat", data)
   },
 
   async sendStream(options: ChatStreamOptions): Promise<string> {
-    const { content, session_id, collection_id, crisis, remaining_pages, kickoff, onChunk } = options
+    const { content, session_id, collection_id, crisis, remaining_pages, kickoff, attachments, onChunk } = options
     const res = await fetch(`${getApiBase()}/api/v1/chat`, {
       method: "POST",
       credentials: "include",
@@ -302,6 +334,7 @@ export const chatApi = {
         crisis: Boolean(crisis),
         remaining_pages: remaining_pages ?? undefined,
         kickoff: Boolean(kickoff),
+        attachments: attachments ?? undefined,
         stream: true,
       }),
     })
@@ -819,6 +852,7 @@ export const quizApi = {
       status?: "unknown"
       time_spent_seconds?: number
       request_ai_grade?: boolean
+      attachments?: string[]
     }
   ) {
     return request<any>("POST", `/api/v1/quiz/sessions/${sessionId}/answers`, data)
@@ -831,6 +865,7 @@ export const quizApi = {
     document_id?: string
     chat_message_id?: string
     request_ai_grade?: boolean
+    attachments?: string[]
   }) {
     return request<any>("POST", "/api/v1/quiz/grade", data)
   },
@@ -855,7 +890,7 @@ export const tutorApi = {
     return request<any>("GET", `/api/v1/tutor/sessions/${sessionId}`)
   },
 
-  sendMessage(sessionId: string, content: string, stream = false) {
+  sendMessage(sessionId: string, content: string, stream = false, attachments?: string[]) {
     if (stream) {
       return fetch(`${getApiBase()}/api/v1/tutor/sessions/${sessionId}/messages`, {
         method: "POST",
@@ -863,18 +898,23 @@ export const tutorApi = {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ content, stream: true }),
+        body: JSON.stringify({ content, stream: true, attachments: attachments ?? [] }),
       })
     }
-    return request<any>("POST", `/api/v1/tutor/sessions/${sessionId}/messages`, { content, stream: false })
+    return request<any>("POST", `/api/v1/tutor/sessions/${sessionId}/messages`, {
+      content,
+      stream: false,
+      attachments: attachments ?? [],
+    })
   },
 
   async sendMessageStream(
     sessionId: string,
     content: string,
-    onChunk?: (data: Record<string, unknown>) => void
+    onChunk?: (data: Record<string, unknown>) => void,
+    attachments?: string[]
   ): Promise<string> {
-    const res = await tutorApi.sendMessage(sessionId, content, true)
+    const res = await tutorApi.sendMessage(sessionId, content, true, attachments)
     if (!(res instanceof Response)) throw new Error("流式请求失败")
     if (!res.ok) {
       const err = await res.text()

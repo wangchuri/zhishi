@@ -18,6 +18,11 @@ import { PageHeader } from "@/components/blocks/PageHeader"
 import { KbDocBrowser } from "@/components/blocks/KbDocBrowser"
 import { DocumentPipelineBadge } from "@/components/blocks/DocumentPipelineBadge"
 import { Button } from "@/components/ui/button"
+import {
+  AttachImageButton,
+  AttachmentThumbnails,
+} from "@/components/blocks/ImageAttachments"
+import { useImageAttachments } from "@/hooks/useImageAttachments"
 import { EmptyState } from "@/components/ui/empty-state"
 import { Badge } from "@/components/ui/badge"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
@@ -125,6 +130,7 @@ export function QuizPage() {
   const [customAnswers, setCustomAnswers] = useState<Record<string, string>>({})
   const [submitting, setSubmitting] = useState(false)
   const [lastResult, setLastResult] = useState<QuizAnswerResult | null>(null)
+  const attachments = useImageAttachments()
   const [reviewItems, setReviewItems] = useState<QuizReviewItem[]>([])
   const [resultsSummary, setResultsSummary] = useState<{
     correct: number
@@ -506,6 +512,7 @@ export function QuizPage() {
     setLastResult(null)
     setReviewItems([])
     setQuestionStartTime(Date.now())
+    attachments.clear()
   }
 
   const handleGroupDone = async (summary: MaterialGroupSummary) => {
@@ -532,13 +539,19 @@ export function QuizPage() {
     setBlankAnswers([])
     setLastResult(null)
     setQuestionStartTime(Date.now())
+    attachments.clear()
   }
 
   const submitAnswerCore = async (opts?: { requestAiGrade?: boolean }) => {
     if (!session || !currentQuestion || submitting) return
     const qtype = currentQuestion.question_type || "single_choice"
     const payload = buildUserAnswerPayload(qtype, selectedOption, textAnswer, blankAnswers, customAnswers)
-    if (!opts?.requestAiGrade && !canSubmitAnswer(qtype, selectedOption, textAnswer, blankAnswers, customAnswers)) {
+    const attachIds = attachments.ids
+    const hasAnswer = canSubmitAnswer(qtype, selectedOption, textAnswer, blankAnswers, customAnswers)
+    if (!opts?.requestAiGrade && !hasAnswer && attachIds.length === 0) {
+      return
+    }
+    if (opts?.requestAiGrade && !hasAnswer && attachIds.length === 0) {
       return
     }
 
@@ -551,6 +564,7 @@ export function QuizPage() {
         user_answer: payload,
         time_spent_seconds: timeSpent,
         request_ai_grade: opts?.requestAiGrade,
+        attachments: attachIds.length ? attachIds : undefined,
       })
       const result = res as unknown as QuizAnswerResult
       notifyCompletedTasks(result)
@@ -987,6 +1001,10 @@ export function QuizPage() {
 
             {/* 操作栏常驻：提交/下一题 不随内容滚出视口 */}
             <div className="shrink-0 border-t border-line-soft px-6 py-4 space-y-3">
+              {attachments.items.length > 0 && (
+                <AttachmentThumbnails items={attachments.items} onRemove={attachments.remove} />
+              )}
+              {attachments.error && <div className="text-small text-danger">{attachments.error}</div>}
               {currentQuestion.last_time_spent_seconds != null &&
                 currentQuestion.last_time_spent_seconds > 0 && (
                   <p className="text-caption text-ink-tertiary">
@@ -995,19 +1013,24 @@ export function QuizPage() {
                 )}
               {!lastResult ? (
                 <div className="flex flex-wrap items-center gap-3">
+                  <AttachImageButton
+                    onFiles={attachments.addFiles}
+                    disabled={submitting || attachments.uploading}
+                  />
                   <Button
                     variant="primary"
                     size="md"
                     onClick={handleSubmitAnswer}
                     disabled={
                       submitting ||
-                      !canSubmitAnswer(
+                      (!canSubmitAnswer(
                         currentQuestion.question_type,
                         selectedOption,
                         textAnswer,
                         blankAnswers,
                         customAnswers
-                      )
+                      ) &&
+                        attachments.ids.length === 0)
                     }
                   >
                     {getSubmitButtonLabel(submitting, currentQuestion.question_type)}

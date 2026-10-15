@@ -4,6 +4,12 @@ import { tutorApi } from "@/lib/api"
 import type { TutorMessage, TutorSession } from "@/types"
 import { Button } from "@/components/ui/button"
 import {
+  AttachImageButton,
+  AttachmentThumbnails,
+  MessageImages,
+} from "@/components/blocks/ImageAttachments"
+import { useImageAttachments } from "@/hooks/useImageAttachments"
+import {
   MarkdownWithMath,
   markdownProseClass,
   markdownProseInvertClass,
@@ -86,6 +92,7 @@ export const TutorPanel = forwardRef<TutorPanelHandle, TutorPanelProps>(function
   const [session, setSession] = useState<TutorSession | null>(null)
   const [messages, setMessages] = useState<TutorMessage[]>([])
   const [input, setInput] = useState("")
+  const attachments = useImageAttachments()
   const [loading, setLoading] = useState(true)
   const [sending, setSending] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -153,15 +160,20 @@ export const TutorPanel = forwardRef<TutorPanelHandle, TutorPanelProps>(function
     }
   }, [questionId, quizSessionId])
 
-  const sendText = useCallback(async (text: string) => {
+  const sendText = useCallback(async (text: string, attachIds: string[] = []) => {
     const trimmed = text.trim()
     const activeSession = sessionRef.current
-    if (!trimmed || !activeSession || sendingRef.current) return
+    if ((!trimmed && attachIds.length === 0) || !activeSession || sendingRef.current) return
 
     sendingRef.current = true
     setSending(true)
 
-    const userMsg: TutorMessage = { role: "user", content: trimmed, created_at: new Date().toISOString() }
+    const userMsg: TutorMessage = {
+      role: "user",
+      content: trimmed,
+      attachments: attachIds.length ? attachIds : undefined,
+      created_at: new Date().toISOString(),
+    }
     setMessages((prev) => [...prev, userMsg])
     setInput("")
 
@@ -192,7 +204,7 @@ export const TutorPanel = forwardRef<TutorPanelHandle, TutorPanelProps>(function
             return next
           })
         }
-      })
+      }, attachIds)
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "发送失败"
       setMessages((prev) => {
@@ -238,7 +250,11 @@ export const TutorPanel = forwardRef<TutorPanelHandle, TutorPanelProps>(function
   }), [loading, sendText])
 
   const handleSend = () => {
-    void sendText(input)
+    if (sendingRef.current) return
+    const ids = attachments.ids
+    if (!input.trim() && ids.length === 0) return
+    attachments.clear()
+    void sendText(input, ids)
   }
 
   return (
@@ -306,6 +322,9 @@ export const TutorPanel = forwardRef<TutorPanelHandle, TutorPanelProps>(function
                     : "bg-surface border border-line-soft text-ink-primary rounded-tl-sm"
                 )}
               >
+                {m.role === "user" && m.attachments && m.attachments.length > 0 && (
+                  <MessageImages ids={m.attachments} className="mb-2" />
+                )}
                 <TutorMessageBody
                   content={m.content}
                   reasoningContent={m.reasoning_content}
@@ -319,18 +338,34 @@ export const TutorPanel = forwardRef<TutorPanelHandle, TutorPanelProps>(function
         <div ref={messagesEndRef} aria-hidden />
       </div>
 
-      <div className="p-3 border-t border-line-soft shrink-0">
+      <div className="p-3 border-t border-line-soft shrink-0 space-y-2">
+        {attachments.items.length > 0 && (
+          <AttachmentThumbnails items={attachments.items} onRemove={attachments.remove} />
+        )}
+        {attachments.error && <div className="text-small text-danger">{attachments.error}</div>}
         <div className="flex items-end gap-2">
+          <AttachImageButton
+            onFiles={attachments.addFiles}
+            disabled={loading || !!error || sending || attachments.uploading}
+            className="mb-0.5"
+          />
           <textarea
             value={input}
             onChange={(e) => setInput(e.target.value)}
+            onPaste={(e) => {
+              const files = e.clipboardData?.files
+              if (files?.length && Array.from(files).some((f) => f.type.startsWith("image/"))) {
+                e.preventDefault()
+                void attachments.addFiles(files)
+              }
+            }}
             onKeyDown={(e) => {
               if (e.key === "Enter" && !e.shiftKey) {
                 e.preventDefault()
                 handleSend()
               }
             }}
-            placeholder="输入你的疑问..."
+            placeholder="输入你的疑问...（可粘贴/上传图片）"
             rows={2}
             disabled={loading || !!error || sending}
             className="flex-1 resize-none rounded-md border border-line bg-surface px-3 py-2 text-body text-ink-primary placeholder:text-ink-tertiary focus:outline-none focus:border-primary/50"
@@ -339,7 +374,13 @@ export const TutorPanel = forwardRef<TutorPanelHandle, TutorPanelProps>(function
             variant="primary"
             size="icon"
             onClick={handleSend}
-            disabled={!input.trim() || loading || !!error || sending}
+            disabled={
+              (!input.trim() && attachments.ids.length === 0) ||
+              loading ||
+              !!error ||
+              sending ||
+              attachments.uploading
+            }
             aria-label="发送"
           >
             <Send className="w-4 h-4" strokeWidth={2} />

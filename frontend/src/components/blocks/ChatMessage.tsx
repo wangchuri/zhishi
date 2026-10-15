@@ -16,6 +16,7 @@ import {
 } from "@/features/onboarding/OnboardingCards"
 import { MarkdownWithMath, markdownProseDangerClass } from "@/components/blocks/MarkdownWithMath"
 import { ThinkingLabel } from "@/components/blocks/ThinkingLabel"
+import { MessageImages } from "@/components/blocks/ImageAttachments"
 import { hasTinaMoodMarkup, parseTinaBursts } from "@/features/chat/tinaBursts"
 import { cn } from "@/lib/utils"
 
@@ -246,9 +247,11 @@ export function ChatMessage({
   const blocks = !isUser && !glitch ? resolveChatBlocks(message) : null
 
   if (isUser) {
+    const images = message.attachments || []
     return (
       <div className={cn("animate-msg-in", className)}>
-        <div className="bg-sea text-paper rounded-[4px] px-4 py-2.5 text-body leading-relaxed">
+        <div className="bg-sea text-paper rounded-[4px] px-4 py-2.5 text-body leading-relaxed space-y-2">
+          {images.length > 0 && <MessageImages ids={images} />}
           {message.content}
         </div>
       </div>

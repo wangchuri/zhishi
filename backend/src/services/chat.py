@@ -374,6 +374,7 @@ class ChatService:
                 "reasoning_content": m.reasoning_content,
                 "citations": json.loads(m.citations) if m.citations else None,
                 "payload": payload,
+                "attachments": json.loads(m.attachments) if m.attachments else None,
                 "created_at": m.created_at.isoformat() if m.created_at else None,
             })
         return out
@@ -393,6 +394,7 @@ class ChatService:
         reasoning: Optional[str],
         citations: Optional[list],
         payload: Optional[dict] = None,
+        attachments: Optional[list[str]] = None,
     ) -> str:
         msg = ChatMessage(
             session_id=session_id,
@@ -401,6 +403,7 @@ class ChatService:
             reasoning_content=reasoning,
             citations=json.dumps(citations, ensure_ascii=False) if citations else None,
             payload=json.dumps(payload, ensure_ascii=False) if payload else None,
+            attachments=json.dumps(attachments, ensure_ascii=False) if attachments else None,
         )
         db.add(msg)
         session = db.get(ChatSession, session_id)
@@ -506,9 +509,11 @@ class ChatService:
         crisis: bool = False,
         remaining_pages: Optional[list[str]] = None,
         kickoff: bool = False,
+        attachments: Optional[list[str]] = None,
     ):
-        """发送消息，返回 (agent, session_id, 本轮用户原文, tools, mood_actions)。
+        """发送消息，返回 (agent, session_id, 本轮用户原文, tools, mood_actions, media)。
 
+        media：多模态调用参数（{multimodal, file_ids, image_paths}），纯文本时为空 dict。
         引导未完成时：同一套 Tina + 引导工具，不是问卷 Agent。
         """
         session = self.get_session(db, session_id)
@@ -519,6 +524,19 @@ class ChatService:
         onboarding_active = self._onboarding_active(db, session_id)
         vars_ = self._tina_prompt_vars(db, session_id)
         user_content = (content or "").strip()
+
+        # 图片附件：先落本地路径，再上传服务端换 file_id（失败则退回 base64）
+        from ..core.llm import prepare_images
+
+        image_paths, file_ids = await prepare_images(attachments)
+        multimodal = bool(image_paths)
+        if image_paths:
+            from pathlib import Path as _Path
+
+            saved_attachments: Optional[list[str]] = [_Path(p).name for p in image_paths]
+        else:
+            saved_attachments = None
+
         if kickoff and onboarding_active:
             user_content = ONBOARDING_KICKOFF_KNOWN if vars_["nickname"] else ONBOARDING_KICKOFF_NEW
         elif kickoff:
@@ -531,7 +549,9 @@ class ChatService:
         if not kickoff:
             if not user_content:
                 user_content = " "
-            self._save_message(db, session_id, "user", user_content, None, None)
+            self._save_message(
+                db, session_id, "user", user_content, None, None, attachments=saved_attachments
+            )
             if onboarding_active and ("先跳过资料" in user_content or "已经上传了资料" in user_content):
                 from ..services.profile import update_profile
 
@@ -550,6 +570,7 @@ class ChatService:
                 system_prompt=system_prompt,
                 max_tool_loop=8,
                 keyword_actions=mood.actions,
+                multimodal=multimodal,
             )
         else:
             tools = ChatTools(collection_id=collection_id)
@@ -565,6 +586,7 @@ class ChatService:
                 tools=tools.get_tools(),
                 system_prompt=system_prompt,
                 keyword_actions=mood.actions,
+                multimodal=multimodal,
             )
 
         history = self._load_messages(db, session_id)
@@ -578,7 +600,12 @@ class ChatService:
             session.title = (user_content.strip()[:40] or "对话")
             db.commit()
 
-        return agent, session_id, stamp_user_message(user_content), tools, mood
+        media = (
+            {"multimodal": True, "file_ids": file_ids, "image_paths": image_paths}
+            if multimodal
+            else {}
+        )
+        return agent, session_id, stamp_user_message(user_content), tools, mood, media
 
     def persist_assistant(
         self,
@@ -631,9 +658,11 @@ class ChatService:
             db.close()
 
     async def consume_and_save(
-        self, agent, session_id: str, user_content: str, chat_tools=None
+        self, agent, session_id: str, user_content: str, chat_tools=None, media: Optional[dict] = None
     ) -> tuple[str, Optional[str], list[dict]]:
         """消费 agent 流式输出，保存 assistant 消息，返回 (内容, reasoning, citations)。"""
+        from ..core.llm import predict_stream
+
         full = ""
         reasoning = ""
         citations: list[dict] = []
@@ -644,7 +673,7 @@ class ChatService:
         canvases: list[dict] = []
         blocks: list[dict] = []
         try:
-            async for chunk in agent.apredict(user_content):
+            async for chunk in predict_stream(agent, user_content, **(media or {})):
                 w, t, o, p, cv = drain_tool_ui(chat_tools)
                 _merge_tool_ui(widgets, tips, onboarding, plots, canvases, blocks, w, t, o, p, cv)
                 c, r = visible_assistant_delta(chunk)

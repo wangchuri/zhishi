@@ -11,7 +11,7 @@ import json
 import logging
 from typing import Optional
 
-from ..core.llm import create_agent, format_agent_error, visible_assistant_delta
+from ..core.llm import create_agent, format_agent_error, predict_stream, visible_assistant_delta
 from ..core.prompts import load_prompt, render_prompt
 from ..models import DocumentSegment, GlobalQuestion, QuestionProvenance, TutorSession
 
@@ -54,15 +54,23 @@ def build_tutor_agent(
         segment_title=segment.title if segment and getattr(segment, "title", None) else "相关原文",
         segment_text=segment_context,
     )
-    return create_agent(system_prompt=prompt)
+    return create_agent(system_prompt=prompt, multimodal=True)
 
 
-async def send_message(agent, content: str) -> tuple[str, Optional[str]]:
+async def send_message(
+    agent,
+    content: str,
+    *,
+    file_ids: Optional[list[str]] = None,
+    image_paths: Optional[list[str]] = None,
+) -> tuple[str, Optional[str]]:
     """发送消息，流式消费全部 chunk，返回 (内容, reasoning_content)。"""
     full = ""
     reasoning = ""
     try:
-        async for chunk in agent.apredict(content):
+        async for chunk in predict_stream(
+            agent, content, multimodal=True, file_ids=file_ids, image_paths=image_paths
+        ):
             c, r = visible_assistant_delta(chunk)
             if c:
                 full += c

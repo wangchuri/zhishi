@@ -11,6 +11,11 @@ import { useSearchParams, useNavigate } from "react-router-dom"
 import { AppShell } from "@/components/layout/AppShell"
 import { ChatCitationSidebar } from "@/components/blocks/ChatCitationSidebar"
 import { Button } from "@/components/ui/button"
+import {
+  AttachImageButton,
+  AttachmentThumbnails,
+} from "@/components/blocks/ImageAttachments"
+import { useImageAttachments } from "@/hooks/useImageAttachments"
 import { ChatMessage as ChatMessageBlock } from "@/components/blocks/ChatMessage"
 import { chatApi, kbApi, normalizeChatHistory } from "@/lib/api"
 import type { ChatQuestionWidget } from "@/features/chat/ChatQuestionCard"
@@ -90,6 +95,7 @@ function mapHistoryItems(items: Array<Record<string, unknown>>): ChatMessage[] {
       citations: (m.citations as Citation[]) || undefined,
       reasoning_content: m.reasoning_content ? String(m.reasoning_content) : undefined,
       payload: (m.payload as ChatMessage["payload"]) || undefined,
+      attachments: Array.isArray(m.attachments) ? (m.attachments as string[]) : undefined,
     })
   }
   return msgs
@@ -146,6 +152,7 @@ export function ChatPage() {
   deletedRef.current = deleted
 
   const [input, setInput] = useState("")
+  const attachments = useImageAttachments()
   const [messages, setMessages] = useState<ChatMessage[]>([welcomeMessage])
   const [isStreaming, setIsStreaming] = useState(false)
   const [sessionId, setSessionId] = useState<string | null>(null)
@@ -348,10 +355,11 @@ export function ChatPage() {
 
   // ─── 发送消息 ──────────────────────────────────────
 
-  const sendText = useCallback(async (text: string, opts?: { clearInput?: boolean }) => {
+  const sendText = useCallback(async (text: string, opts?: { clearInput?: boolean; attachments?: string[] }) => {
     if (escaping) return
     const trimmed = text.trim()
-    if (!trimmed || streamingRef.current) return
+    const attachIds = opts?.attachments ?? []
+    if ((!trimmed && attachIds.length === 0) || streamingRef.current) return
 
     stickToBottomRef.current = true
 
@@ -361,6 +369,7 @@ export function ChatPage() {
       role: "user",
       content: trimmed,
       time: now,
+      attachments: attachIds.length ? attachIds : undefined,
     }
 
     const assistantId = `a-${Date.now()}`
@@ -393,6 +402,7 @@ export function ChatPage() {
           session_id: sessionIdRef.current ?? undefined,
           collection_id: collectionId || undefined,
           crisis: true,
+          attachments: attachIds.length ? attachIds : undefined,
           onChunk: (chunk) => {
             if (chunk.session_id && !sessionIdRef.current) {
               const sid = String(chunk.session_id)
@@ -461,6 +471,7 @@ export function ChatPage() {
         session_id: sessionIdRef.current ?? undefined,
         collection_id: collectionId || undefined,
         crisis: crisisRef.current,
+        attachments: attachIds.length ? attachIds : undefined,
         remaining_pages: crisisRef.current
           ? remainingCrisisPages(deletedRef.current).filter((name) => {
               const m = trimmed.match(/^(.+)已经被删除了$/)
@@ -632,7 +643,11 @@ export function ChatPage() {
   }, [searchParams, navigate, escaping, startEscape, sessionReady])
 
   const handleSend = () => {
-    void sendText(input, { clearInput: true })
+    if (streamingRef.current) return
+    const ids = attachments.ids
+    if (!input.trim() && ids.length === 0) return
+    attachments.clear()
+    void sendText(input, { clearInput: true, attachments: ids })
   }
 
   // 任务「去验收」等：带 q= 自动发一条，再清掉 URL 避免刷新重发
@@ -929,13 +944,32 @@ export function ChatPage() {
                     ))}
                   </div>
                 )}
+                {attachments.items.length > 0 && (
+                  <AttachmentThumbnails
+                    items={attachments.items}
+                    onRemove={attachments.remove}
+                    className="px-4 pt-3"
+                  />
+                )}
                 <div className="flex items-end gap-2 pl-4 pr-2 py-2">
+                  <AttachImageButton
+                    onFiles={attachments.addFiles}
+                    disabled={isStreaming || loadingHistory || attachments.uploading}
+                    className="mb-0.5"
+                  />
                   <textarea
                     ref={inputRef}
                     value={input}
                     onChange={(e) => {
                       setInput(e.target.value)
                       setSlashIndex(0)
+                    }}
+                    onPaste={(e) => {
+                      const files = e.clipboardData?.files
+                      if (files?.length && Array.from(files).some((f) => f.type.startsWith("image/"))) {
+                        e.preventDefault()
+                        void attachments.addFiles(files)
+                      }
                     }}
                     onKeyDown={(e) => {
                       if (slashOpen && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
@@ -967,10 +1001,15 @@ export function ChatPage() {
                     disabled={isStreaming || loadingHistory}
                   />
                   <Button
-                    variant={input.trim() && !isStreaming ? "primary" : "secondary"}
+                    variant={(input.trim() || attachments.ids.length > 0) && !isStreaming ? "primary" : "secondary"}
                     size="icon"
                     onClick={handleSend}
-                    disabled={!input.trim() || isStreaming || loadingHistory}
+                    disabled={
+                      (!input.trim() && attachments.ids.length === 0) ||
+                      isStreaming ||
+                      loadingHistory ||
+                      attachments.uploading
+                    }
                     aria-label="发送"
                     className="shrink-0 rounded-full mb-0.5"
                   >
@@ -978,8 +1017,11 @@ export function ChatPage() {
                   </Button>
                 </div>
               </div>
+              {attachments.error && (
+                <div className="text-small text-danger mt-2 text-center">{attachments.error}</div>
+              )}
               <div className="text-small text-ink-tertiary mt-2 text-center">
-                Enter 发送 · Shift + Enter 换行 · Tina 可能会出错，请核实重要信息
+                Enter 发送 · Shift + Enter 换行 · 可直接粘贴图片 · Tina 可能会出错，请核实重要信息
               </div>
             </div>
           </div>

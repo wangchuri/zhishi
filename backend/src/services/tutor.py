@@ -116,13 +116,16 @@ class TutorService:
         db: Session,
         session: TutorSession,
         content: str,
+        attachments: Optional[list[str]] = None,
     ) -> tuple[str, str | None]:
         """发送消息，消费完整流后返回 (content, reasoning_content)。"""
         from ..agents.tutor_agent import send_message as agent_send
+        from ..core.llm import prepare_images
 
+        image_paths, file_ids = await prepare_images(attachments)
         agent = self.ensure_agent(db, session)
         self.touch_session(db, session)
-        return await agent_send(agent, content)
+        return await agent_send(agent, content, file_ids=file_ids, image_paths=image_paths)
 
 
 # 模块级单例

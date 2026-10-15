@@ -38,6 +38,7 @@ from .api.tasks import router as tasks_router
 from .api.onboarding import router as onboarding_router
 from .api.system import router as system_router
 from .api.auth import router as auth_router
+from .api.uploads import router as uploads_router
 from .core.config import config
 from .core.database import SessionLocal, init_db
 from .core.errors import AppError
@@ -123,6 +124,7 @@ app.include_router(parse_router)
 app.include_router(tasks_router)
 app.include_router(onboarding_router)
 app.include_router(system_router)
+app.include_router(uploads_router)
 
 _START_TIME = time.time()
 

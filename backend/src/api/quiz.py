@@ -100,6 +100,7 @@ async def submit_answer(
         body.status,
         body.time_spent_seconds,
         body.request_ai_grade,
+        attachments=body.attachments,
     )
     from ..services.task import evaluate
     done = evaluate(db)
@@ -117,6 +118,7 @@ async def grade_standalone(body: quiz_schemas.QuizAnswerSubmit, db: Session = De
         body.status,
         document_id=body.document_id,
         request_ai_grade=body.request_ai_grade,
+        attachments=body.attachments,
     )
     if body.chat_message_id:
         from ..services.chat import chat_service

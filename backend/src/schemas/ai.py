@@ -18,6 +18,7 @@ class ChatSend(BaseModel):
     crisis: bool = False
     remaining_pages: Optional[list[str]] = None
     kickoff: bool = False
+    attachments: list[str] = []  # 上传图片 id（/api/v1/uploads/image 返回）
 
 
 class ChatSessionMeta(BaseModel):

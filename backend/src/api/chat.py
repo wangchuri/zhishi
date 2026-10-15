@@ -11,7 +11,12 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from ..core.database import SessionLocal, get_db
-from ..core.llm import format_agent_error, is_tool_related_chunk, visible_assistant_delta
+from ..core.llm import (
+    format_agent_error,
+    is_tool_related_chunk,
+    predict_stream,
+    visible_assistant_delta,
+)
 from ..schemas import ai as ai_schemas
 from ..services.chat import (
     GLITCH_THINK,
@@ -155,11 +160,12 @@ async def send(body: ai_schemas.ChatSend, db: Session = Depends(get_db)):
 
         return StreamingResponse(style_gen(), media_type="text/event-stream")
 
-    agent, sid, user_content, tools, mood_actions = await chat_service.send_message(
+    agent, sid, user_content, tools, mood_actions, media = await chat_service.send_message(
         db, session_id, body.content, body.collection_id,
         stream=body.stream, crisis=body.crisis,
         remaining_pages=body.remaining_pages,
         kickoff=body.kickoff,
+        attachments=body.attachments,
     )
 
     if body.stream:
@@ -178,7 +184,7 @@ async def send(body: ai_schemas.ChatSend, db: Session = Depends(get_db)):
             yield _json_line({"event": "session", "session_id": sid})
             using_tool = False
             try:
-                async for chunk in agent.apredict(user_content):
+                async for chunk in predict_stream(agent, user_content, **media):
                     for line in _emit_tool_events(tools, sid, widgets, tips, onboarding, plots, canvases, blocks):
                         yield line
                     for line in _emit_mood_events(mood_actions, sid):
@@ -250,7 +256,7 @@ async def send(body: ai_schemas.ChatSend, db: Session = Depends(get_db)):
         return StreamingResponse(gen(), media_type="text/event-stream")
 
     full, reasoning, citations = await chat_service.consume_and_save(
-        agent, sid, user_content, tools
+        agent, sid, user_content, tools, media
     )
     return {
         "content": full,

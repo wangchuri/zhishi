@@ -44,6 +44,7 @@ class ChatMessage(Base):
     reasoning_content: Mapped[str | None] = mapped_column(Text)
     citations: Mapped[str | None] = mapped_column(Text)  # JSON
     payload: Mapped[str | None] = mapped_column(Text)  # JSON：对话内答题卡等
+    attachments: Mapped[str | None] = mapped_column(Text)  # JSON：图片附件（上传 id 列表）
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
 
 

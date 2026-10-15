@@ -11,12 +11,15 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
+import threading
 from pathlib import Path
+from typing import AsyncGenerator, Optional
 
-from tina.agent import Agent, Tools
-from tina.llm import BaseAPI
+from tina.agent import Agent, MultimodalAgent, Tools
+from tina.llm import BaseAPI, BaseMultimodalAPI, FilesAPI
 
 try:
     from tina import KeywordActions
@@ -68,15 +71,21 @@ _patch_tina_null_tool_calls()
 def create_llm(
     model: str | None = None,
     env_path: str | None = None,
+    *,
+    multimodal: bool = False,
 ) -> BaseAPI:
-    """创建 tina LLM 客户端，默认读取 backend/tina.env。"""
+    """创建 tina LLM 客户端，默认读取 backend/tina.env。
+
+    multimodal=True 时返回 BaseMultimodalAPI（支持图片 / file_id 内容块）。
+    """
     if env_path is None:
         from .paths import tina_env_path
 
         env = str(tina_env_path())
     else:
         env = env_path
-    return BaseAPI(
+    cls = BaseMultimodalAPI if multimodal else BaseAPI
+    return cls(
         model=model,
         env_path=env if os.path.isfile(env) else None,
     )
@@ -234,14 +243,91 @@ def create_agent(
     max_tool_loop: int | None = None,
     max_context_length: int = 500_000,
     keyword_actions: "KeywordActions | None" = None,
+    multimodal: bool = False,
 ) -> Agent:
-    """创建 tina Agent（默认后端模型配置）。"""
-    llm = create_llm(model=model)
+    """创建 tina Agent（默认后端模型配置）。
+
+    multimodal=True 时返回 MultimodalAgent，apredict 支持 image= / file_id=。
+    """
+    llm = create_llm(model=model, multimodal=multimodal)
     kwargs: dict = {"max_context_length": max_context_length}
     if max_tool_loop is not None:
         kwargs["max_tool_loop"] = max_tool_loop
     if keyword_actions is not None:
         kwargs["keyword_actions"] = keyword_actions
-    agent = Agent(llm=llm, tools=tools, system_prompt=system_prompt, **kwargs)
+    agent_cls = MultimodalAgent if multimodal else Agent
+    agent = agent_cls(llm=llm, tools=tools, system_prompt=system_prompt, **kwargs)
     _attach_reasoning_roundtrip(agent)
     return agent
+
+
+# ---- 图片上传（Files API）与多模态调用 ----
+
+_files_api: FilesAPI | None = None
+_files_api_lock = threading.Lock()
+
+
+def get_files_api() -> FilesAPI:
+    """服务端 Files API 客户端（上传图片换 file_id），惰性单例。"""
+    global _files_api
+    if _files_api is None:
+        with _files_api_lock:
+            if _files_api is None:
+                from .config import config
+
+                _files_api = FilesAPI.from_llm(
+                    create_llm(),
+                    cache_path=str(config.storage_dir / "files_cache.json"),
+                )
+    return _files_api
+
+
+def upload_images(paths: list[str]) -> list[str]:
+    """把本地图片上传到服务端换取 file_id；单张失败跳过，不抛异常。"""
+    ids: list[str] = []
+    if not paths:
+        return ids
+    try:
+        files = get_files_api()
+    except Exception:
+        logger.warning("Files API 初始化失败，图片将走 base64 兜底", exc_info=True)
+        return ids
+    for path in paths:
+        try:
+            file_id = files.upload_cached(path)
+        except Exception:
+            logger.warning("图片上传失败：%s", path, exc_info=True)
+            continue
+        if file_id:
+            ids.append(file_id)
+    return ids
+
+
+def predict_stream(
+    agent: Agent,
+    content: str,
+    *,
+    file_ids: Optional[list[str]] = None,
+    image_paths: Optional[list[str]] = None,
+    multimodal: bool = False,
+) -> AsyncGenerator:
+    """统一入口：多模态 Agent 优先用 file_id，退化到本地图片 base64，最后纯文本。"""
+    if multimodal:
+        if file_ids:
+            return agent.apredict(content, file_id=file_ids)
+        if image_paths:
+            return agent.apredict(content, image=image_paths)
+    return agent.apredict(content)
+
+
+async def prepare_images(attachments: Optional[list[str]]) -> tuple[list[str], list[str]]:
+    """上传 id 列表 → (本地图片路径, 服务端 file_id)。一次上传，两处可用。"""
+    if not attachments:
+        return [], []
+    from .storage import upload_paths
+
+    paths = upload_paths(attachments)
+    if not paths:
+        return [], []
+    file_ids = await asyncio.to_thread(upload_images, paths)
+    return paths, file_ids

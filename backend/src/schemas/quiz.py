@@ -77,6 +77,7 @@ class QuizAnswerSubmit(BaseModel):
     request_ai_grade: Optional[bool] = None
     document_id: Optional[str] = None
     chat_message_id: Optional[str] = None
+    attachments: list[str] = []  # AI 判题时随答案一起提交的图片（手写解答照片等）
 
 
 class QuizAnswerResult(BaseModel):
@@ -146,3 +147,4 @@ class TutorSession(BaseModel):
 class TutorMessageSend(BaseModel):
     content: str
     stream: bool = False
+    attachments: list[str] = []  # 上传图片 id
