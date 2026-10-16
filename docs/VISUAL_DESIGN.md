@@ -232,6 +232,23 @@
 
 - 保持当前 `scroll-thin` 风格，thumb 色改为 `--mist`
 
+### 5.10 层级（z-index）
+
+弹层必须**盖住页面骨架**：模态一开，顶栏、侧栏、底部 tab 都要在遮罩之下（否则遮罩像被"咬掉一块"）。
+共用 `Dialog / AlertDialog / Sheet / Drawer` 的默认层是 **z-50**，所以页面骨架一律要低于 50。
+
+| 层 | z-index | 谁在用 |
+| --- | --- | --- |
+| 页面内容 | `auto`（0） | `main` |
+| 侧栏（平板抽屉）/ 其遮罩 | `z-40` / `z-30` | `AppShell` |
+| 顶栏 | `z-[45]` | `Topbar`（高于抽屉、**必须低于弹层**） |
+| 弹层（模态、弹窗、下拉、状态栏抽屉） | `z-50` | `ui/dialog`、`ui/alert-dialog`、`ui/sheet`、`ui/drawer`、`ui/popover`、`ui/select`、`RailOverlay` |
+| 局部全屏面板（手机） | `z-[65]`–`z-[80]` | 聊天引用侧栏、手机全屏面板、Tip 采集、Tina 烟花 |
+| 图片灯箱 | `z-[100]` | `ImageAttachments` |
+| 特殊彩蛋遮罩 | `z-[200]` | `TinaEscapeOverlay` |
+
+> 注意：`z-50` 的面板（如手机全屏聊天面板 `z-[75]/[80]`）里再开模态时，默认 `z-50` 的模态会**被面板压住**；这些位置需要显式抬层（参考 `GlobalTipCapture` 的 `overlayClassName="z-[80]"`）。
+
 ---
 
 ## 6. 页面应用要点

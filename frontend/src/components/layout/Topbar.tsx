@@ -55,7 +55,7 @@ export function Topbar() {
   return (
     <header
       data-no-tip
-      className="relative z-[55] shrink-0 border-b border-line bg-header-glass flex items-center gap-3 px-4 md:px-6 h-[calc(3.5rem+env(safe-area-inset-top))] lg:h-[calc(4rem+env(safe-area-inset-top))] pt-[env(safe-area-inset-top)]"
+      className="relative z-[45] shrink-0 border-b border-line bg-header-glass flex items-center gap-3 px-4 md:px-6 h-[calc(3.5rem+env(safe-area-inset-top))] lg:h-[calc(4rem+env(safe-area-inset-top))] pt-[env(safe-area-inset-top)]"
     >
       {/* 平板端：汉堡菜单 */}
       <button
