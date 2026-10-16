@@ -69,9 +69,9 @@ export function ParsingTasksBanner() {
   if (tasks.length === 0) return null
 
   return (
-    <div className="rounded-lg border border-warning/30 bg-warning-soft px-4 py-3 space-y-2">
+    <div className="rounded-lg border border-line-soft bg-surface shadow-xs px-4 py-3 space-y-2">
       <div className="flex items-center gap-2 text-small font-medium text-ink-primary">
-        <ScanText className="w-4 h-4 text-warning shrink-0" strokeWidth={2} />
+        <ScanText className="w-4 h-4 text-ink-tertiary shrink-0" strokeWidth={2} />
         正在解析 / 上传 {tasks.length} 份资料
       </div>
       {tasks.map((t) => (
@@ -79,7 +79,7 @@ export function ParsingTasksBanner() {
           key={t.id}
           type="button"
           onClick={() => navigate(`/quiz/doc/${t.id}`)}
-          className="w-full flex items-start gap-3 text-left rounded-md hover:bg-warning/5 transition-colors -mx-1 px-1 py-0.5"
+          className="w-full flex items-start gap-3 text-left rounded-md hover:bg-surface-soft transition-colors -mx-1 px-1 py-0.5"
         >
           <Loader2
             className={cn(
@@ -99,7 +99,7 @@ export function ParsingTasksBanner() {
         </button>
       ))}
       {(blocked.length > 0 || stuck.length > 0) && (
-        <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-warning/20">
+        <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-line-soft">
           <span className="text-caption text-ink-secondary flex-1 min-w-[12rem]">
             {blocked.length > 0
               ? "这些资料需要 OCR（MinerU）。本机未就绪时可在设置里一键安装（独立环境），装好后会自动重试。"
