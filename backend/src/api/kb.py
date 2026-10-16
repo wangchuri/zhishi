@@ -205,6 +205,17 @@ def retry_blocked_tasks(db: Session = Depends(get_db)):
     return {"requeued": n}
 
 
+@router.post("/tasks/retry")
+def retry_stuck_tasks(db: Session = Depends(get_db)):
+    """重试「卡住」的解析：等待 OCR 的 + 中断后卡在 pending/processing 的。
+
+    与 retry-blocked 的区别：那个只处理 blocked（MinerU 未就绪），
+    这个还兜住「请求中断/进程被杀」留下的 pending 与太久没动的 processing。
+    """
+    n = kb_service.retry_stuck(db)
+    return {"requeued": n}
+
+
 def _reading_preview_mode(doc) -> str:
     """阅读页打开方式：原 PDF / 原 DOCX / MD；扫描件 PDF 强制走解析稿。"""
     ft = (doc.file_type or "").lower()

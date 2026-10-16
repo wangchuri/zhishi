@@ -44,7 +44,7 @@ from .core.database import SessionLocal, init_db
 from .core.errors import AppError
 from .core.paths import frontend_dist_dir, is_frozen, runtime_dir
 from .services import auth as auth_service
-from .services.kb import ensure_default_collections, reset_stale_processing
+from .services.kb import ensure_default_collections, resume_interrupted_parses
 
 logger = logging.getLogger(__name__)
 
@@ -145,9 +145,11 @@ def _on_startup() -> None:
     db = SessionLocal()
     try:
         ensure_default_collections(db)
-        n = reset_stale_processing(db)
-        if n:
-            logger.warning("已重置 %s 个中断的解析任务为 failed", n)
+        requeued, failed = resume_interrupted_parses(db)
+        if requeued or failed:
+            logger.warning(
+                "中断的解析已处理：重新入队 %s 个、原文件缺失判失败 %s 个", requeued, failed
+            )
     finally:
         db.close()
 
@@ -269,7 +271,7 @@ def main() -> None:
     print("=============== 知拾 访问地址 ===============")
     print("  本机访问:   http://127.0.0.1:7777")
     if not desktop:
-        print("  局域网:     同一 WiFi 下用本机 IP:7777")
+        print("  局域网:     同一 WiFi 下用本机 IP:17777")
     if desktop:
         print("  模式:       后台（冻结/桌面）")
     print("=============================================")
@@ -277,9 +279,9 @@ def main() -> None:
     sys.stdout.flush()
 
     if desktop or is_frozen():
-        uvicorn.run(app, host=host, port=7777, reload=False, log_level="info")
+        uvicorn.run(app, host=host, port=17777, reload=False, log_level="info")
     else:
-        uvicorn.run("src.main:app", host=host, port=7777, reload=reload)
+        uvicorn.run("src.main:app", host=host, port=17777, reload=reload)
 
 
 if __name__ == "__main__":

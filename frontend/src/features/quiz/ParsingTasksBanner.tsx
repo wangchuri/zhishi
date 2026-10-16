@@ -47,11 +47,17 @@ export function ParsingTasksBanner() {
   }, [])
 
   const blocked = tasks.filter((t) => t.status === "blocked")
+  // 「卡住」= 还挂着 pending/processing，但好几分钟没动过（解析线程可能已经不在了）
+  const stuck = tasks.filter((t) => {
+    if (t.status !== "pending" && t.status !== "processing") return false
+    const ts = t.updated_at ? Date.parse(t.updated_at) : NaN
+    return Number.isFinite(ts) && Date.now() - ts > 5 * 60 * 1000
+  })
 
   const retry = async () => {
     setRetrying(true)
     try {
-      await kbApi.retryBlockedTasks()
+      await kbApi.retryStuckTasks()
       await refresh()
     } finally {
       setRetrying(false)
@@ -90,14 +96,18 @@ export function ParsingTasksBanner() {
           <ChevronRight className="w-4 h-4 text-ink-tertiary shrink-0 mt-1" />
         </button>
       ))}
-      {blocked.length > 0 && (
+      {(blocked.length > 0 || stuck.length > 0) && (
         <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-warning/20">
           <span className="text-caption text-ink-secondary flex-1 min-w-[12rem]">
-            这些资料需要 OCR（MinerU）。本机未就绪时可在设置里一键安装（独立环境），装好后会自动重试。
+            {blocked.length > 0
+              ? "这些资料需要 OCR（MinerU）。本机未就绪时可在设置里一键安装（独立环境），装好后会自动重试。"
+              : "有资料卡住了（好几分钟没进展，可能是上传中断或后端重启导致）。点重试可以重新排队。"}
           </span>
-          <Button variant="secondary" size="sm" onClick={() => navigate("/settings")}>
-            去设置安装
-          </Button>
+          {blocked.length > 0 && (
+            <Button variant="secondary" size="sm" onClick={() => navigate("/settings")}>
+              去设置安装
+            </Button>
+          )}
           <Button variant="ghost" size="sm" onClick={() => void retry()} disabled={retrying}>
             {retrying ? "重试中…" : "重试"}
           </Button>

@@ -223,16 +223,56 @@ def ensure_default_collections(db: Session) -> None:
         db.commit()
 
 
-def reset_stale_processing(db: Session) -> int:
-    """进程重启后后台解析线程已不在，把仍标记 processing 的文档标为失败。"""
-    rows = db.query(Document).filter(Document.indexing_status == "processing").all()
+def resume_interrupted_parses(db: Session) -> tuple[int, int]:
+    """进程启动时处理「中断的解析」：优先重新入队，而不是一律标失败。
+
+    背景：解析跑在后台线程里，进程一重启线程就没了；而文档行可能停在
+    pending（线程还没起）或 processing（跑到一半）。旧实现只把 processing
+    标成 failed，pending 则永远显示「排队中」，既没有线程也没有出口。
+
+    返回 (重新入队数, 判失败数)：
+    - 原文件还在       → 重新起线程解析（结果覆盖写，可重入）
+    - 原文件缺失/读不出 → 标 failed，别再假装在排队
+    """
+    rows = (
+        db.query(Document)
+        .filter(Document.indexing_status.in_(("pending", "processing")))
+        .all()
+    )
     if not rows:
-        return 0
+        return (0, 0)
+
+    requeued = 0
+    failed = 0
     for doc in rows:
-        doc.indexing_status = "failed"
+        path = storage.original_path(doc.id)
+        content: bytes | None = None
+        if path is not None and path.is_file():
+            try:
+                content = path.read_bytes()
+            except Exception:
+                content = None
+        if not content:
+            doc.indexing_status = "failed"
+            doc.parse_reason = "重启导致解析中断，且原文件缺失，请删除后重新上传"
+            doc.updated_at = datetime.now(timezone.utc)
+            failed += 1
+            continue
+        doc.indexing_status = "processing"
+        doc.parse_reason = None
         doc.updated_at = datetime.now(timezone.utc)
+        db.commit()
+        _spawn_background(
+            _background_parse,
+            doc.id,
+            path.name if path is not None else doc.display_name,
+            content,
+            doc.collection_id,
+            bool(doc.is_scanned_pdf),
+        )
+        requeued += 1
     db.commit()
-    return len(rows)
+    return (requeued, failed)
 
 
 def _resolve_collection(db: Session, collection_id: Optional[str]) -> KBCollection:
@@ -308,7 +348,9 @@ class KnowledgeBaseService:
             zone=col.zone,
             content_hash=content_hash,
             file_type="md",
-            indexing_status="pending",
+            # 同 ingest_upload：本函数在请求内同步完成解析，直接写 processing，
+            # 不要留下「已入库但没人在解析」的 pending 中间态
+            indexing_status="processing",
         )
         db.add(doc)
         db.commit()
@@ -382,7 +424,10 @@ class KnowledgeBaseService:
             zone=col.zone,
             content_hash=content_hash,
             file_type=parser.detect_file_type(filename),
-            indexing_status="pending",
+            # 直接写 processing：以前是先落 pending、等文件落盘后才改 processing 并起线程，
+            # 那个窗口里数据库写着「排队中」但根本没人干活 —— 请求一旦在这窗口里中断
+            # 或进程被杀，文档就永久卡在 pending（无线程、也没有任何重试能救）。
+            indexing_status="processing",
         )
         if not doc.id:
             from ..utils import new_id
@@ -735,6 +780,46 @@ class KnowledgeBaseService:
                 continue
             doc.indexing_status = "processing"
             doc.updated_at = datetime.now(timezone.utc)
+            db.commit()
+            _spawn_background(
+                _background_parse, doc.id, doc.display_name, content, doc.collection_id, False
+            )
+            n += 1
+        return n
+
+    def retry_stuck(self, db: Session, *, document_id: Optional[str] = None) -> int:
+        """重试「卡住」的解析（前端 banner 的「重试」按钮）。
+
+        - blocked：等 OCR，MinerU 就绪后重排（等同 retry_blocked）
+        - pending：说明线程压根没起来过，直接重排（现在新数据不会再出现这个态）
+        - processing：可能真的还在跑，所以只在 updated_at 超过 10 分钟才重排，
+          避免把正在解析的文档重复跑一遍
+        """
+        n = self.retry_blocked(db, document_id=document_id)
+
+        stuck_seconds = 10 * 60
+        now = datetime.now(timezone.utc)
+        q = db.query(Document).filter(
+            Document.indexing_status.in_(("pending", "processing"))
+        )
+        if document_id:
+            q = q.filter(Document.id == document_id)
+        for doc in q.all():
+            if doc.indexing_status == "processing" and doc.updated_at is not None:
+                updated = doc.updated_at
+                if updated.tzinfo is None:
+                    updated = updated.replace(tzinfo=timezone.utc)
+                if (now - updated).total_seconds() < stuck_seconds:
+                    continue
+            content = storage.read_original(doc.id)
+            if not content:
+                doc.indexing_status = "failed"
+                doc.parse_reason = "原始文件不存在，无法重试"
+                db.commit()
+                continue
+            doc.indexing_status = "processing"
+            doc.parse_reason = None
+            doc.updated_at = now
             db.commit()
             _spawn_background(
                 _background_parse, doc.id, doc.display_name, content, doc.collection_id, False

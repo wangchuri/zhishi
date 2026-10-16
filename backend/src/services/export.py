@@ -310,7 +310,9 @@ class ExportService:
             file_type=meta.get("file_type") if isinstance(meta, dict) else "md",
             pdf_page_count=len(page_bodies),
             is_scanned_pdf=bool(meta.get("is_scanned_pdf")) if isinstance(meta, dict) else False,
-            indexing_status="pending",
+            # 同 upload：导入是同步完成的，期间应显示「解析中」而不是「排队中」，
+            # 否则整包导入几分钟里 banner 会一直写排队中（语义是错的）
+            indexing_status="processing",
         )
         db.add(doc)
         db.commit()

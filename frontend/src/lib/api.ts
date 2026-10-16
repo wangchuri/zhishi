@@ -492,6 +492,11 @@ export const kbApi = {
     return request<{ requeued: number }>("POST", "/api/v1/kb/tasks/retry-blocked")
   },
 
+  /** 重试卡住的解析：等待 OCR 的 + 中断后卡在 pending/processing 的 */
+  retryStuckTasks() {
+    return request<{ requeued: number }>("POST", "/api/v1/kb/tasks/retry")
+  },
+
   reindexVectors(documentId?: string) {
     const q = documentId ? `?document_id=${encodeURIComponent(documentId)}` : ""
     return request<{ documents: number }>("POST", `/api/v1/kb/reindex${q}`)
