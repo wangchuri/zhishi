@@ -501,6 +501,10 @@ export function ChatPage() {
           }
           if (chunk.event === "tool_status") {
             setFaceUsingTool(Boolean(chunk.using))
+            // 用到了工具 → 记在当前这条回复上（「思考过程」那行右侧显示小图标；也会随 payload 入库）
+            if (chunk.using) {
+              patchAssistant((m) => ({ ...m, payload: { ...m.payload, tools_used: true } }))
+            }
           }
           if (chunk.event === "tina_mood" && typeof chunk.mood === "string") {
             const mood = String(chunk.mood).toUpperCase()

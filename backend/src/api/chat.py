@@ -183,6 +183,7 @@ async def send(body: ai_schemas.ChatSend, db: Session = Depends(get_db)):
             blocks: list[dict] = []
             yield _json_line({"event": "session", "session_id": sid})
             using_tool = False
+            used_tools = False
             try:
                 async for chunk in predict_stream(agent, user_content, **media):
                     for line in _emit_tool_events(tools, sid, widgets, tips, onboarding, plots, canvases, blocks):
@@ -192,6 +193,7 @@ async def send(body: ai_schemas.ChatSend, db: Session = Depends(get_db)):
                     toolish = is_tool_related_chunk(chunk)
                     if toolish and not using_tool:
                         using_tool = True
+                        used_tools = True
                         yield _json_line({
                             "event": "tool_status",
                             "using": True,
@@ -231,7 +233,7 @@ async def send(body: ai_schemas.ChatSend, db: Session = Depends(get_db)):
                 })
             # 可见流已 Hide 标签；入库用原文，便于历史回放表情；blocks 保持无标签展示
             persist_text = last_assistant_raw_text(agent) or full
-            payload = pack_assistant_payload(widgets, onboarding, tips, blocks, plots, canvases)
+            payload = pack_assistant_payload(widgets, onboarding, tips, blocks, plots, canvases, tools_used=used_tools)
             sdb = SessionLocal()
             try:
                 in_crisis = chat_service.session_in_crisis(sdb, sid)

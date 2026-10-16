@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { ChevronDown, ChevronRight } from "lucide-react"
+import { ChevronDown, ChevronRight, Wrench } from "lucide-react"
 import type { ChatMessage as ChatMessageType, Citation } from "@/types"
 import { CitationCard } from "@/components/blocks/CitationCard"
 import { ChatQuestionCard, type ChatQuestionWidget } from "@/features/chat/ChatQuestionCard"
@@ -41,11 +41,14 @@ function ReasoningBlock({
   defaultOpen = false,
   crimson = false,
   active = false,
+  toolsUsed = false,
 }: {
   content: string
   defaultOpen?: boolean
   crimson?: boolean
   active?: boolean
+  /** 这轮回复用到了工具：在标签右侧显示一个小扳手 */
+  toolsUsed?: boolean
 }) {
   const [open, setOpen] = useState(defaultOpen)
 
@@ -61,6 +64,15 @@ function ReasoningBlock({
       >
         {open ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
         <ThinkingLabel active={active} />
+        {toolsUsed && (
+          <span
+            className="inline-flex shrink-0"
+            title="这条回复用到了工具"
+            aria-label="这条回复用到了工具"
+          >
+            <Wrench className="w-3 h-3 opacity-70" strokeWidth={2} />
+          </span>
+        )}
       </button>
       {/* 折叠着也在"想"的时候，下一行跟一条最新思考内容 */}
       {active && !open && <ThinkingPeek content={content} className="mt-0.5" />}
@@ -239,6 +251,7 @@ export function ChatMessage({
             defaultOpen={glitch}
             crimson={crimson}
             active={Boolean(thinkingActive)}
+            toolsUsed={Boolean(message.payload?.tools_used)}
           />
         )}
         {glitch ? (

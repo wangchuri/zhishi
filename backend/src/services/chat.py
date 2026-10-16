@@ -123,8 +123,12 @@ def pack_assistant_payload(
     blocks: Optional[list[dict]] = None,
     plots: Optional[list[dict]] = None,
     canvases: Optional[list[dict]] = None,
+    tools_used: bool = False,
 ) -> Optional[dict]:
     payload: dict = {}
+    if tools_used:
+        # 这一轮回复用到了工具（前端在「思考过程」那行右侧显示小图标；入库，刷新后仍在）
+        payload["tools_used"] = True
     if blocks:
         payload["blocks"] = blocks
     if widgets:

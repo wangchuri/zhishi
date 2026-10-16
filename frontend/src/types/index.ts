@@ -675,6 +675,8 @@ export interface ChatMessage {
   /** 用户消息附带的图片（上传 id） */
   attachments?: string[]
   payload?: {
+    /** 这轮回复用到了工具（后端入库；前端在「思考过程」那行右侧显示小图标） */
+    tools_used?: boolean
     widgets?: Array<{
       question: {
         question_id: string
