@@ -38,7 +38,7 @@ class AnalyticsService:
         doc_stats = {
             "total": len(documents),
             "indexed": sum(1 for d in documents if d.indexing_status == "completed"),
-            "processing": sum(1 for d in documents if d.indexing_status in ("pending", "processing")),
+            "processing": sum(1 for d in documents if d.indexing_status in ("pending", "processing", "importing")),
             "failed": sum(1 for d in documents if d.indexing_status == "failed"),
             "study_zone": sum(1 for d in documents if d.zone == "study"),
             "with_questions": sum(1 for d in documents if d.question_gen_status == "completed"),

@@ -13,7 +13,7 @@ export function mapStatus(d: Record<string, unknown>): KnowledgeDoc["status"] {
   if (String(d.ocr_status || "").toLowerCase() === "processing") return "processing"
   const s = String(d.indexing_status || d.status || "").toLowerCase()
   if (s === "completed" || s === "indexed") return "indexed"
-  if (s === "processing" || s === "parsing" || s === "splitting" || s === "indexing")
+  if (s === "processing" || s === "parsing" || s === "splitting" || s === "indexing" || s === "importing")
     return "processing"
   if (s === "error" || s === "failed") return "failed"
   if (s === "blocked") return "blocked"

@@ -9,6 +9,7 @@ import type { ActiveParseTask } from "@/types"
 function statusText(t: ActiveParseTask) {
   if (t.status === "blocked") return "等待 OCR（需要 MinerU）"
   if (t.status === "pending") return "排队中…"
+  if (t.status === "importing") return "导入中…"
   if (t.using_ocr) return "解析中（MinerU OCR）…"
   return "解析中…"
 }
@@ -51,7 +52,7 @@ export function ParsingTasksBanner() {
   // 阈值与后端 retry_stuck 的保护一致：processing 不满 10 分钟不会被重排，
   // 免得界面上点了却静默无效。
   const stuck = tasks.filter((t) => {
-    if (t.status !== "pending" && t.status !== "processing") return false
+    if (t.status !== "pending" && t.status !== "processing" && t.status !== "importing") return false
     const ts = t.updated_at ? Date.parse(t.updated_at) : NaN
     return Number.isFinite(ts) && Date.now() - ts > 10 * 60 * 1000
   })

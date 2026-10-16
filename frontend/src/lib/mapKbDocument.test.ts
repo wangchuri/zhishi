@@ -26,6 +26,10 @@ describe("mapStatus", () => {
     expect(mapStatus({})).toBe("pending")
   })
 
+  it("书本包导入中（importing）也算「处理中」，不能显示成可刷题", () => {
+    expect(mapStatus({ indexing_status: "importing" })).toBe("processing")
+  })
+
   it("ocr_status 处理中优先", () => {
     expect(mapStatus({ ocr_status: "processing", indexing_status: "completed" })).toBe(
       "processing"

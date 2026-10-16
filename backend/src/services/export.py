@@ -326,9 +326,12 @@ class ExportService:
             file_type=meta.get("file_type") if isinstance(meta, dict) else "md",
             pdf_page_count=len(page_bodies),
             is_scanned_pdf=bool(meta.get("is_scanned_pdf")) if isinstance(meta, dict) else False,
-            # 同 upload：导入是同步完成的，期间应显示「解析中」而不是「排队中」，
-            # 否则整包导入几分钟里 banner 会一直写排队中（语义是错的）
-            indexing_status="processing",
+            # 导入用专用的 "importing"，**不能**借 "processing"：
+            # 分页稿、图片、题库都在包里，导入期间不需要任何解析。而 "processing" 是
+            # 「等待/正在进行解析」的状态 —— 进程若在这几分钟里重启，启动自愈
+            # （resume_interrupted_parses）会把它当成「解析中断」重新丢给 MinerU：
+            # 要么白跑几分钟，要么把包里已经解析好的分页稿覆盖成 OCR 结果。
+            indexing_status="importing",
         )
         db.add(doc)
         db.commit()

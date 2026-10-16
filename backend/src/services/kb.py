@@ -326,10 +326,18 @@ def resume_interrupted_parses(db: Session) -> tuple[int, int]:
     返回 (重新入队数, 判失败数)：
     - 原文件还在       → 重新起线程解析（结果覆盖写，可重入）
     - 原文件缺失/读不出 → 标 failed，别再假装在排队
+    - "importing"      → 来源是书本包（分页稿已随包落盘），**绝不重解析**，只标 failed
+
+    注意最后一条：书本包导入期间文档是 "importing"（不是 "processing"）。进程在这几分钟里
+    重启的话，导入线程就没了；此时若按「中断的解析」重新入队，就会白跑 MinerU 甚至把包里
+    已经解析好的分页稿覆盖掉 —— 所以这里只把状态收干净，让用户重新导入。
+
+    这个函数只在**进程启动时**调用（main.py），那一刻不可能有活的导入，所以
+    "importing → failed" 不需要再判「多久没动」。
     """
     rows = (
         db.query(Document)
-        .filter(Document.indexing_status.in_(("pending", "processing")))
+        .filter(Document.indexing_status.in_(("pending", "processing", "importing")))
         .all()
     )
     if not rows:
@@ -338,6 +346,13 @@ def resume_interrupted_parses(db: Session) -> tuple[int, int]:
     requeued = 0
     failed = 0
     for doc in rows:
+        if doc.indexing_status == "importing":
+            doc.indexing_status = "failed"
+            doc.parse_reason = "书本包导入中断，请重新导入（分页稿可能不完整）"
+            doc.updated_at = datetime.now(timezone.utc)
+            db.commit()
+            failed += 1
+            continue
         path = storage.original_path(doc.id)
         content: bytes | None = None
         if path is not None and path.is_file():
@@ -893,17 +908,25 @@ class KnowledgeBaseService:
         stuck_seconds = 10 * 60
         now = datetime.now(timezone.utc)
         q = db.query(Document).filter(
-            Document.indexing_status.in_(("pending", "processing"))
+            Document.indexing_status.in_(("pending", "processing", "importing"))
         )
         if document_id:
             q = q.filter(Document.id == document_id)
         for doc in q.all():
-            if doc.indexing_status == "processing" and doc.updated_at is not None:
+            if doc.indexing_status in ("processing", "importing") and doc.updated_at is not None:
                 updated = doc.updated_at
                 if updated.tzinfo is None:
                     updated = updated.replace(tzinfo=timezone.utc)
                 if (now - updated).total_seconds() < stuck_seconds:
                     continue
+            if doc.indexing_status == "importing":
+                # 断掉的书本包导入：分页稿来自包里，**不能**重新解析（会把包里的稿覆盖成 OCR）
+                doc.indexing_status = "failed"
+                doc.parse_reason = "书本包导入中断，请重新导入（分页稿可能不完整）"
+                doc.updated_at = now
+                db.commit()
+                n += 1
+                continue
             content = storage.read_original(doc.id)
             if not content:
                 doc.indexing_status = "failed"
@@ -944,10 +967,10 @@ class KnowledgeBaseService:
         return {"documents": docs, "total": total, "page": page, "limit": limit}
 
     def list_active_tasks(self, db: Session, limit: int = 50) -> list[dict]:
-        """全局解析/上传任务：仍待处理（pending/processing）或等待 OCR（blocked）的文档。"""
+        """全局解析/上传任务：仍待处理（pending/processing/importing）或等待 OCR（blocked）的文档。"""
         rows = (
             db.query(Document)
-            .filter(Document.indexing_status.in_(("pending", "processing", "blocked")))
+            .filter(Document.indexing_status.in_(("pending", "processing", "importing", "blocked")))
             .order_by(Document.updated_at.desc())
             .limit(limit)
             .all()
