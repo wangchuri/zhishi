@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import json
 import logging
@@ -29,7 +30,8 @@ async def preview(file: UploadFile = File(...)):
     """PDF → MinerU 解析 → 逐页 md + 图片（不落库，图片转 base64 返回）。"""
     content = await file.read()
     filename = file.filename or "document.pdf"
-    result = mineru_service.parse_pdf(content)
+    # MinerU 可能几十分钟：必须丢线程池，否则堵住事件循环 → 全站请求排队超时（502）
+    result = await asyncio.to_thread(mineru_service.parse_pdf, content)
 
     pages = []
     for p in result["page_mds"]:
@@ -84,8 +86,9 @@ async def import_markdown(
     # 转义有序列表编号（避免渲染成列表）
     md_text = escape_ordered_list_numbers(md_text)
 
-    # 借道 ingest 入库（md 文本 + 图片）
-    doc = kb_service.ingest_md_text(
+    # 借道 ingest 入库（md 文本 + 图片）；落图床/分段/向量化都是阻塞活儿，丢线程池
+    doc = await asyncio.to_thread(
+        kb_service.ingest_md_text,
         db,
         filename=filename,
         md_text=md_text,
@@ -114,8 +117,10 @@ async def import_zip(
     content = await file.read()
     from ..services import parser
 
-    md_text, zip_images = parser.parse_zip_markdown(content)
-    doc = kb_service.ingest_md_text(
+    # 解包 + 入库同样是阻塞活儿，全部丢线程池
+    md_text, zip_images = await asyncio.to_thread(parser.parse_zip_markdown, content)
+    doc = await asyncio.to_thread(
+        kb_service.ingest_md_text,
         db,
         filename=file.filename or "document.zip",
         md_text=md_text,
