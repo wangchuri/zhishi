@@ -4,6 +4,7 @@
  */
 
 import type {
+  ActiveJob,
   Citation,
   DocumentContentMeta,
   DocumentPageDetail,
@@ -570,26 +571,53 @@ export const kbApi = {
     URL.revokeObjectURL(url)
   },
 
-  /** 导入书本+题库 zip 包（后端先合并数据库再向量化，成功才算导入成功） */
-  importPackage(file: File, collectionId?: string) {
+  /**
+   * 导入书本包：后端立刻返回 job_id，解包/落盘/分段/向量化在后台跑。
+   *
+   * 用 XHR 而不是 fetch：为了拿「上传中」的真实百分比（大包几十 MB 时很需要）。
+   * 上传完成后（拿到 job_id）改由轮询 /api/v1/jobs/{id} 看处理进度。
+   */
+  importPackage(
+    file: File,
+    collectionId?: string,
+    onUploadProgress?: (pct: number) => void,
+  ): Promise<{ status: string; job_id?: string }> {
     const formData = new FormData()
     formData.append("file", file)
     if (collectionId) {
       formData.append("collection_id", collectionId)
     }
-    return request<{
-      status: string
-      document_id?: string
-      page_count?: number
-      imported_questions?: number
-      reused_questions?: number
-      has_original?: boolean
-    }>(
-      "POST",
-      "/api/v1/kb/import",
-      formData,
-      true
-    )
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest()
+      xhr.open("POST", `${getApiBase()}/api/v1/kb/import`)
+      xhr.withCredentials = true
+      xhr.upload.onprogress = (e) => {
+        if (e.lengthComputable && onUploadProgress) {
+          onUploadProgress(e.loaded / e.total)
+        }
+      }
+      xhr.onload = () => {
+        let body: (Record<string, unknown> & { detail?: string }) | null = null
+        try {
+          body = JSON.parse(xhr.responseText) as Record<string, unknown> & { detail?: string }
+        } catch {
+          body = null
+        }
+        if (xhr.status >= 200 && xhr.status < 300 && body) {
+          resolve(body as { status: string; job_id?: string })
+          return
+        }
+        reject(new Error(body?.detail || `导入失败（HTTP ${xhr.status}）`))
+      }
+      xhr.onerror = () =>
+        reject(new Error("连不上服务器，导入没发出去。请检查网络或服务器地址后重试"))
+      xhr.send(formData)
+    })
+  },
+
+  /** 通用后台作业进度（导入/导出/重解析…都靠它轮询） */
+  getJob(jobId: string) {
+    return request<ActiveJob>("GET", `/api/v1/jobs/${encodeURIComponent(jobId)}`)
   },
 }
 

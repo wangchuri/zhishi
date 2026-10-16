@@ -185,6 +185,7 @@ class KbConfig(BaseModel):
 
 class ImportPackageResult(BaseModel):
     status: str
+    job_id: Optional[str] = None
     document_id: Optional[str] = None
     page_count: Optional[int] = None
     imported_questions: Optional[int] = None

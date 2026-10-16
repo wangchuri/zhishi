@@ -59,6 +59,21 @@ export interface KnowledgeDoc {
   updatedAt: string
 }
 
+/** 通用后台作业（services/jobs.py）：进度与结果统一走 /api/v1/jobs */
+export interface ActiveJob {
+  id: string
+  kind: string
+  title: string
+  document_id?: string | null
+  status: "queued" | "running" | "done" | "failed" | "cancelled"
+  message?: string | null
+  progress?: number | null
+  result?: Record<string, unknown> | null
+  error?: string | null
+  created_at?: string
+  updated_at?: string
+}
+
 export interface ActiveParseTask {
   id: string
   name: string

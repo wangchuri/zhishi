@@ -19,7 +19,7 @@ import json
 import logging
 import re
 from pathlib import Path
-from typing import Optional
+from typing import Callable, Optional
 
 import zipfile
 from sqlalchemy.orm import Session
@@ -201,13 +201,25 @@ class ExportService:
         content: bytes,
         filename: str,
         collection_id: Optional[str],
+        on_stage: "Callable[[str, float | None], None] | None" = None,
     ) -> dict:
         """导入 zip：优先还原 pages/，否则从 parsed.md 拆页。
 
-        同步实现：内部全是阻塞 I/O 与 CPU（解包、落盘、分段、向量化），
-        没有任何 await，因此必须由调用方放进线程池执行（见 api/kb.py），
-        否则会堵住单进程 uvicorn 的事件循环，导致全站请求排队超时（502）。
+        同步实现：内部全是阻塞 I/O 与 CPU（解包、落盘、分段、向量化），没有任何 await，
+        因此由调用方放进后台 worker 执行（见 api/kb.py 的 jobs.submit），
+        既不堵单进程 uvicorn 的事件循环，也不让请求挂几分钟被 nginx 掐断。
+
+        on_stage(message, progress)：选填的分段进度回调，供后台 job 上报给前端。
         """
+
+        def stage(message: str, progress: float | None = None) -> None:
+            if on_stage is None:
+                return
+            try:
+                on_stage(message, progress)
+            except Exception:  # 上报失败绝不能影响导入
+                pass
+
         imported_questions = 0
         reused_questions = 0
 
@@ -221,6 +233,7 @@ class ExportService:
         original_name: str | None = None
         original_bytes: bytes | None = None
 
+        stage("解包中…", 0.1)
         with zipfile.ZipFile(io.BytesIO(content)) as zf:
             for raw_name in zf.namelist():
                 if raw_name.endswith("/"):
@@ -288,6 +301,7 @@ class ExportService:
 
         joined = "\n\n".join(page_bodies)
         content_hash = sha256_hex(joined.encode("utf-8"))
+        stage("写入资料…", 0.4)
         col = _resolve_collection(db, collection_id)
 
         existing_doc = db.query(Document).filter(Document.content_hash == content_hash).first()
@@ -319,6 +333,7 @@ class ExportService:
         db.refresh(doc)
 
         # 保留包内图片原名，避免打断 pages 里的 images/xxx 引用
+        stage("保存图片…", 0.55)
         for idx, (name, data) in enumerate(images.items(), 1):
             safe = Path(name).name
             if not safe:
@@ -343,6 +358,7 @@ class ExportService:
         if thumbnail:
             storage.save_thumbnail(doc.id, thumbnail)
 
+        stage("分段中…", 0.7)
         try:
             kb_service.segment_document(db, doc)
             doc.segment_status = "completed"
@@ -352,6 +368,7 @@ class ExportService:
         try:
             parsed = storage.read_parsed(doc.id) or joined
             if parsed.strip():
+                stage("向量化中…", 0.85)
                 from ..services.rag import chroma_store
 
                 chroma_store.index_document(doc.id, parsed)
@@ -374,6 +391,7 @@ class ExportService:
                 db.rollback()
                 logger.warning("导入学习路径失败 doc=%s: %s", doc.id, e)
 
+        stage("写入题库…", 0.92)
         for q in questions:
             try:
                 _gq, is_new = question_service.store_question(db, doc, q)

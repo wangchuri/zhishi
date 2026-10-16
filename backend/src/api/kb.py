@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 from typing import Optional
@@ -429,20 +428,41 @@ def export_doc(
 async def import_doc(
     file: UploadFile = File(...),
     collection_id: Optional[str] = Form(None),
-    db: Session = Depends(get_db),
 ):
     content = await file.read()
-    # 导包 = 解包 + 落盘 + 分段 + 向量化，全程阻塞 I/O 与 CPU，没有一处 await。
-    # 之前直接在事件循环里跑：单进程 uvicorn 下会把全站请求一起堵死（nginx 等不到上游 → 502）。
-    # 放进线程池执行（SQLite 引擎已配 check_same_thread=False + NullPool，支持跨线程会话）。
-    result = await asyncio.to_thread(
-        export_service.import_package,
-        db,
-        content,
-        file.filename or "package.zip",
-        collection_id,
+    filename = file.filename or "package.zip"
+
+    # 立刻返回 job_id，解包/落盘/分段/向量化交给后台有界 worker：
+    # ① 不再堵事件循环（502 的根因）；② 请求不再挂几分钟被 nginx 掐断；
+    # ③ 前端能区分「上传中」（XHR 上传百分比）与「处理中」（轮询 /api/v1/jobs/{id}）。
+    from ..services.jobs import jobs
+    from ..utils import sha256_hex
+
+    def _worker(job) -> dict:
+        # 请求的 session 会随响应关闭，后台必须自建（与 _background_parse 同款做法）
+        from ..core.database import SessionLocal
+
+        worker_db = SessionLocal()
+        try:
+            return export_service.import_package(
+                worker_db,
+                content,
+                filename,
+                collection_id,
+                on_stage=lambda message, progress=None: job.report(
+                    message=message, progress=progress
+                ),
+            )
+        finally:
+            worker_db.close()
+
+    job = jobs.submit(
+        "import_package",
+        _worker,
+        title=f"导入《{filename}》",
+        key=f"import:{sha256_hex(content)}",
     )
-    return kb_schemas.ImportPackageResult(**result)
+    return kb_schemas.ImportPackageResult(status=job["status"], job_id=job["id"])
 
 
 def _learning_path_out(doc_id: str, rec: DocumentLearningPath | None) -> kb_schemas.LearningPathResult:

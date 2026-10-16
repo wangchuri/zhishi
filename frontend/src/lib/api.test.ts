@@ -239,16 +239,50 @@ describe("kbApi", () => {
     })
   })
 
-  it("importPackage 使用 POST /api/v1/kb/import 并带 FormData", async () => {
-    const { calls } = installFetchMock()
+  it("importPackage 走 XHR 的 POST /api/v1/kb/import（FormData + 上传进度）", async () => {
     setApiBase(BASE)
     const file = new File(["zip"], "book.zip", { type: "application/zip" })
-    await kbApi.importPackage(file, "c1")
-    expect(calls[0]).toMatchObject({
-      method: "POST",
-      url: `${BASE}/api/v1/kb/import`,
-    })
+
+    const calls: { method: string; url: string; body: unknown }[] = []
+    const progress: number[] = []
+
+    class FakeXHR {
+      method = ""
+      url = ""
+      withCredentials = false
+      status = 200
+      responseText = JSON.stringify({ status: "queued", job_id: "j1" })
+      upload: {
+        onprogress: null | ((e: { lengthComputable: boolean; loaded: number; total: number }) => void)
+      } = { onprogress: null }
+      onload: null | (() => void) = null
+      onerror: null | (() => void) = null
+      open(method: string, url: string) {
+        this.method = method
+        this.url = url
+      }
+      send(body: unknown) {
+        calls.push({ method: this.method, url: this.url, body })
+        // 模拟一次「上传中」回调（真实浏览器里由浏览器触发）
+        this.upload.onprogress?.({ lengthComputable: true, loaded: 5, total: 10 })
+        this.onload?.()
+      }
+    }
+
+    const originalXHR = globalThis.XMLHttpRequest
+    globalThis.XMLHttpRequest = FakeXHR as unknown as typeof XMLHttpRequest
+    try {
+      const res = await kbApi.importPackage(file, "c1", (p) => progress.push(p))
+      expect(res.job_id).toBe("j1")
+    } finally {
+      globalThis.XMLHttpRequest = originalXHR
+    }
+
+    expect(calls[0].method).toBe("POST")
+    expect(calls[0].url).toBe(`${BASE}/api/v1/kb/import`)
     expect(calls[0].body).toBeInstanceOf(FormData)
+    expect((calls[0].body as FormData).get("collection_id")).toBe("c1")
+    expect(progress).toEqual([0.5])
   })
 })
 

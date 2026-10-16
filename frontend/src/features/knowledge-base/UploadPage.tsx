@@ -63,6 +63,13 @@ const uploadMethods = [
     desc: "拍照后整理成资料",
     accept: "image/*",
   },
+  {
+    id: "package",
+    icon: Package,
+    title: "导入书本包",
+    desc: "别人分享的 zip，分页/图片/题库一起复用",
+    accept: ".zip",
+  },
 ]
 
 export function UploadPage() {
@@ -80,6 +87,12 @@ export function UploadPage() {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const importInputRef = useRef<HTMLInputElement>(null)
   const [importing, setImporting] = useState(false)
+  // 导入进度：先「上传中 x%」（XHR 的真实百分比），拿到 job_id 后转「处理中 …」（轮询作业）
+  const [importStage, setImportStage] = useState<{
+    phase: "upload" | "process"
+    pct?: number
+    message: string
+  } | null>(null)
   const [importResult, setImportResult] = useState<{
     fileName: string
     status: "success" | "duplicate" | "error"
@@ -372,28 +385,53 @@ export function UploadPage() {
       if (!file) return
       setImporting(true)
       setImportResult(null)
+      setImportStage({ phase: "upload", pct: 0, message: "上传中…" })
       try {
-        const res = await kbApi.importPackage(file, selectedCollectionId || undefined)
-        if (res.status === "duplicate") {
-          setImportResult({
-            fileName: file.name,
-            status: "duplicate",
-            reused: res.reused_questions,
+        // 第一步：上传（XHR 给真实百分比）→ 后端立刻返回 job_id
+        const res = await kbApi.importPackage(file, selectedCollectionId || undefined, (pct) =>
+          setImportStage({
+            phase: "upload",
+            pct,
+            message: `上传中 ${Math.round(pct * 100)}%`,
           })
-          toast.info(`《${file.name}》已导入过，跳过`)
-        } else {
-          setImportResult({
-            fileName: file.name,
-            status: "success",
-            imported: res.imported_questions,
-            reused: res.reused_questions,
-          })
-          toast.success(
-            `书本导入成功（${res.page_count ?? "?"} 页，含 ${res.imported_questions ?? 0} 题，复用 ${res.reused_questions ?? 0} 题${
-              res.has_original ? "，含原文件" : ""
-            }）`
-          )
+        )
+        const jobId = res.job_id
+        if (!jobId) throw new Error("服务器没有返回作业号，请重试")
+
+        // 第二步：处理进度（解包 → 写入资料 → 保存图片 → 分段 → 向量化 → 写入题库）
+        setImportStage({ phase: "process", message: "排队中…" })
+        for (let i = 0; i < 900; i++) {
+          await new Promise((r) => setTimeout(r, 1200))
+          const job = await kbApi.getJob(jobId)
+          setImportStage({ phase: "process", message: job.message || "处理中…" })
+          if (job.status === "done") {
+            const r = (job.result || {}) as Record<string, unknown>
+            setImportResult({
+              fileName: file.name,
+              status: "success",
+              imported: Number(r.imported_questions ?? 0),
+              reused: Number(r.reused_questions ?? 0),
+            })
+            toast.success(
+              `书本导入成功（${r.page_count ?? "?"} 页，含 ${r.imported_questions ?? 0} 题，复用 ${r.reused_questions ?? 0} 题${
+                r.has_original ? "，含原文件" : ""
+              }）`
+            )
+            return
+          }
+          if (job.status === "failed" || job.status === "cancelled") {
+            const msg = job.error || job.message || "导入失败"
+            if (msg.includes("已上传过")) {
+              setImportResult({ fileName: file.name, status: "duplicate", reused: 0 })
+              toast.info(`《${file.name}》已导入过，跳过`)
+            } else {
+              setImportResult({ fileName: file.name, status: "error", message: msg })
+              toast.error(msg)
+            }
+            return
+          }
         }
+        throw new Error("导入超过 30 分钟还没结束，稍后可在资料页确认结果")
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : "导入失败"
         setImportResult({
@@ -404,9 +442,20 @@ export function UploadPage() {
         toast.error(msg)
       } finally {
         setImporting(false)
+        setImportStage(null)
       }
     },
     [selectedCollectionId]
+  )
+
+  const onImportDrop = useCallback(
+    (e: React.DragEvent<HTMLDivElement>) => {
+      e.preventDefault()
+      setDragging(false)
+      const file = e.dataTransfer.files?.[0]
+      if (file) void handleImport(file)
+    },
+    [handleImport]
   )
 
   const onImportInputChange = useCallback(
@@ -422,6 +471,13 @@ export function UploadPage() {
 
   const completedCount = tasks.filter((t) => t.status === "completed").length
   const processingCount = tasks.filter((t) => t.status === "uploading" || t.status === "ocr" || t.status === "indexing").length
+
+  // 第 4 个方式（导入书本包）走另一条链路：XHR 上传 + job 轮询
+  const isPackageMode = active === "package"
+  const busy = isPackageMode ? importing : uploading
+  const busyText = isPackageMode ? importStage?.message || "导入中…" : "正在上传..."
+  const busyPct =
+    isPackageMode && importStage?.phase === "upload" ? importStage.pct : undefined
   const errorCount = tasks.filter((t) => t.status === "error").length
   const duplicateCount = tasks.filter((t) => t.status === "duplicate").length
 
@@ -538,32 +594,6 @@ export function UploadPage() {
             <div className="text-small text-ink-tertiary">{m.desc}</div>
           </button>
         ))}
-
-        {/* 导入书本包卡片 */}
-        <button
-          type="button"
-          onClick={() => importInputRef.current?.click()}
-          disabled={importing}
-          className={cn(
-            "text-left bg-surface border rounded-lg p-5 transition-all duration-160",
-            "border-line-soft shadow-xs hover:-translate-y-0.5 hover:shadow-md hover:border-primary/30",
-            importing && "opacity-70"
-          )}
-        >
-          <div className="w-11 h-11 rounded-md flex items-center justify-center mb-3 bg-primary-soft text-primary">
-            {importing ? (
-              <Loader2 className="w-5 h-5 animate-spin" strokeWidth={2} />
-            ) : (
-              <Package className="w-5 h-5" strokeWidth={2} />
-            )}
-          </div>
-          <div className="text-card-title font-semibold text-ink-primary mb-1">
-            {importing ? "导入中..." : "导入书本包"}
-          </div>
-          <div className="text-small text-ink-tertiary">
-            {importing ? "合并数据库 + 向量化中..." : "分享的 zip 包，直接复用题库"}
-          </div>
-        </button>
       </div>
 
       {/* 导入结果 */}
@@ -623,15 +653,19 @@ export function UploadPage() {
         onChange={onFileInputChange}
       />
 
-      {/* 拖拽上传区 */}
+      {/* 拖拽上传区（第 4 个方式「导入书本包」复用这块，只是换成选 zip + 显示作业进度） */}
       <div
         onDragOver={(e) => {
           e.preventDefault()
           setDragging(true)
         }}
         onDragLeave={() => setDragging(false)}
-        onDrop={onDrop}
-        onClick={() => fileInputRef.current?.click()}
+        onDrop={isPackageMode ? onImportDrop : onDrop}
+        onClick={() => {
+          if (busy) return
+          if (isPackageMode) importInputRef.current?.click()
+          else fileInputRef.current?.click()
+        }}
         className={cn(
           "border-2 border-dashed rounded-lg p-10 text-center transition-all duration-160 cursor-pointer",
           dragging
@@ -639,37 +673,54 @@ export function UploadPage() {
             : "border-line bg-surface hover:border-primary/40 hover:bg-surface-soft/50"
         )}
       >
-        {uploading ? (
+        {busy ? (
           <div className="flex flex-col items-center gap-3">
             <Loader2 className="w-8 h-8 text-primary animate-spin" strokeWidth={2} />
-            <div className="text-card-title font-semibold text-ink-primary">正在上传...</div>
+            <div className="text-card-title font-semibold text-ink-primary">{busyText}</div>
+            {typeof busyPct === "number" && (
+              <div className="w-56 h-1.5 rounded-full bg-surface-soft overflow-hidden">
+                <div
+                  className="h-full bg-primary rounded-full transition-all"
+                  style={{ width: `${Math.round(busyPct * 100)}%` }}
+                />
+              </div>
+            )}
           </div>
         ) : (
           <>
             <div className="w-16 h-16 rounded-xl bg-primary-soft text-primary flex items-center justify-center mx-auto mb-4">
-              <UploadCloud className="w-8 h-8" strokeWidth={2} />
+              {isPackageMode ? (
+                <Package className="w-8 h-8" strokeWidth={2} />
+              ) : (
+                <UploadCloud className="w-8 h-8" strokeWidth={2} />
+              )}
             </div>
             <div className="text-card-title font-semibold text-ink-primary mb-1">
-              拖拽文件到这里，或点击选择文件
+              {isPackageMode
+                ? "拖拽书本包（.zip）到这里，或点击选择"
+                : "拖拽文件到这里，或点击选择文件"}
             </div>
             <div className="text-caption text-ink-tertiary">
-              支持 {SUPPORTED_LABEL}
-              {maxUploadSize && ` · 单文件最大 ${maxUploadSize}`}
+              {isPackageMode
+                ? "书本包 = 分页 + 图片 + 题库；导入后可直接刷题，已导入过的会自动跳过"
+                : `支持 ${SUPPORTED_LABEL}${maxUploadSize ? ` · 单文件最大 ${maxUploadSize}` : ""}`}
             </div>
           </>
         )}
       </div>
 
-      {/* PDF 强制 OCR 选项 */}
-      <label className="mt-3 flex items-center gap-2 text-small text-ink-soft cursor-pointer select-none">
-        <input
-          type="checkbox"
-          checked={forceOcr}
-          onChange={(e) => setForceOcr(e.target.checked)}
-          className="h-4 w-4"
-        />
-        强制 OCR：把 PDF 当扫描件整篇走 MinerU（公式/结构缺失的会自动识别，一般无需勾选）
-      </label>
+      {/* PDF 强制 OCR 选项（导入书本包时不适用） */}
+      {!isPackageMode && (
+        <label className="mt-3 flex items-center gap-2 text-small text-ink-soft cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={forceOcr}
+            onChange={(e) => setForceOcr(e.target.checked)}
+            className="h-4 w-4"
+          />
+          强制 OCR：把 PDF 当扫描件整篇走 MinerU（公式/结构缺失的会自动识别，一般无需勾选）
+        </label>
+      )}
 
       {/* 任务区 */}
       <div className="mt-8">
