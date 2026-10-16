@@ -1053,15 +1053,21 @@ export function QuizPage() {
                       </p>
                     )}
                 <div className="flex flex-wrap items-center gap-3">
-                  <CaptureImageButton
-                    onFiles={attachments.addFiles}
-                    disabled={submitting || attachments.uploading}
-                    className="border border-line"
-                  />
-                  <AttachImageButton
-                    onFiles={attachments.addFiles}
-                    disabled={submitting || attachments.uploading}
-                  />
+                  {/* 拍照/附件只在「图片真能被读懂」的题型出现：
+                      选择题走字符串匹配，传了图也判不了（只会判错），所以不给入口 */}
+                  {isAiGradedQuestion(currentQuestion.question_type) && (
+                    <>
+                      <CaptureImageButton
+                        onFiles={attachments.addFiles}
+                        disabled={submitting || attachments.uploading}
+                        className="border border-line"
+                      />
+                      <AttachImageButton
+                        onFiles={attachments.addFiles}
+                        disabled={submitting || attachments.uploading}
+                      />
+                    </>
+                  )}
                   <Button
                     variant="primary"
                     size="md"

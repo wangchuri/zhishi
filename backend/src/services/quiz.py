@@ -637,7 +637,8 @@ class QuizService:
 
         if qtype == "fill_blank":
             string_status = _grade_fill_blank_string(question, user_answer)
-            if request_ai_grade:
+            # 带了图（拍的解答）就直接交给模型读 —— 不必先判错、再让用户手点「让 AI 判断」
+            if request_ai_grade or image_paths or file_ids:
                 ai_status, ai_reason = await self._grade_by_ai(
                     question,
                     user_answer,
