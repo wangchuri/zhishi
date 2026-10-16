@@ -45,6 +45,7 @@ class Question(BaseModel):
     attempt_count: Optional[int] = None
     html_content: Optional[str] = None
     answer_params: Optional[str] = None
+    difficulty: Optional[int] = None  # 1=简单 2=中等 3=困难；老题为 null
     # 材料题：所属材料 + 子题序号
     material_id: Optional[str] = None
     sub_index: Optional[int] = None

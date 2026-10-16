@@ -409,6 +409,7 @@ class QuestionGenTools:
         reference_text: str,
         source: str,
         page_number: int,
+        difficulty: int,
         chapter_id: str = "",
         material_id: str = "",
     ) -> str:
@@ -416,6 +417,7 @@ class QuestionGenTools:
 
         Args:
             tags: 知识点标签列表，优先用所属章节的要点名
+            difficulty: 难度三档，必填 —— 1=简单 2=中等 3=困难
             chapter_id: 本页所属章节 id，必须从目录里原样复制，不要填标题
         """
         return self._append({
@@ -433,6 +435,7 @@ class QuestionGenTools:
             "reference_text": reference_text,
             "source": source,
             "page_number": page_number,
+            "difficulty": difficulty,
             "chapter_id": self._chapter_id(chapter_id),
             "material_id": (material_id or "").strip() or None,
         })
@@ -446,6 +449,7 @@ class QuestionGenTools:
         reference_text: str,
         source: str,
         page_number: int,
+        difficulty: int,
         chapter_id: str = "",
         material_id: str = "",
     ) -> str:
@@ -453,6 +457,7 @@ class QuestionGenTools:
 
         Args:
             tags: 知识点标签列表，优先用所属章节的要点名
+            difficulty: 难度三档，必填 —— 1=简单 2=中等 3=困难
             chapter_id: 本页所属章节 id，必须从目录里原样复制，不要填标题
         """
         return self._append({
@@ -465,6 +470,7 @@ class QuestionGenTools:
             "reference_text": reference_text,
             "source": source,
             "page_number": page_number,
+            "difficulty": difficulty,
             "chapter_id": self._chapter_id(chapter_id),
             "material_id": (material_id or "").strip() or None,
         })
@@ -478,6 +484,7 @@ class QuestionGenTools:
         reference_text: str,
         source: str,
         page_number: int,
+        difficulty: int,
         chapter_id: str = "",
         material_id: str = "",
     ) -> str:
@@ -485,6 +492,7 @@ class QuestionGenTools:
 
         Args:
             tags: 知识点标签列表，优先用所属章节的要点名
+            difficulty: 难度三档，必填 —— 1=简单 2=中等 3=困难
             chapter_id: 本页所属章节 id，必须从目录里原样复制，不要填标题
         """
         return self._append({
@@ -497,6 +505,7 @@ class QuestionGenTools:
             "reference_text": reference_text,
             "source": source,
             "page_number": page_number,
+            "difficulty": difficulty,
             "chapter_id": self._chapter_id(chapter_id),
             "material_id": (material_id or "").strip() or None,
         })
@@ -510,6 +519,7 @@ class QuestionGenTools:
         reference_text: str,
         source: str,
         page_number: int,
+        difficulty: int,
         chapter_id: str = "",
         material_id: str = "",
     ) -> str:
@@ -517,6 +527,7 @@ class QuestionGenTools:
 
         Args:
             tags: 知识点标签列表，优先用所属章节的要点名
+            difficulty: 难度三档，必填 —— 1=简单 2=中等 3=困难
             chapter_id: 本页所属章节 id，必须从目录里原样复制，不要填标题
         """
         return self._append({
@@ -529,6 +540,7 @@ class QuestionGenTools:
             "reference_text": reference_text,
             "source": source,
             "page_number": page_number,
+            "difficulty": difficulty,
             "chapter_id": self._chapter_id(chapter_id),
             "material_id": (material_id or "").strip() or None,
         })
@@ -544,6 +556,7 @@ class QuestionGenTools:
         reference_text: str,
         source: str,
         page_number: int,
+        difficulty: int,
         chapter_id: str = "",
         material_id: str = "",
     ) -> str:
@@ -554,6 +567,7 @@ class QuestionGenTools:
 
         Args:
             tags: 知识点标签列表，优先用所属章节的要点名
+            difficulty: 难度三档，必填 —— 1=简单 2=中等 3=困难
             chapter_id: 本页所属章节 id，必须从目录里原样复制，不要填标题
         """
         return self._append({
@@ -566,6 +580,7 @@ class QuestionGenTools:
             "reference_text": reference_text,
             "source": source,
             "page_number": page_number,
+            "difficulty": difficulty,
             "chapter_id": self._chapter_id(chapter_id),
             "material_id": (material_id or "").strip() or None,
             "html_content": html_content,

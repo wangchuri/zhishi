@@ -47,6 +47,46 @@ def _hash_material(kind: str, content: str) -> str:
     return sha256_hex(f"{kind or ''}|{content or ''}".encode("utf-8"))
 
 
+_DIFFICULTY_LABELS = {
+    "简单": 1,
+    "容易": 1,
+    "基础": 1,
+    "低": 1,
+    "中等": 2,
+    "一般": 2,
+    "适中": 2,
+    "中": 2,
+    "困难": 3,
+    "难": 3,
+    "高难": 3,
+    "高": 3,
+}
+
+
+def _norm_difficulty(value) -> Optional[int]:
+    """难度归一：三档 1=简单 2=中等 3=困难。其余（缺省/越界/乱七八糟）一律 None。
+
+    老题目 difficulty 为空表示「未标注」，不要强行折算成中间档。
+    """
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return None
+        if text in _DIFFICULTY_LABELS:
+            return _DIFFICULTY_LABELS[text]
+        try:
+            value = int(float(text))
+        except (TypeError, ValueError):
+            return None
+    try:
+        n = int(value)
+    except (TypeError, ValueError):
+        return None
+    return n if 1 <= n <= 3 else None
+
+
 def _pages_from_json(raw: Optional[str]) -> list[int]:
     if not raw:
         return []
@@ -106,6 +146,7 @@ def normalize_question(q: dict) -> dict | None:
         "reference_text": q.get("reference_text") or "",
         "html_content": q.get("html_content"),
         "answer_params": q.get("answer_params"),
+        "difficulty": _norm_difficulty(q.get("difficulty")),
         "page_number": page_number,
         "chapter_id": str(q.get("chapter_id") or "").strip() or None,
         "material_id": str(q.get("material_id") or "").strip() or None,
@@ -138,6 +179,7 @@ def _question_out(
         "chapter_id": chapter_id,
         "html_content": gq.html_content,
         "answer_params": gq.answer_params,
+        "difficulty": gq.difficulty,
         "material_id": gq.material_id,
         "sub_index": gq.sub_index,
         "created_at": gq.created_at.isoformat() if gq.created_at else None,
@@ -181,6 +223,7 @@ class QuestionService:
                 source_type=q["source_type"],
                 html_content=q["html_content"],
                 answer_params=q["answer_params"],
+                difficulty=q["difficulty"],
                 material_id=q["material_id"] if material else None,
                 sub_index=q["sub_index"],
             )
@@ -190,6 +233,10 @@ class QuestionService:
             gq.material_id = material.id
             if q["sub_index"] is not None:
                 gq.sub_index = q["sub_index"]
+
+        # 复用的老题：难度为空时补上（已有的不覆盖）
+        if not created and gq.difficulty is None and q["difficulty"] is not None:
+            gq.difficulty = q["difficulty"]
 
         # 溯源
         existing = db.query(QuestionProvenance).filter_by(

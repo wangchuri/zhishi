@@ -122,6 +122,7 @@ class ExportService:
                 "source_type": gq.source_type,
                 "html_content": gq.html_content,
                 "answer_params": gq.answer_params,
+                "difficulty": gq.difficulty,
                 "page_number": p.page_number,
                 "chapter_id": p.chapter_id,
                 "reference_text": p.excerpt or "",

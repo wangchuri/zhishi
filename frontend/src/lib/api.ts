@@ -853,11 +853,21 @@ export const quizApi = {
     question_ids?: string[]
     /** 按书本章节刷题（仅取该章题目） */
     chapter_id?: string
+    /** 多章节（与 chapter_id 并集）；不传=全书 */
+    chapter_ids?: string[]
     /** "type"=按题型排序（单选→…→应用） */
     sort?: "type"
     title?: string
     filter?: "all" | "undone" | "wrong" | "unknown"
     tags?: string[]
+    /** 题型筛选（single_choice/…/material）；不传=全部 */
+    question_types?: string[]
+    /** 难度筛选：1=简单 2=中等 3=困难；不传=不限（含未标注老题） */
+    difficulties?: number[]
+    /** 抽题数量；不传=符合条件全部 */
+    count?: number
+    /** balanced=按题型尽量均衡随机（默认）；自定义配额用 type_counts */
+    distribute?: "balanced" | "custom"
     /** 试卷模式：按题型配额随机组卷（material=材料题） */
     type_counts?: Record<string, number>
     resume?: boolean

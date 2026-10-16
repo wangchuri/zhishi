@@ -123,6 +123,194 @@ class QuizService:
 
     # ---- 会话 ----
 
+    def _scope_doc_ids(
+        self,
+        db: Session,
+        *,
+        document_id: Optional[str],
+        group_id: Optional[str],
+    ) -> list[str] | None:
+        """刷题范围（文档 / 资料组）。返回 None 表示不限（全库）。"""
+        if group_id:
+            return [
+                r[0] for r in db.query(Document.id).filter(Document.group_id == group_id).all()
+            ]
+        if document_id:
+            return [document_id]
+        return None
+
+    def _candidate_ids(
+        self,
+        db: Session,
+        *,
+        document_id: Optional[str],
+        group_id: Optional[str],
+        chapter_ids: Optional[list[str]] = None,
+        question_types: Optional[list[str]] = None,
+        difficulties: Optional[list[int]] = None,
+        filter_mode: str = "all",
+        tags: Optional[list[str]] = None,
+    ) -> list[str]:
+        """把「范围 + 章节 + 题型 + 难度 + 作答状态 + 知识点」一次过滤成候选题 id。
+
+        顺序沿用 provenance 的原始顺序（便于「按原顺序刷」）。
+        """
+        scope_doc_ids = self._scope_doc_ids(db, document_id=document_id, group_id=group_id)
+        if group_id and not scope_doc_ids:
+            return []
+
+        q = db.query(QuestionProvenance.question_id)
+        if scope_doc_ids:
+            q = q.filter(QuestionProvenance.document_id.in_(scope_doc_ids))
+        chapter_list = [str(c).strip() for c in (chapter_ids or []) if str(c or "").strip()]
+        if chapter_list:
+            q = q.filter(QuestionProvenance.chapter_id.in_(chapter_list))
+        ids = list(dict.fromkeys(r[0] for r in q.all()))
+        if not ids:
+            return []
+
+        type_set = {str(t).strip() for t in (question_types or []) if str(t or "").strip()}
+        diff_set: set[int] = set()
+        for d in difficulties or []:
+            try:
+                n = int(d)
+            except (TypeError, ValueError):
+                continue
+            if 1 <= n <= 3:
+                diff_set.add(n)
+        if type_set or diff_set:
+            kept: list[str] = []
+            for qid, qtype, diff in (
+                db.query(
+                    GlobalQuestion.id, GlobalQuestion.question_type, GlobalQuestion.difficulty
+                )
+                .filter(GlobalQuestion.id.in_(ids))
+                .all()
+            ):
+                if type_set and (qtype or "single_choice") not in type_set:
+                    continue
+                # 勾了具体难度时，未标注的老题不入选
+                if diff_set and diff not in diff_set:
+                    continue
+                kept.append(qid)
+            keep = set(kept)
+            ids = [qid for qid in ids if qid in keep]
+            if not ids:
+                return []
+
+        if filter_mode in ("wrong", "unknown", "undone") and scope_doc_ids:
+            refs = (
+                db.query(QuestionRef)
+                .filter(QuestionRef.document_id.in_(scope_doc_ids))
+                .all()
+            )
+            # 同题跨文档：取 attempt 最高的 ref 作为状态
+            ref_map: dict[str, QuestionRef] = {}
+            for r in refs:
+                prev = ref_map.get(r.question_id)
+                if prev is None or (r.attempt_count or 0) > (prev.attempt_count or 0):
+                    ref_map[r.question_id] = r
+            filtered = []
+            for qid in ids:
+                ref = ref_map.get(qid)
+                if filter_mode == "undone" and (ref is None or (ref.attempt_count or 0) == 0):
+                    filtered.append(qid)
+                elif filter_mode == "wrong" and ref and ref.last_status == "wrong":
+                    filtered.append(qid)
+                elif filter_mode == "unknown" and ref and ref.last_status == "unknown":
+                    filtered.append(qid)
+            ids = filtered
+
+        tag_set = {t.strip() for t in (tags or []) if t and str(t).strip()}
+        if tag_set:
+            kept = [
+                gq.id
+                for gq in db.query(GlobalQuestion).filter(GlobalQuestion.id.in_(ids)).all()
+                if set(parse_tags(gq.tags)) & tag_set
+            ]
+            kept_set = set(kept)
+            ids = [qid for qid in ids if qid in kept_set]
+        return ids
+
+    def _bucket_by_type(
+        self, db: Session, ids: list[str]
+    ) -> tuple[dict[str, list[str]], list[str]]:
+        """候选按题型分桶（材料子题不单独计题型，返回材料 id 列表）。"""
+        by_type: dict[str, list[str]] = {}
+        mat_ids: list[str] = []
+        for qid, qtype, mid in (
+            db.query(
+                GlobalQuestion.id, GlobalQuestion.question_type, GlobalQuestion.material_id
+            )
+            .filter(GlobalQuestion.id.in_(ids))
+            .all()
+        ):
+            if mid:
+                if mid not in mat_ids:
+                    mat_ids.append(mid)
+                continue
+            by_type.setdefault(qtype or "single_choice", []).append(qid)
+        return by_type, mat_ids
+
+    def _sample_balanced(self, db: Session, ids: list[str], count: int) -> list[str]:
+        """随机抽 count 题，题型之间尽量均衡（轮转取，先取规模小的桶）。"""
+        count = int(count)
+        if count <= 0 or len(ids) <= count:
+            return ids
+        by_type, mat_ids = self._bucket_by_type(db, ids)
+        buckets = [list(v) for v in by_type.values()]
+        if mat_ids:
+            buckets.append([m for m in mat_ids])
+        picked: list[str] = []
+        while len(picked) < count and any(buckets):
+            for bucket in buckets:
+                if len(picked) >= count:
+                    break
+                if not bucket:
+                    continue
+                picked.append(bucket.pop(random.randrange(len(bucket))))
+            buckets = [b for b in buckets if b]
+        # 材料题：抽到材料就把该材料整组带回来
+        if mat_ids:
+            mat_set = set(mat_ids)
+            material_ids = [qid for qid in picked if qid in mat_set]
+            real = [qid for qid in picked if qid not in mat_set]
+            extras: list[str] = []
+            for mid in material_ids:
+                extras.extend(
+                    s[0]
+                    for s in db.query(GlobalQuestion.id)
+                    .filter(GlobalQuestion.material_id == mid)
+                    .order_by(GlobalQuestion.sub_index)
+                    .all()
+                )
+            picked = real + extras
+        return picked
+
+    def _sample_by_type_counts(
+        self, db: Session, ids: list[str], type_counts: dict
+    ) -> list[str]:
+        """按题型配额随机抽题（material=材料题，按材料抽，带全部子题）。"""
+        by_type, mat_ids = self._bucket_by_type(db, ids)
+        picked: list[str] = []
+        for qtype in _TYPE_ORDER:
+            n = int(type_counts.get(qtype, 0) or 0)
+            if n <= 0:
+                continue
+            cand = by_type.get(qtype, [])
+            picked.extend(random.sample(cand, min(n, len(cand))))
+        m_count = int(type_counts.get("material", 0) or 0)
+        if m_count > 0 and mat_ids:
+            for mid in random.sample(mat_ids, min(m_count, len(mat_ids))):
+                picked.extend(
+                    s[0]
+                    for s in db.query(GlobalQuestion.id)
+                    .filter(GlobalQuestion.material_id == mid)
+                    .order_by(GlobalQuestion.sub_index)
+                    .all()
+                )
+        return picked
+
     def _resolve_question_ids(
         self,
         db: Session,
@@ -131,70 +319,40 @@ class QuizService:
         collection_id: Optional[str],
         group_id: Optional[str] = None,
         chapter_id: Optional[str] = None,
+        chapter_ids: Optional[list[str]] = None,
         question_ids: Optional[list[str]],
         filter_mode: str = "all",
         tags: Optional[list[str]] = None,
+        question_types: Optional[list[str]] = None,
+        difficulties: Optional[list[int]] = None,
+        count: Optional[int] = None,
         type_counts: Optional[dict] = None,
         sort: Optional[str] = None,
     ) -> list[str]:
-        """解析会话题目 ID 集合。"""
+        """解析会话题目 ID 集合（范围 → 章节/题型/难度/状态/知识点 → 抽题）。"""
+        del collection_id  # 目前在候选过滤里不参与（保留入参兼容旧调用）
         if question_ids:
             ids = list(question_ids)
-        elif type_counts:
-            return self._resolve_by_type_counts(
-                db, document_id=document_id, group_id=group_id, type_counts=type_counts
-            )
         else:
-            q = db.query(QuestionProvenance.question_id)
-            scope_doc_ids: list[str] | None = None
-            if group_id:
-                scope_doc_ids = [
-                    r[0]
-                    for r in db.query(Document.id).filter(Document.group_id == group_id).all()
-                ]
-                if not scope_doc_ids:
-                    return []
-                q = q.filter(QuestionProvenance.document_id.in_(scope_doc_ids))
-            elif document_id:
-                scope_doc_ids = [document_id]
-                q = q.filter(QuestionProvenance.document_id == document_id)
-            if chapter_id:
-                q = q.filter(QuestionProvenance.chapter_id == chapter_id)
-            ids = list(dict.fromkeys(r[0] for r in q.all()))
-
-            if filter_mode in ("wrong", "unknown", "undone") and scope_doc_ids:
-                refs = (
-                    db.query(QuestionRef)
-                    .filter(QuestionRef.document_id.in_(scope_doc_ids))
-                    .all()
-                )
-                # 同题跨文档：取 attempt 最高的 ref 作为状态
-                ref_map: dict[str, QuestionRef] = {}
-                for r in refs:
-                    prev = ref_map.get(r.question_id)
-                    if prev is None or (r.attempt_count or 0) > (prev.attempt_count or 0):
-                        ref_map[r.question_id] = r
-                filtered = []
-                for qid in ids:
-                    ref = ref_map.get(qid)
-                    if filter_mode == "undone" and (ref is None or (ref.attempt_count or 0) == 0):
-                        filtered.append(qid)
-                    elif filter_mode == "wrong" and ref and ref.last_status == "wrong":
-                        filtered.append(qid)
-                    elif filter_mode == "unknown" and ref and ref.last_status == "unknown":
-                        filtered.append(qid)
-                ids = filtered
-
-        tag_set = {t.strip() for t in (tags or []) if t and str(t).strip()}
-        if tag_set:
-            kept = []
-            for gq in db.query(GlobalQuestion).filter(GlobalQuestion.id.in_(ids)).all():
-                q_tags = set(parse_tags(gq.tags))
-                if q_tags & tag_set:
-                    kept.append(gq.id)
-            # 保持原顺序
-            kept_set = set(kept)
-            ids = [qid for qid in ids if qid in kept_set]
+            cids = [str(c).strip() for c in (chapter_ids or []) if str(c or "").strip()]
+            if chapter_id and chapter_id not in cids:
+                cids.append(chapter_id)
+            candidates = self._candidate_ids(
+                db,
+                document_id=document_id,
+                group_id=group_id,
+                chapter_ids=cids,
+                question_types=question_types,
+                difficulties=difficulties,
+                filter_mode=filter_mode,
+                tags=tags,
+            )
+            if type_counts:
+                ids = self._sample_by_type_counts(db, candidates, type_counts)
+            elif count and int(count) > 0:
+                ids = self._sample_balanced(db, candidates, int(count))
+            else:
+                ids = candidates
         if sort == "type":
             ids = self._order_ids_by_type(db, ids)
         return self._expand_material_questions(db, ids)
@@ -218,73 +376,6 @@ class QuizService:
                 pos[qid],
             ),
         )
-
-    def _resolve_by_type_counts(
-        self,
-        db: Session,
-        *,
-        document_id: Optional[str],
-        group_id: Optional[str],
-        type_counts: dict,
-    ) -> list[str]:
-        """试卷模式：按题型配额随机抽题（material=材料题，按材料抽，带全部子题）。"""
-        scope_doc_ids: list[str] | None = None
-        if group_id:
-            scope_doc_ids = [
-                r[0]
-                for r in db.query(Document.id).filter(Document.group_id == group_id).all()
-            ]
-        elif document_id:
-            scope_doc_ids = [document_id]
-        if not scope_doc_ids:
-            return []
-
-        rows = (
-            db.query(GlobalQuestion.id, GlobalQuestion.question_type, GlobalQuestion.material_id)
-            .join(QuestionProvenance, QuestionProvenance.question_id == GlobalQuestion.id)
-            .filter(QuestionProvenance.document_id.in_(scope_doc_ids))
-            .distinct()
-            .all()
-        )
-        by_type: dict[str, list[str]] = {}
-        for qid, qtype, mid in rows:
-            if mid:  # 材料子题归到 material 桶，不单独计入题型
-                continue
-            by_type.setdefault(qtype or "single_choice", []).append(qid)
-
-        picked: list[str] = []
-        for qtype in (
-            "single_choice",
-            "multiple_choice",
-            "fill_blank",
-            "short_answer",
-            "application",
-            "custom",
-        ):
-            n = int(type_counts.get(qtype, 0) or 0)
-            if n <= 0:
-                continue
-            cand = by_type.get(qtype, [])
-            picked.extend(random.sample(cand, min(n, len(cand))))
-
-        m_count = int(type_counts.get("material", 0) or 0)
-        if m_count > 0:
-            mat_ids = [
-                r[0]
-                for r in db.query(QuestionMaterial.id)
-                .filter(QuestionMaterial.document_id.in_(scope_doc_ids))
-                .all()
-            ]
-            for mid in random.sample(mat_ids, min(m_count, len(mat_ids))):
-                subs = (
-                    db.query(GlobalQuestion.id)
-                    .filter(GlobalQuestion.material_id == mid)
-                    .order_by(GlobalQuestion.sub_index)
-                    .all()
-                )
-                picked.extend(s[0] for s in subs)
-
-        return self._expand_material_questions(db, picked)
 
     def _expand_material_questions(self, db: Session, ids: list[str]) -> list[str]:
         """带材料的题目自动补上同材料的所有子题，并按 sub_index 排序。
@@ -342,24 +433,34 @@ class QuizService:
         collection_id: Optional[str] = None,
         group_id: Optional[str] = None,
         chapter_id: Optional[str] = None,
+        chapter_ids: Optional[list[str]] = None,
         question_ids: Optional[list[str]] = None,
         title: Optional[str] = None,
         filter_mode: str = "all",
         tags: Optional[list[str]] = None,
+        question_types: Optional[list[str]] = None,
+        difficulties: Optional[list[int]] = None,
+        count: Optional[int] = None,
+        distribute: Optional[str] = None,
         type_counts: Optional[dict] = None,
         sort: Optional[str] = None,
         resume: bool = True,
         task_id: Optional[str] = None,
     ) -> QuizSession:
+        del distribute  # 目前只有 balanced 一种算法；自定义配额走 type_counts
         ids = self._resolve_question_ids(
             db,
             document_id=document_id,
             collection_id=collection_id,
             group_id=group_id,
             chapter_id=chapter_id,
+            chapter_ids=chapter_ids,
             question_ids=question_ids,
             filter_mode=filter_mode,
             tags=tags,
+            question_types=question_types,
+            difficulties=difficulties,
+            count=count,
             type_counts=type_counts,
             sort=sort,
         )

@@ -53,10 +53,15 @@ class QuizSessionCreate(BaseModel):
     group_id: Optional[str] = None
     question_ids: Optional[list[str]] = None
     chapter_id: Optional[str] = None  # 按书本章节刷题（仅取该章题目）
+    chapter_ids: Optional[list[str]] = None  # 多章节（与 chapter_id 并集）
     sort: Optional[str] = None  # "type"=按题型排序（单选→…→应用），同类型内保持原顺序
     title: Optional[str] = None
     filter: Optional[str] = "all"  # all/undone/wrong/unknown
     tags: Optional[list[str]] = None  # 知识点；不传=全部；多选为并集（任一命中）
+    question_types: Optional[list[str]] = None  # 题型筛选；不传=全部
+    difficulties: Optional[list[int]] = None  # 1/2/3；不传=不限（含未标注的老题）
+    count: Optional[int] = None  # 抽题数量；不传=符合条件的全部
+    distribute: Optional[str] = "balanced"  # balanced=按题型尽量均衡随机；type_counts 给定时忽略
     # 试卷模式：按题型配额随机组卷，键为题型（material 表示材料题），值为数量
     type_counts: Optional[dict[str, int]] = None
     resume: bool = True  # 同一批题有未完成会话则续刷

@@ -7,6 +7,7 @@ import {
   FolderOpen,
   HelpCircle,
   Loader2,
+  Play,
   Plus,
   Trash2,
   Upload,
@@ -34,25 +35,11 @@ import { toast } from "sonner"
 import type {
   DocumentGroupDetail,
   KnowledgeDoc,
-  Question,
   QuestionListResult,
   QuizSession,
 } from "@/types"
 import { QuizBookCard } from "./QuizBookCard"
-import { QuizStartPanel, type QuizFilterMode } from "./QuizStartPanel"
-
-function matchesFilter(q: Question, mode: QuizFilterMode): boolean {
-  if (mode === "undone") return !(q.attempt_count && q.attempt_count > 0)
-  if (mode === "wrong") return q.user_answer_status === "wrong"
-  if (mode === "unknown") return q.user_answer_status === "unknown"
-  return true
-}
-
-function matchesTags(q: Question, tags: string[]): boolean {
-  if (!tags.length) return true
-  const qTags = new Set(q.tags || [])
-  return tags.some((t) => qTags.has(t))
-}
+import { QuizStartDialog } from "./QuizStartDialog"
 
 export function QuizGroupDetailPage() {
   const { groupId } = useParams<{ groupId: string }>()
@@ -61,8 +48,7 @@ export function QuizGroupDetailPage() {
   const [group, setGroup] = useState<DocumentGroupDetail | null>(null)
   const [loading, setLoading] = useState(true)
   const [questionData, setQuestionData] = useState<QuestionListResult | null>(null)
-  const [filterMode, setFilterMode] = useState<QuizFilterMode>("all")
-  const [selectedTags, setSelectedTags] = useState<string[]>([])
+  const [startOpen, setStartOpen] = useState(false)
   const [starting, setStarting] = useState(false)
   const [dissolveOpen, setDissolveOpen] = useState(false)
   const [dissolving, setDissolving] = useState(false)
@@ -94,11 +80,6 @@ export function QuizGroupDetailPage() {
     void load()
   }, [load])
 
-  const matchCount = useMemo(() => {
-    const qs = questionData?.questions || []
-    return qs.filter((q) => matchesFilter(q, filterMode) && matchesTags(q, selectedTags)).length
-  }, [questionData, filterMode, selectedTags])
-
   const availableTags = useMemo(() => {
     if (group?.tags?.length) return group.tags
     const seen = new Set<string>()
@@ -114,16 +95,16 @@ export function QuizGroupDetailPage() {
     return out
   }, [group?.tags, questionData])
 
-  const handleStart = async () => {
+  const handleStart = async (body: Record<string, unknown>) => {
     if (!groupId) return
     setStarting(true)
     try {
       const res = await quizApi.createSession({
+        ...(body as Parameters<typeof quizApi.createSession>[0]),
         group_id: groupId,
-        filter: filterMode,
-        tags: selectedTags.length ? selectedTags : undefined,
         title: group?.name ? `${group.name} · 混合刷题` : undefined,
       })
+      setStartOpen(false)
       navigate(`/quiz/session?session_id=${(res as QuizSession).id}`)
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "开始刷题失败")
@@ -248,17 +229,32 @@ export function QuizGroupDetailPage() {
           ) : null}
 
           {(stats?.total ?? 0) > 0 ? (
-            <QuizStartPanel
-              availableTags={availableTags}
-              matchCount={matchCount}
-              filterMode={filterMode}
-              onFilterModeChange={setFilterMode}
-              selectedTags={selectedTags}
-              onSelectedTagsChange={setSelectedTags}
-              onStart={() => void handleStart()}
-              starting={starting}
-              title="混合刷题"
-            />
+            <div className="space-y-3">
+              <Button
+                variant="primary"
+                size="lg"
+                className="w-full"
+                style={{ color: "#FFFFFF" }}
+                disabled={starting}
+                onClick={() => setStartOpen(true)}
+              >
+                {starting ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Play className="w-4 h-4" strokeWidth={2} />
+                )}
+                混合刷题
+              </Button>
+              <QuizStartDialog
+                open={startOpen}
+                onOpenChange={setStartOpen}
+                questions={questionData?.questions || []}
+                availableTags={availableTags}
+                starting={starting}
+                scope={{ groupId }}
+                onStart={(body) => void handleStart(body)}
+              />
+            </div>
           ) : (
             <div className="bg-surface border border-line-soft rounded-lg p-5 text-center text-ink-tertiary">
               组内暂无可刷题目，先给成员资料出题

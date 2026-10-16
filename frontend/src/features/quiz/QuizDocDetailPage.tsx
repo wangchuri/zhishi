@@ -49,15 +49,12 @@ import { SectionHeader } from "@/components/blocks/SectionHeader"
 import { ChapterMindMap } from "@/components/blocks/ChapterMindMap"
 import { QuizQuestionPreviewDialog } from "./QuizQuestionPreviewDialog"
 import { QuestionGenJobsBanner } from "./QuestionGenJobsBanner"
-import { QuizStartPanel, type QuizFilterMode } from "./QuizStartPanel"
-import { QuizPaperPanel, type PaperMaxByType } from "./QuizPaperPanel"
+import { QuizStartDialog } from "./QuizStartDialog"
 import { questionsApi, quizApi, analyticsApi, kbApi, getThumbnailUrl } from "@/lib/api"
 import { accuracyPercent, formatAccuracy, splitTagLabels } from "@/lib/utils"
 import { useKbDocuments } from "@/hooks/useKbDocuments"
 import type { KnowledgeDoc, LearningPathChapter, LearningPathResult, Question, QuestionGenJob, QuestionListResult, QuizSession, TagStatsResult } from "@/types"
 import { toast } from "sonner"
-
-type FilterMode = QuizFilterMode
 
 const TYPE_LABEL: Record<string, string> = {
   single_choice: "单选题",
@@ -98,19 +95,6 @@ function splitKeyPoints(points: string[] | undefined): string[] {
   return out
 }
 
-function matchesFilter(q: Question, mode: FilterMode): boolean {
-  if (mode === "undone") return !(q.attempt_count && q.attempt_count > 0)
-  if (mode === "wrong") return q.user_answer_status === "wrong"
-  if (mode === "unknown") return q.user_answer_status === "unknown"
-  return true
-}
-
-function matchesTags(q: Question, tags: string[]): boolean {
-  if (!tags.length) return true
-  const qTags = new Set(q.tags || [])
-  return tags.some((t) => qTags.has(t))
-}
-
 export function QuizDocDetailPage() {
   const { docId } = useParams<{ docId: string }>()
   const navigate = useNavigate()
@@ -121,8 +105,7 @@ export function QuizDocDetailPage() {
   const [tagStats, setTagStats] = useState<TagStatsResult | null>(null)
   const [loadingTagStats, setLoadingTagStats] = useState(false)
   const [activeSession, setActiveSession] = useState<QuizSession | null>(null)
-  const [filterMode, setFilterMode] = useState<FilterMode>("all")
-  const [selectedTags, setSelectedTags] = useState<string[]>([])
+  const [startOpen, setStartOpen] = useState(false)
   const [starting, setStarting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [learningPath, setLearningPath] = useState<LearningPathResult | null>(null)
@@ -327,40 +310,19 @@ export function QuizDocDetailPage() {
     return map
   }, [questionData])
 
-  const handleStart = async () => {
+  const handleStartDialog = async (body: Record<string, unknown>) => {
     if (!docId) return
     setStarting(true)
     setError(null)
     try {
-      const res = await quizApi.createSession({
-        document_id: docId,
-        filter: filterMode,
-        tags: selectedTags.length ? selectedTags : undefined,
-      })
+      const res = await quizApi.createSession(
+        body as Parameters<typeof quizApi.createSession>[0],
+      )
       const session = res as QuizSession
+      setStartOpen(false)
       navigate(`/quiz/session?session_id=${session.id}`)
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "开始练习失败")
-    } finally {
-      setStarting(false)
-    }
-  }
-
-  const handleStartPaper = async (counts: Record<string, number>) => {
-    if (!docId) return
-    setStarting(true)
-    setError(null)
-    try {
-      const res = await quizApi.createSession({
-        document_id: docId,
-        type_counts: counts,
-        title: "试卷模式",
-        resume: false,
-      })
-      const session = res as QuizSession
-      navigate(`/quiz/session?session_id=${session.id}`)
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "生成试卷失败")
+      setError(err instanceof Error ? err.message : "开始刷题失败")
     } finally {
       setStarting(false)
     }
@@ -379,8 +341,6 @@ export function QuizDocDetailPage() {
         document_id: docId,
         chapter_id: ch.id,
         sort: "type",
-        filter: filterMode,
-        tags: selectedTags.length ? selectedTags : undefined,
         title: ch.title || "本章练习",
       })
       const session = res as QuizSession
@@ -490,21 +450,6 @@ export function QuizDocDetailPage() {
   const accuracy = stats && stats.answered > 0 ? Math.round((stats.correct / stats.answered) * 100) : null
   const progress = stats && stats.total > 0 ? Math.round((stats.answered / stats.total) * 100) : 0
 
-  const paperMaxByType = useMemo<PaperMaxByType>(() => {
-    const qs = questionData?.questions || []
-    const nonMaterial = qs.filter((q) => !q.material_id)
-    const countType = (t: string) => nonMaterial.filter((q) => q.question_type === t).length
-    const materialIds = new Set(
-      qs.filter((q) => q.material_id).map((q) => q.material_id as string),
-    )
-    return {
-      single_choice: countType("single_choice"),
-      fill_blank: countType("fill_blank"),
-      application: countType("application"),
-      material: materialIds.size,
-    }
-  }, [questionData])
-
   if (loadingDocuments) {
     return (
       <AppShell>
@@ -532,9 +477,6 @@ export function QuizDocDetailPage() {
   const answeredTags = allTags.filter(t => t.total_attempts > 0)
   const questionTagLabels = [...new Set(allTags.flatMap((t) => splitTagLabels(t.tag)))]
   const typeStats = tagStats?.by_question_type ?? []
-  const quizMatchCount = (questionData?.questions || []).filter(
-    (q) => matchesFilter(q, filterMode) && matchesTags(q, selectedTags)
-  ).length
   const startTags =
     questionTagLabels.length > 0
       ? questionTagLabels
@@ -695,22 +637,39 @@ export function QuizDocDetailPage() {
 
           {hasQuestions ? (
             <div className="space-y-3">
-              <QuizStartPanel
+              <Button
+                variant="primary"
+                size="lg"
+                className="w-full"
+                style={{ color: "#FFFFFF" }}
+                disabled={starting || loadingQuestions || startingChapter !== null}
+                onClick={() => setStartOpen(true)}
+              >
+                {starting ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Play className="w-4 h-4" strokeWidth={2} />
+                )}
+                刷题
+              </Button>
+              <p className="text-caption text-ink-tertiary text-center">
+                按章节 / 题型 / 难度 / 数量自选
+                {activeSession ? " · 有未完成的练习可在浮窗里继续" : ""}
+              </p>
+              <QuizStartDialog
+                open={startOpen}
+                onOpenChange={setStartOpen}
+                questions={questionData?.questions || []}
+                chapters={learningPath?.chapters}
                 availableTags={startTags}
-                matchCount={quizMatchCount}
-                filterMode={filterMode}
-                onFilterModeChange={setFilterMode}
-                selectedTags={selectedTags}
-                onSelectedTagsChange={setSelectedTags}
                 activeSession={activeSession}
-                onResume={handleResume}
-                onStart={() => void handleStart()}
-                starting={starting || loadingQuestions || startingChapter !== null}
-              />
-              <QuizPaperPanel
-                maxByType={paperMaxByType}
-                starting={starting || loadingQuestions || startingChapter !== null}
-                onStart={(counts) => void handleStartPaper(counts)}
+                onResume={() => {
+                  setStartOpen(false)
+                  void handleResume()
+                }}
+                starting={starting}
+                scope={{ documentId: docId, title: doc?.name ? `${doc.name} · 刷题` : undefined }}
+                onStart={(body) => void handleStartDialog(body)}
               />
             </div>
           ) : (
@@ -813,7 +772,7 @@ export function QuizDocDetailPage() {
                   const points = splitKeyPoints(ch.key_points)
                   const open = expandedChapter === i
                   const chapterQs = ch.id ? questionsByChapter.get(ch.id) || [] : []
-                  const filteredCount = chapterQs.filter((q) => matchesFilter(q, filterMode)).length
+                  const filteredCount = chapterQs.length
                   const quizBusy = starting || startingChapter !== null
                   return (
                     <div key={`${ch.id || ch.order}-${ch.title}-${i}`} className="hover:bg-surface-soft/80 transition-colors">

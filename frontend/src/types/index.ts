@@ -207,6 +207,8 @@ export interface Question {
   collection_id?: string | null
   chapter_id?: string | null
   created_at?: string
+  /** 难度 1=简单 2=中等 3=困难；老题为 null/缺省（未标注） */
+  difficulty?: number | null
   user_answer_status?: "correct" | "wrong" | "unknown" | null
   attempt_count?: number
   material_id?: string | null
