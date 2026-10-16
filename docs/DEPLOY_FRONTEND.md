@@ -17,6 +17,20 @@
 
 所以部署 = **把新构建出来的 `dist/` 换上去**，不需要重启后端（FastAPI 的 `StaticFiles` 每次请求读盘；`index.html` / `sw.js` 本来就是 `no-store`）。
 
+### 0.1 APK 要不要重打？（经常被问）
+
+**不用**。`frontend/capacitor.config.ts` 用的是 `server.url`（同源模式）：APK 只是个壳，WebView 打开的是**服务器上的页面**。
+CI（`.github/workflows/android-apk.yml`）强制要求后端地址，没配就直接失败退出，所以不会出现「包里塞了一份旧 dist」。
+
+| 改了什么 | 要重打 APK 吗 |
+| --- | --- |
+| 前端页面 / 样式 / 文案 | ❌ 不用（但要**重建并部署** `dist`，否则手机上还是旧的） |
+| 后端接口 | ❌ 不用 |
+| **服务器地址**（换域名 / 换端口） | ✅ **必须** —— 地址是打 APK 时注入写死的，旧 APK 会指向老地址打不开 |
+| `capacitor.config.ts` / 应用名 / 图标 / 启动图 / 明文 HTTP 权限 | ✅ 必须 |
+
+两个副作用要记住：① 一份 APK 服务所有已装用户，服务器一更新就是全员新版（没有灰度、没有"旧版 APK"可退）→ 部署前务必先备份 `dist`；② 手机 WebView 里也有 Service Worker，换完前端若还是旧界面，先访问一次 `/api/v1/pwa-reset`。
+
 ---
 
 ## 1. 在本地构建（在开发机上跑）
