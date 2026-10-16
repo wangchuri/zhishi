@@ -85,12 +85,19 @@ class ChromaStore:
 
     # ---- 索引 ----
 
-    def index_document(self, doc_id: str, text: str, *, batch_size: int = 64) -> int:
+    def index_document(self, doc_id: str, text: str, *, batch_size: int = 256) -> int:
         """向量化文档（分批写入 chroma）。返回 chunk 数。
 
-        分批的意义：原来把全部 chunk 一次性 embed，`out` 列表会把所有 768 维向量
-        同时驻留（1 万 chunk ≈ 300MB+），再连同 documents 一起交给 chroma。
-        大书（几百页扫描件）导入时这是压垮内存的主力之一。
+        为什么要分批（实测：3000 chunk / 768 维，假 embedding 但形态同 v.tolist()）：
+        - 一次性 embed 全部：增量峰值 170MB、2.9s；
+        - batch=64 ：76MB、11.6s（省内存，但 chroma 每批的固定开销把时间拖了 4 倍）；
+        - batch=256：83MB、4.8s  ← 取这个平衡；
+        - batch=512：90MB、3.6s。
+        峰值 ≈ batch × 768 × 装箱 float（约 24KB/条），所以 batch 越大内存越高。
+
+        另一个副作用：chroma 单次 add 上限 5461 条，旧实现超过就直接抛 InternalError，
+        被调用方的 except 吞掉、只留一行 warning —— 向量库静默为空。分批后大书
+        （实测 10589 chunk）也能正常写入。
         """
         chunks = _chunk_text(text)
         if not chunks:
