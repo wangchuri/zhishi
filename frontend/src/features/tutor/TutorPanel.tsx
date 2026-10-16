@@ -15,7 +15,7 @@ import {
   markdownProseClass,
   markdownProseInvertClass,
 } from "@/components/blocks/MarkdownWithMath"
-import { ThinkingLabel } from "@/components/blocks/ThinkingLabel"
+import { ThinkingLabel, ThinkingPeek } from "@/components/blocks/ThinkingLabel"
 import { cn } from "@/lib/utils"
 
 const SCROLL_BOTTOM_THRESHOLD = 48
@@ -33,6 +33,8 @@ function ReasoningBlock({ content, active = false }: { content: string; active?:
         {open ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
         <ThinkingLabel active={active} />
       </button>
+      {/* 折叠着也在"想"的时候，下一行跟一条最新思考内容 */}
+      {active && !open && <ThinkingPeek content={content} className="mt-0.5" />}
       {open && (
         <div className="mt-1 p-2 rounded bg-ink-tertiary/5 border border-line-soft text-small text-ink-soft leading-relaxed">
           {content}
