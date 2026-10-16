@@ -9,7 +9,7 @@ import type { ActiveParseTask } from "@/types"
 function statusText(t: ActiveParseTask) {
   if (t.status === "blocked") return "等待 OCR（需要 MinerU）"
   if (t.status === "pending") return "排队中…"
-  if (t.is_scanned_pdf) return "解析中（MinerU OCR）…"
+  if (t.using_ocr) return "解析中（MinerU OCR）…"
   return "解析中…"
 }
 

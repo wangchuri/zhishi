@@ -18,6 +18,7 @@ import io
 import json
 import logging
 import re
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Optional
 
@@ -332,8 +333,18 @@ class ExportService:
         db.commit()
         db.refresh(doc)
 
+        def touch() -> None:
+            """长流程里定期刷新 updated_at。
+
+            否则前端「10 分钟没动就判定卡住」会把正常但耗时的大书导入误报成卡住
+            （导入的进度只写在 job 上，doc.updated_at 一直停在建行那一刻）。
+            """
+            doc.updated_at = datetime.now(timezone.utc)
+            db.commit()
+
         # 保留包内图片原名，避免打断 pages 里的 images/xxx 引用
         stage("保存图片…", 0.55)
+        touch()
         for idx, (name, data) in enumerate(images.items(), 1):
             safe = Path(name).name
             if not safe:
@@ -359,6 +370,7 @@ class ExportService:
             storage.save_thumbnail(doc.id, thumbnail)
 
         stage("分段中…", 0.7)
+        touch()
         try:
             kb_service.segment_document(db, doc)
             doc.segment_status = "completed"
@@ -369,6 +381,7 @@ class ExportService:
             parsed = storage.read_parsed(doc.id) or joined
             if parsed.strip():
                 stage("向量化中…", 0.85)
+                touch()
                 from ..services.rag import chroma_store
 
                 chroma_store.index_document(doc.id, parsed)
@@ -392,6 +405,7 @@ class ExportService:
                 logger.warning("导入学习路径失败 doc=%s: %s", doc.id, e)
 
         stage("写入题库…", 0.92)
+        touch()
         for q in questions:
             try:
                 _gq, is_new = question_service.store_question(db, doc, q)

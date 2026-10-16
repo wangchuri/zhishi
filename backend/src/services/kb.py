@@ -960,6 +960,9 @@ class KnowledgeBaseService:
                 "file_type": d.file_type or "txt",
                 "status": d.indexing_status,
                 "is_scanned_pdf": bool(d.is_scanned_pdf),
+                # 只有「还没有解析稿」的扫描件才真的在走 MinerU：
+                # 书本包导入时 is_scanned_pdf 会从 meta 继承过来，但正文其实已经在了
+                "using_ocr": bool(d.is_scanned_pdf and not storage.list_pages(d.id)),
                 "parse_reason": d.parse_reason,
                 "collection_id": d.collection_id,
                 "collection_name": col_names.get(d.collection_id),

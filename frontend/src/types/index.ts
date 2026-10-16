@@ -80,6 +80,8 @@ export interface ActiveParseTask {
   file_type: string
   status: string
   is_scanned_pdf: boolean
+  /** 是否真的在走 MinerU OCR（导入书本包时 is_scanned_pdf 会继承，但正文已经有了） */
+  using_ocr?: boolean
   parse_reason?: string | null
   collection_id?: string | null
   collection_name?: string | null
