@@ -71,7 +71,7 @@ export function QuizQuestionPreviewDialog({
         onOpenChange(next)
       }}
     >
-      <DialogContent className="sm:max-w-2xl max-h-[80dvh] flex flex-col gap-3 p-5">
+      <DialogContent className="sm:!max-w-2xl max-h-[80dvh] flex flex-col gap-3 p-5">
         <DialogHeader>
           <DialogTitle>题目一览</DialogTitle>
           <DialogDescription>

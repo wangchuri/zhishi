@@ -8,6 +8,7 @@ import {
   countByDifficulty,
   countQuizSelection,
   customCountTotal,
+  describeSelection,
   effectiveTypeCounts,
   emptyQuizStartSelection,
   questionBucket,
@@ -126,8 +127,7 @@ describe("组装创建会话请求", () => {
   })
 })
 
-describe("本次题数", () => {
-  it("均衡：不超过命中数", () => {
+describe("本次题数", () => {  it("均衡：不超过命中数", () => {
     const sel = { ...emptyQuizStartSelection(), count: 10 }
     expect(quizStartTotal(sel, 4)).toBe(4)
     expect(quizStartTotal(sel, 30)).toBe(10)
@@ -158,5 +158,52 @@ describe("本次题数", () => {
     expect(effectiveTypeCounts(sel)).toEqual({ fill_blank: 2 })
     expect(customCountTotal(sel)).toBe(2)
     expect(buildQuizStartBody(sel).type_counts).toEqual({ fill_blank: 2 })
+  })
+})
+
+describe("底部「本次将刷」摘要", () => {
+  it("默认（全不选）：全书 · 全部题型 · 不限难度 · 共 10 题", () => {
+    expect(describeSelection(emptyQuizStartSelection(), 30)).toBe(
+      "全书 · 全部题型 · 不限难度 · 共 10 题",
+    )
+  })
+
+  it("数量「全部」：按命中数给总数", () => {
+    const sel = { ...emptyQuizStartSelection(), count: 0 }
+    expect(describeSelection(sel, 274)).toContain("共 274 题")
+  })
+
+  it("单选一项：章节标题 / 单个题型 / 单档难度", () => {
+    const sel = {
+      ...emptyQuizStartSelection(),
+      chapterIds: ["c2"],
+      types: ["fill_blank"],
+      difficulties: [2],
+    }
+    expect(describeSelection(sel, 44, { chapterTitles: { c2: "第2章 数据的表示和运算" } })).toBe(
+      "第2章 数据的表示和运算 · 填空题 · 中等 · 共 10 题",
+    )
+  })
+
+  it("多选：给数量、难度用 + 连接；带知识点", () => {
+    const sel = {
+      ...emptyQuizStartSelection(),
+      chapterIds: ["c1", "c2"],
+      types: ["fill_blank", "single_choice"],
+      difficulties: [2, 3],
+      tags: ["数列"],
+    }
+    expect(describeSelection(sel, 100)).toBe(
+      "2 个章节 · 2 种题型 · 中等 + 困难 · 知识点「数列」 · 共 10 题",
+    )
+  })
+
+  it("自定义分布：总数按各题型配额之和", () => {
+    const sel = {
+      ...emptyQuizStartSelection(),
+      distribute: "custom" as const,
+      typeCounts: { single_choice: 3, fill_blank: 2 },
+    }
+    expect(describeSelection(sel, 100)).toContain("共 5 题")
   })
 })

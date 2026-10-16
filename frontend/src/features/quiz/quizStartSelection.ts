@@ -134,6 +134,51 @@ export function quizStartTotal(sel: QuizStartSelection, matched: number): number
   return matched
 }
 
+/** 难度标签：1=简单 2=中等 3=困难 */
+export const DIFFICULTY_LABELS: Record<number, string> = {
+  1: "简单",
+  2: "中等",
+  3: "困难",
+}
+
+/** 一句话说明「这次会刷什么」，放在浮窗底部（让用户点之前就知道结果） */
+export function describeSelection(
+  sel: QuizStartSelection,
+  matched: number,
+  opts: { chapterTitles?: Record<string, string> } = {},
+): string {
+  const parts: string[] = []
+
+  if (sel.chapterIds.length === 0) {
+    parts.push("全书")
+  } else if (sel.chapterIds.length === 1) {
+    parts.push(opts.chapterTitles?.[sel.chapterIds[0]] || "1 个章节")
+  } else {
+    parts.push(`${sel.chapterIds.length} 个章节`)
+  }
+
+  if (sel.types.length === 0) {
+    parts.push("全部题型")
+  } else if (sel.types.length === 1) {
+    parts.push(QUIZ_TYPE_LABELS[sel.types[0]] || sel.types[0])
+  } else {
+    parts.push(`${sel.types.length} 种题型`)
+  }
+
+  if (sel.difficulties.length === 0) {
+    parts.push("不限难度")
+  } else {
+    parts.push(sel.difficulties.map((d) => DIFFICULTY_LABELS[d] || String(d)).join(" + "))
+  }
+
+  if (sel.tags.length > 0) {
+    parts.push(sel.tags.length === 1 ? `知识点「${sel.tags[0]}」` : `${sel.tags.length} 个知识点`)
+  }
+
+  parts.push(`共 ${quizStartTotal(sel, matched)} 题`)
+  return parts.join(" · ")
+}
+
 /** 组装创建会话语义（父组件再补 document_id / group_id / title） */
 export function buildQuizStartBody(
   sel: QuizStartSelection,
