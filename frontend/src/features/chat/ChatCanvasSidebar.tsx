@@ -108,10 +108,30 @@ export function wrapCanvasHtml(fragment: string): string {
       new MutationObserver(function(){ last=-1; setTimeout(layout, 0); }).observe(root,{childList:true,subtree:true});
     }catch(e){}
   }
+  // 首次量的时候内容常常还没渲染完（图片未加载、画布是脚本画上去的），
+  // 那时量出的 scrollWidth/Height 偏小 → fit=1 不缩放，于是"显示 100% 却没适配"；
+  // 之后内容变大又不会触发 MutationObserver（图片加载不产生 DOM 变动）。
+  // 所以补三种重量触发：元素尺寸变化、load、图片各自 load，以及更长尾的定时。
+  if(window.ResizeObserver){
+    try{
+      new ResizeObserver(function(){ last=-1; layout(); }).observe(root);
+    }catch(e){}
+  }
+  window.addEventListener('load', function(){ last=-1; layout(); });
+  try{
+    var imgs=root.querySelectorAll('img');
+    for(var i=0;i<imgs.length;i++){
+      if(imgs[i].complete) continue;
+      imgs[i].addEventListener('load', function(){ last=-1; layout(); });
+      imgs[i].addEventListener('error', function(){ last=-1; layout(); });
+    }
+  }catch(e){}
   setTimeout(layout, 0);
   setTimeout(layout, 120);
   setTimeout(layout, 400);
   setTimeout(layout, 1000);
+  setTimeout(layout, 2000);
+  setTimeout(layout, 3000);
 })();`
 
   return `<!DOCTYPE html>
