@@ -47,11 +47,13 @@ export function ParsingTasksBanner() {
   }, [])
 
   const blocked = tasks.filter((t) => t.status === "blocked")
-  // 「卡住」= 还挂着 pending/processing，但好几分钟没动过（解析线程可能已经不在了）
+  // 「卡住」= 还挂着 pending/processing，但 10 分钟没动过（解析线程可能已经不在了）。
+  // 阈值与后端 retry_stuck 的保护一致：processing 不满 10 分钟不会被重排，
+  // 免得界面上点了却静默无效。
   const stuck = tasks.filter((t) => {
     if (t.status !== "pending" && t.status !== "processing") return false
     const ts = t.updated_at ? Date.parse(t.updated_at) : NaN
-    return Number.isFinite(ts) && Date.now() - ts > 5 * 60 * 1000
+    return Number.isFinite(ts) && Date.now() - ts > 10 * 60 * 1000
   })
 
   const retry = async () => {
