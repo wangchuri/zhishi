@@ -116,6 +116,11 @@
   html, body, #root {
     height: 100%;
   }
+  /* iOS 横屏会自作主张把正文放大；锁住（不覆盖我们自己的字号） */
+  html {
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
   body {
     background-color: var(--paper);
     background-image:

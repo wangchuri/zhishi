@@ -16,6 +16,7 @@ import { ProfilePage } from "@/features/profile/ProfilePage"
 import { SettingsPage } from "@/features/settings/SettingsPage"
 import { ServerSetupPage } from "@/features/setup/ServerSetupPage"
 import { LoginPage } from "@/features/auth/LoginPage"
+import { AuthScaffold } from "@/components/layout/AuthScaffold"
 import { QuizBookListPage } from "@/features/quiz/QuizBookListPage"
 import { QuizDocDetailPage } from "@/features/quiz/QuizDocDetailPage"
 import { QuizQuestionDetailPage } from "@/features/quiz/QuizQuestionDetailPage"
@@ -44,16 +45,20 @@ function RequireServer({ children }: { children: React.ReactElement }) {
 
   if (!isServerConfigured()) return <Navigate to="/setup" replace />
   if (status === "checking" || authPhase === "unknown") {
-    return <div className="h-full flex items-center justify-center bg-ink"><div className="text-body text-mist">正在检测服务器连接...</div></div>
+    return (
+      <AuthScaffold>
+        <div className="text-center text-body text-mist">正在检测服务器连接...</div>
+      </AuthScaffold>
+    )
   }
   if (status === "fail") {
     return (
-      <div className="h-full flex items-center justify-center bg-ink">
-        <div className="text-center px-6">
+      <AuthScaffold>
+        <div className="text-center">
           <div className="text-body text-mist mb-4">无法连接服务器</div>
           <a href="/setup" onClick={(e) => { e.preventDefault(); window.location.href = "/setup" }} className="text-sea underline">重新配置服务器地址</a>
         </div>
-      </div>
+      </AuthScaffold>
     )
   }
   if (authPhase === "need_setup" || authPhase === "need_login") {
