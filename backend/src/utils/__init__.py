@@ -8,6 +8,7 @@ import random
 import re
 import string
 import uuid
+from pathlib import Path
 
 _SLUG_UNSAFE = re.compile(r"[^\w\u4e00-\u9fff-]")
 
@@ -19,6 +20,18 @@ def new_id() -> str:
 
 def sha256_hex(content: bytes) -> str:
     return hashlib.sha256(content).hexdigest()
+
+
+def sha256_file(path: str | Path, chunk_size: int = 1 << 20) -> str:
+    """流式计算文件 sha256（大文件不读进内存）。"""
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        while True:
+            block = f.read(chunk_size)
+            if not block:
+                break
+            h.update(block)
+    return h.hexdigest()
 
 
 def random_suffix(length: int = 5) -> str:

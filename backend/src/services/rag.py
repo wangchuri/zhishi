@@ -85,11 +85,17 @@ class ChromaStore:
 
     # ---- 索引 ----
 
-    def index_document(self, doc_id: str, text: str) -> int:
-        """向量化文档（分段写入 chroma）。返回 chunk 数。"""
+    def index_document(self, doc_id: str, text: str, *, batch_size: int = 64) -> int:
+        """向量化文档（分批写入 chroma）。返回 chunk 数。
+
+        分批的意义：原来把全部 chunk 一次性 embed，`out` 列表会把所有 768 维向量
+        同时驻留（1 万 chunk ≈ 300MB+），再连同 documents 一起交给 chroma。
+        大书（几百页扫描件）导入时这是压垮内存的主力之一。
+        """
         chunks = _chunk_text(text)
         if not chunks:
             return 0
+        size = max(1, int(batch_size))
         with self._lock:
             client = self._get_client()
             try:
@@ -102,11 +108,14 @@ class ChromaStore:
                 embedding_function=None,  # 手动提供 embedding
             )
             ids = [f"{doc_id}_{i}" for i in range(len(chunks))]
-            collection.add(
-                ids=ids,
-                documents=chunks,
-                embeddings=self._get_embedding_fn()(chunks),
-            )
+            embed = self._get_embedding_fn()
+            for start in range(0, len(chunks), size):
+                part = chunks[start : start + size]
+                collection.add(
+                    ids=ids[start : start + size],
+                    documents=part,
+                    embeddings=embed(part),
+                )
             return len(chunks)
 
     def delete_document_index(self, doc_id: str) -> None:

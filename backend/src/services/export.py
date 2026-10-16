@@ -17,7 +17,10 @@ from __future__ import annotations
 import io
 import json
 import logging
+import os
 import re
+import shutil
+import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Optional
@@ -200,18 +203,24 @@ class ExportService:
     def import_package(
         self,
         db: Session,
-        content: bytes,
+        content: "bytes | str | Path",
         filename: str,
         collection_id: Optional[str],
         on_stage: "Callable[[str, float | None], None] | None" = None,
     ) -> dict:
         """导入 zip：优先还原 pages/，否则从 parsed.md 拆页。
 
+        content：zip 文件路径（推荐，190MB 级大包不会整份进内存）或 bytes（兼容旧调用）。
+
         同步实现：内部全是阻塞 I/O 与 CPU（解包、落盘、分段、向量化），没有任何 await，
         因此由调用方放进后台 worker 执行（见 api/kb.py 的 jobs.submit），
         既不堵单进程 uvicorn 的事件循环，也不让请求挂几分钟被 nginx 掐断。
 
         on_stage(message, progress)：选填的分段进度回调，供后台 job 上报给前端。
+
+        内存约定：图片与 original 边解压边落到暂存目录（与 storage 同卷，落库时 os.replace
+        零拷贝），全程不驻留内存；只有 meta / 分页稿 / 题库 / 缩略图这类小文件读进内存。
+        暂存目录在正常返回与已知错误路径上都会清掉。
         """
 
         def stage(message: str, progress: float | None = None) -> None:
@@ -228,15 +237,24 @@ class ExportService:
         meta: dict = {}
         page_files: dict[int, str] = {}
         md_text = ""
-        images: dict[str, bytes] = {}
+        image_names: list[str] = []
         questions: list[dict] = []
         learning_path: dict | None = None
         thumbnail: bytes | None = None
         original_name: str | None = None
-        original_bytes: bytes | None = None
+
+        # 暂存目录：建在 storage 卷内，落库时 os.replace 是零拷贝（同设备 rename 不搬数据）
+        staging = Path(tempfile.mkdtemp(prefix=".import-", dir=str(storage.base)))
+        images_stage = staging / "images"
+        images_stage.mkdir(parents=True, exist_ok=True)
+
+        def cleanup() -> None:
+            shutil.rmtree(staging, ignore_errors=True)
 
         stage("解包中…", 0.1)
-        with zipfile.ZipFile(io.BytesIO(content)) as zf:
+        # 传路径时直接开文件：zipfile 需要 seek，但不必把整份 zip 复制进 BytesIO
+        zip_source = Path(content) if isinstance(content, (str, Path)) else io.BytesIO(content)
+        with zipfile.ZipFile(zip_source) as zf:
             for raw_name in zf.namelist():
                 if raw_name.endswith("/"):
                     continue
@@ -258,10 +276,11 @@ class ExportService:
                         name = "/".join(parts[1:])
                 base = Path(name).name
 
-                data = zf.read(raw_name)
+                # 小文件（meta / 分页稿 / 题库 / 缩略图）才读进内存；
+                # 图片与 original 边解压边落暂存盘，避免图片密集型包把内存撑爆
                 if name == "meta.json" or base == "meta.json":
                     try:
-                        meta = json.loads(data.decode("utf-8"))
+                        meta = json.loads(zf.read(raw_name).decode("utf-8"))
                     except Exception:
                         meta = {}
                 elif name.startswith("pages/") and name.endswith(".md"):
@@ -270,26 +289,32 @@ class ExportService:
                         num = int(stem.split("_")[1])
                     except (IndexError, ValueError):
                         continue
-                    page_files[num] = data.decode("utf-8", errors="replace")
+                    page_files[num] = zf.read(raw_name).decode("utf-8", errors="replace")
                 elif name == "parsed.md" or base == "parsed.md":
-                    md_text = data.decode("utf-8", errors="replace")
+                    md_text = zf.read(raw_name).decode("utf-8", errors="replace")
                 elif name.startswith("images/"):
-                    images[name.split("/", 1)[1]] = data
+                    safe = Path(name.split("/", 1)[1]).name
+                    if not safe:
+                        continue
+                    with zf.open(raw_name) as src, open(images_stage / safe, "wb") as dst:
+                        shutil.copyfileobj(src, dst, 1 << 20)
+                    image_names.append(safe)
                 elif name == "questions.json" or base == "questions.json":
                     try:
-                        questions = json.loads(data.decode("utf-8"))
+                        questions = json.loads(zf.read(raw_name).decode("utf-8"))
                     except Exception:
                         questions = []
                 elif name == "learning_path.json" or base == "learning_path.json":
                     try:
-                        learning_path = json.loads(data.decode("utf-8"))
+                        learning_path = json.loads(zf.read(raw_name).decode("utf-8"))
                     except Exception:
                         learning_path = None
                 elif name == "thumbnail.png" or base == "thumbnail.png":
-                    thumbnail = data
+                    thumbnail = zf.read(raw_name)
                 elif base.startswith("original.") and "/" not in name.strip("/"):
                     original_name = base
-                    original_bytes = data
+                    with zf.open(raw_name) as src, open(staging / base, "wb") as dst:
+                        shutil.copyfileobj(src, dst, 1 << 20)
 
 
         page_bodies: list[str] = []
@@ -299,6 +324,7 @@ class ExportService:
         elif md_text.strip():
             page_bodies = _split_parsed_into_pages(md_text)
         if not page_bodies or not any(p.strip() for p in page_bodies):
+            cleanup()
             raise AppError("zip 中没有 pages/ 分页或可用的 parsed.md")
 
         joined = "\n\n".join(page_bodies)
@@ -308,6 +334,7 @@ class ExportService:
 
         existing_doc = db.query(Document).filter(Document.content_hash == content_hash).first()
         if existing_doc:
+            cleanup()
             raise AppError("该文件已上传过，请勿重复上传", status_code=409)
 
         display_name = (
@@ -346,14 +373,13 @@ class ExportService:
             doc.updated_at = datetime.now(timezone.utc)
             db.commit()
 
-        # 保留包内图片原名，避免打断 pages 里的 images/xxx 引用
+        # 保留包内图片原名，避免打断 pages 里的 images/xxx 引用。
+        # 从暂存目录 rename 进图床（同卷零拷贝），图片字节不再驻留内存
         stage("保存图片…", 0.55)
         touch()
-        for idx, (name, data) in enumerate(images.items(), 1):
-            safe = Path(name).name
-            if not safe:
-                continue
-            storage.save_image(doc.id, safe, data)
+        images_dir = storage.images_dir(doc.id)
+        for idx, safe in enumerate(image_names, 1):
+            os.replace(images_stage / safe, images_dir / safe)
             db.add(
                 DocumentImage(
                     document_id=doc.id,
@@ -366,8 +392,11 @@ class ExportService:
         db.commit()
 
         storage.save_pages(doc.id, page_bodies)
-        if original_name and original_bytes is not None:
-            storage.save_original(doc.id, original_name, original_bytes)
+        has_original = False
+        if original_name and (staging / original_name).is_file():
+            # 包内原文件已在暂存目录，直接 rename 落库（不经过内存）
+            os.replace(staging / original_name, storage.document_dir(doc.id) / original_name)
+            has_original = True
         else:
             storage.save_original(doc.id, f"{display_name}.md", joined.encode("utf-8"))
         if thumbnail:
@@ -427,13 +456,14 @@ class ExportService:
             doc.question_gen_status = "completed"
         db.commit()
 
+        cleanup()
         return {
             "status": "ok",
             "document_id": doc.id,
             "page_count": len(page_bodies),
             "imported_questions": imported_questions,
             "reused_questions": reused_questions,
-            "has_original": bool(original_name and original_bytes is not None),
+            "has_original": has_original,
         }
 
 

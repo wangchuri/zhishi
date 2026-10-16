@@ -4,6 +4,10 @@ from __future__ import annotations
 
 import json
 import logging
+import os
+import shutil
+import tempfile
+from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Query
@@ -24,6 +28,9 @@ from ..services.export import export_service
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/kb", tags=["kb"])
+
+# 单个书本包的大小上限（MB）：超限直接拒绝并给明确错误，而不是把内存/磁盘打爆
+MAX_PACKAGE_MB = max(1, int(os.environ.get("ZHISHI_MAX_PACKAGE_MB") or 512))
 
 
 @router.get("/collections", response_model=kb_schemas.CollectionList)
@@ -429,24 +436,46 @@ async def import_doc(
     file: UploadFile = File(...),
     collection_id: Optional[str] = Form(None),
 ):
-    content = await file.read()
     filename = file.filename or "package.zip"
 
     # 立刻返回 job_id，解包/落盘/分段/向量化交给后台有界 worker：
     # ① 不再堵事件循环（502 的根因）；② 请求不再挂几分钟被 nginx 掐断；
     # ③ 前端能区分「上传中」（XHR 上传百分比）与「处理中」（轮询 /api/v1/jobs/{id}）。
+    #
+    # 上传分块流式落盘，不把整份 zip 读进内存：旧实现 `await file.read()` 之后
+    # import_package 里还有一个 `io.BytesIO(content)`，190MB 的包会先占掉 380MB。
+    from ..core.database import SessionLocal
     from ..services.jobs import jobs
-    from ..utils import sha256_hex
+    from ..utils import sha256_file
+
+    staging = Path(tempfile.mkdtemp(prefix=".upload-", dir=str(storage.base)))
+    zip_path = staging / "package.zip"
+    limit = MAX_PACKAGE_MB * 1024 * 1024
+    total = 0
+    try:
+        with open(zip_path, "wb") as out:
+            while True:
+                block = await file.read(1 << 20)
+                if not block:
+                    break
+                total += len(block)
+                if total > limit:
+                    raise AppError(f"书本包超过 {MAX_PACKAGE_MB}MB 上限，请拆分后再导入")
+                out.write(block)
+        if total == 0:
+            raise AppError("空文件不能入库")
+        digest = sha256_file(zip_path)
+    except Exception:
+        shutil.rmtree(staging, ignore_errors=True)
+        raise
 
     def _worker(job) -> dict:
         # 请求的 session 会随响应关闭，后台必须自建（与 _background_parse 同款做法）
-        from ..core.database import SessionLocal
-
         worker_db = SessionLocal()
         try:
             return export_service.import_package(
                 worker_db,
-                content,
+                zip_path,
                 filename,
                 collection_id,
                 on_stage=lambda message, progress=None: job.report(
@@ -455,13 +484,19 @@ async def import_doc(
             )
         finally:
             worker_db.close()
+            # 导入结束（成功/失败/异常）即回收上传的临时包
+            shutil.rmtree(staging, ignore_errors=True)
 
+    known = {j["id"] for j in jobs.list_jobs(limit=200)}
     job = jobs.submit(
         "import_package",
         _worker,
         title=f"导入《{filename}》",
-        key=f"import:{sha256_hex(content)}",
+        key=f"import:{digest}",
     )
+    if job["id"] in known:
+        # 同一个包已经在跑（key 命中复用），这份临时文件没人会用，立刻回收
+        shutil.rmtree(staging, ignore_errors=True)
     return kb_schemas.ImportPackageResult(status=job["status"], job_id=job["id"])
 
 
