@@ -226,6 +226,96 @@ def ensure_default_collections(db: Session) -> None:
         db.commit()
 
 
+def _existing_tables(db: Session) -> set[str]:
+    """当前库里真实存在的表（用于过滤「老库历史表名」的兜底清单）。
+
+    注意用 db.connection()（Connection 才有 exec_driver_sql；Engine 上没这个方法）。
+    """
+    try:
+        conn = db.connection()
+        if getattr(conn.dialect, "name", "") != "sqlite":
+            return set()
+        return {
+            row[0]
+            for row in conn.exec_driver_sql(
+                "SELECT name FROM sqlite_master WHERE type='table'"
+            )
+        }
+    except Exception:
+        logger.warning("读取表清单失败，跳过表名过滤", exc_info=True)
+        return set()
+
+
+def _fk_columns_to(db: Session, target: str) -> list[tuple[str, str]]:
+    """自省「真实外键」：找出所有 -> target 的 (表, 列)。
+
+    为什么要自省而不是硬编码：老库里 question_id 是**真实外键**（NO ACTION），
+    而 ORM 里这些列只是普通 String、没有声明外键；只查 ORM 认为的引用表会漏，
+    一旦漏掉就 FOREIGN KEY constraint failed、整个删除 500。
+    """
+    rows: list[tuple[str, str]] = []
+    try:
+        conn = db.connection()
+        if getattr(conn.dialect, "name", "") != "sqlite":
+            return rows
+        tables = [
+            r[0]
+            for r in conn.exec_driver_sql(
+                "SELECT name FROM sqlite_master WHERE type='table'"
+            )
+        ]
+        for table in tables:
+            if table.startswith("sqlite_"):
+                continue
+            for row in conn.exec_driver_sql(f'PRAGMA foreign_key_list("{table}")'):
+                # row = (id, seq, table, from, to, on_update, on_delete, match)
+                if row[2] == target and row[3] != "id":
+                    rows.append((table, row[3]))
+    except Exception:
+        logger.warning("自省外键失败（target=%s），将只用内置清单", target, exc_info=True)
+    return rows
+
+
+# 内置兜底：非 SQLite 或自省失败时至少覆盖已知的这几张表
+_FK_TO_QUESTIONS_FALLBACK: tuple[tuple[str, str], ...] = (
+    ("question_provenance", "question_id"),
+    ("quiz_answers", "question_id"),
+    ("quiz_session_questions", "question_id"),
+    ("tutor_sessions", "question_id"),
+    ("user_question_refs", "question_id"),
+)
+
+# 删资料时要一并清掉的「按 document_id 外键指向 documents」的已知表（自省之外兜底）
+_FK_TO_DOCUMENTS_FALLBACK: tuple[tuple[str, str], ...] = (
+    ("document_segments", "document_id"),
+    ("question_provenance", "document_id"),
+    ("question_tags", "document_id"),
+    ("quiz_sessions", "document_id"),
+    ("tutor_sessions", "document_id"),
+    ("user_notes", "document_id"),
+    ("user_question_refs", "document_id"),
+)
+
+
+def _question_referenced_elsewhere(db: Session, qid: str, refs: list[tuple[str, str]]) -> bool:
+    """这道全局题是否还被任何一张表引用（题目会跨资料复用）。"""
+    for table, column in refs:
+        if table == "global_questions":
+            continue
+        try:
+            hit = db.execute(
+                sql_text(f'SELECT 1 FROM "{table}" WHERE "{column}" = :qid LIMIT 1'),
+                {"qid": qid},
+            ).first()
+        except Exception:
+            # 表/列不存在等：宁可保守不删（少删一道题不会坏数据，删错会 500）
+            logger.warning("检查题目引用失败 %s.%s", table, column, exc_info=True)
+            return True
+        if hit:
+            return True
+    return False
+
+
 def resume_interrupted_parses(db: Session) -> tuple[int, int]:
     """进程启动时处理「中断的解析」：优先重新入队，而不是一律标失败。
 
@@ -930,7 +1020,7 @@ class KnowledgeBaseService:
             DocumentLearningPath.document_id == doc_id
         ).delete(synchronize_session=False)
 
-        # 题库：溯源 + 文档级引用；仅当全局题不再被其它资料引用时才删掉 GlobalQuestion
+        # 题库：溯源 + 文档级引用
         provs = (
             db.query(QuestionProvenance)
             .filter(QuestionProvenance.document_id == doc_id)
@@ -943,6 +1033,19 @@ class KnowledgeBaseService:
         db.query(QuestionRef).filter(QuestionRef.document_id == doc_id).delete(
             synchronize_session=False
         )
+
+        # 题目会**跨资料复用**（同一道题可能被另一本书的会话/辅导引用），而老库里
+        # question_id 是真实外键（NO ACTION）—— 只查 provenance/refs 会漏掉
+        # quiz_session_questions 之类，导致 FOREIGN KEY constraint failed、整个删除 500。
+        # 所以先自省真实外键：任何一张表还引用着，就保留这道题。
+        fk_to_questions = sorted(
+            set(_FK_TO_QUESTIONS_FALLBACK) | set(_fk_columns_to(db, "global_questions"))
+        )
+        # 只看「当前库真实存在」的表：老库的历史表名（如 user_question_refs）在新库里没有，
+        # 不滤掉的话既会每次删资料打一段 no such table 的报错，也会让"保守不删"过头
+        existing_tables = _existing_tables(db)
+        if existing_tables:
+            fk_to_questions = [p for p in fk_to_questions if p[0] in existing_tables]
         for qid in question_ids:
             still = (
                 db.query(QuestionProvenance)
@@ -952,10 +1055,31 @@ class KnowledgeBaseService:
             still_ref = (
                 db.query(QuestionRef).filter(QuestionRef.question_id == qid).count()
             )
-            if still == 0 and still_ref == 0:
-                gq = db.get(GlobalQuestion, qid)
-                if gq:
-                    db.delete(gq)
+            if still or still_ref:
+                continue
+            if _question_referenced_elsewhere(db, qid, fk_to_questions):
+                continue
+            gq = db.get(GlobalQuestion, qid)
+            if gq:
+                db.delete(gq)
+
+        # 兜底：把所有「真实外键指向 documents」的表中属于本资料的行清掉
+        # （例如 question_tags；漏了同样会在删主行时被外键拦下）
+        doc_fk = sorted(
+            set(_FK_TO_DOCUMENTS_FALLBACK) | set(_fk_columns_to(db, "documents"))
+        )
+        if existing_tables:
+            doc_fk = [p for p in doc_fk if p[0] in existing_tables]
+        for table, column in doc_fk:
+            if table == "documents":
+                continue
+            try:
+                db.execute(
+                    sql_text(f'DELETE FROM "{table}" WHERE "{column}" = :d'),
+                    {"d": doc_id},
+                )
+            except Exception:
+                logger.warning("清理表 %s 中本资料的行失败 doc=%s", table, doc_id, exc_info=True)
 
         db.query(DocumentSegment).filter(DocumentSegment.document_id == doc_id).delete(
             synchronize_session=False
