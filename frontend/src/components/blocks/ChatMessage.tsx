@@ -16,6 +16,7 @@ import {
 } from "@/features/onboarding/OnboardingCards"
 import { MarkdownWithMath, markdownProseDangerClass } from "@/components/blocks/MarkdownWithMath"
 import { ThinkingLabel, ThinkingPeek } from "@/components/blocks/ThinkingLabel"
+import { StreamingInk } from "@/components/blocks/StreamingInk"
 import { MessageImages } from "@/components/blocks/ImageAttachments"
 import { hasTinaMoodMarkup, parseTinaBursts } from "@/features/chat/tinaBursts"
 import { cn } from "@/lib/utils"
@@ -113,37 +114,6 @@ function TinaBurstStack({
           </div>
         )
       })}
-    </div>
-  )
-}
-
-function graphemes(text: string): string[] {
-  if (typeof Intl !== "undefined" && "Segmenter" in Intl) {
-    return [...new Intl.Segmenter("zh", { granularity: "grapheme" }).segment(text)].map((p) => p.segment)
-  }
-  return Array.from(text)
-}
-
-const INK_TAIL = 18
-
-function StreamingInk({ text, crimson }: { text: string; crimson: boolean }) {
-  const chars = graphemes(text)
-  const split = Math.max(0, chars.length - INK_TAIL)
-  const head = chars.slice(0, split).join("")
-  const tail = chars.slice(split)
-  return (
-    <div
-      className={cn(
-        "whitespace-pre-wrap break-words leading-relaxed",
-        crimson ? "text-danger" : "text-ink",
-      )}
-    >
-      {head}
-      {tail.map((ch, i) => (
-        <span key={split + i} className="stream-ink-char">
-          {ch}
-        </span>
-      ))}
     </div>
   )
 }

@@ -16,6 +16,7 @@ import {
   markdownProseInvertClass,
 } from "@/components/blocks/MarkdownWithMath"
 import { ThinkingLabel, ThinkingPeek } from "@/components/blocks/ThinkingLabel"
+import { StreamingInk } from "@/components/blocks/StreamingInk"
 import { cn } from "@/lib/utils"
 
 const SCROLL_BOTTOM_THRESHOLD = 48
@@ -65,11 +66,19 @@ function TutorMessageBody({
         <ReasoningBlock content={reasoningContent} active={Boolean(isStreamingPlaceholder && !content)} />
       )}
       {content ? (
-        <MarkdownWithMath
-          proseClass={role === "user" ? markdownProseInvertClass : markdownProseClass}
-        >
-          {content}
-        </MarkdownWithMath>
+        isStreamingPlaceholder ? (
+          // 与聊天页保持一致：流式期间用纯文本 + 末尾墨迹渐显 + 闪烁光标，流完再换回 markdown
+          <>
+            <StreamingInk text={content} />
+            <span className="stream-caret" aria-hidden />
+          </>
+        ) : (
+          <MarkdownWithMath
+            proseClass={role === "user" ? markdownProseInvertClass : markdownProseClass}
+          >
+            {content}
+          </MarkdownWithMath>
+        )
       ) : isStreamingPlaceholder ? (
         <span>...</span>
       ) : null}
