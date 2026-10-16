@@ -207,11 +207,14 @@ def _background_parse(doc_id: str, filename: str, content: bytes, collection_id:
 
 
 def _spawn_background(fn, *args) -> None:
-    """在后台线程执行。"""
-    import threading
+    """在后台执行：统一走有界 worker，避免"随用随开裸线程"把并发打满。
 
-    t = threading.Thread(target=fn, args=args, daemon=True)
-    t.start()
+    以前这里是直接 threading.Thread(...)，几个大活一起来就会同时读大文件、
+    抢 SQLite 写。现在由 services/jobs.py 统一限并发（见 JOB_MAX_WORKERS）。
+    """
+    from .jobs import jobs
+
+    jobs.spawn(fn, *args)
 
 
 def ensure_default_collections(db: Session) -> None:
