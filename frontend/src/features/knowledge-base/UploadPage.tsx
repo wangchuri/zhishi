@@ -34,6 +34,8 @@ interface UploadTask {
   fileName: string
   fileSize: number
   status: "uploading" | "ocr" | "indexing" | "completed" | "error" | "duplicate"
+  /** 自定进度文案（导入书本包时用它自己的阶段，如「解包中…」） */
+  stage?: string
   errorMessage?: string
   completedSegments?: number
   totalSegments?: number
@@ -386,26 +388,44 @@ export function UploadPage() {
       setImporting(true)
       setImportResult(null)
       setImportStage({ phase: "upload", pct: 0, message: "上传中…" })
+      // 进度统一走「上传任务」列表（和普通上传同一个 TimelineStep 组件），
+      // 不再自造一条进度条 —— 这里的 stage 就是当前阶段文案。
+      const taskId = `import-${Date.now()}-${file.name}`
+      const patchTask = (patch: Partial<UploadTask>) =>
+        setTasks((prev) => prev.map((t) => (t.id === taskId ? { ...t, ...patch } : t)))
+      setTasks((prev) => [
+        ...prev,
+        {
+          id: taskId,
+          documentId: "",
+          fileName: file.name,
+          fileSize: file.size,
+          status: "uploading",
+          stage: "上传中…",
+        },
+      ])
       try {
         // 第一步：上传（XHR 给真实百分比）→ 后端立刻返回 job_id
-        const res = await kbApi.importPackage(file, selectedCollectionId || undefined, (pct) =>
-          setImportStage({
-            phase: "upload",
-            pct,
-            message: `上传中 ${Math.round(pct * 100)}%`,
-          })
-        )
+        const res = await kbApi.importPackage(file, selectedCollectionId || undefined, (pct) => {
+          const msg = `上传中 ${Math.round(pct * 100)}%`
+          setImportStage({ phase: "upload", pct, message: msg })
+          patchTask({ stage: msg })
+        })
         const jobId = res.job_id
         if (!jobId) throw new Error("服务器没有返回作业号，请重试")
 
-        // 第二步：处理进度（解包 → 写入资料 → 保存图片 → 分段 → 向量化 → 写入题库）
+        // 第二步：处理进度（解包 → 写入资料 → 分段 → 向量化 → 写入题库）
         setImportStage({ phase: "process", message: "排队中…" })
+        patchTask({ status: "indexing", stage: "排队中…" })
         for (let i = 0; i < 900; i++) {
           await new Promise((r) => setTimeout(r, 1200))
           const job = await kbApi.getJob(jobId)
-          setImportStage({ phase: "process", message: job.message || "处理中…" })
+          const stage = job.message || "处理中…"
+          setImportStage({ phase: "process", message: stage })
+          patchTask({ status: "indexing", stage })
           if (job.status === "done") {
             const r = (job.result || {}) as Record<string, unknown>
+            patchTask({ status: "completed", stage: "导入完成" })
             setImportResult({
               fileName: file.name,
               status: "success",
@@ -422,9 +442,11 @@ export function UploadPage() {
           if (job.status === "failed" || job.status === "cancelled") {
             const msg = job.error || job.message || "导入失败"
             if (msg.includes("已上传过")) {
+              patchTask({ status: "duplicate" })
               setImportResult({ fileName: file.name, status: "duplicate", reused: 0 })
               toast.info(`《${file.name}》已导入过，跳过`)
             } else {
+              patchTask({ status: "error", errorMessage: msg })
               setImportResult({ fileName: file.name, status: "error", message: msg })
               toast.error(msg)
             }
@@ -434,6 +456,7 @@ export function UploadPage() {
         throw new Error("导入超过 30 分钟还没结束，稍后可在资料页确认结果")
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : "导入失败"
+        patchTask({ status: "error", errorMessage: msg })
         setImportResult({
           fileName: file.name,
           status: "error",
@@ -476,8 +499,6 @@ export function UploadPage() {
   const isPackageMode = active === "package"
   const busy = isPackageMode ? importing : uploading
   const busyText = isPackageMode ? importStage?.message || "导入中…" : "正在上传..."
-  const busyPct =
-    isPackageMode && importStage?.phase === "upload" ? importStage.pct : undefined
   const errorCount = tasks.filter((t) => t.status === "error").length
   const duplicateCount = tasks.filter((t) => t.status === "duplicate").length
 
@@ -677,14 +698,6 @@ export function UploadPage() {
           <div className="flex flex-col items-center gap-3">
             <Loader2 className="w-8 h-8 text-primary animate-spin" strokeWidth={2} />
             <div className="text-card-title font-semibold text-ink-primary">{busyText}</div>
-            {typeof busyPct === "number" && (
-              <div className="w-56 h-1.5 rounded-full bg-surface-soft overflow-hidden">
-                <div
-                  className="h-full bg-primary rounded-full transition-all"
-                  style={{ width: `${Math.round(busyPct * 100)}%` }}
-                />
-              </div>
-            )}
           </div>
         ) : (
           <>
@@ -742,7 +755,9 @@ export function UploadPage() {
                 index={i + 1}
                 title={task.fileName}
                 description={
-                  task.status === "uploading"
+                  task.stage
+                    ? task.stage
+                    : task.status === "uploading"
                     ? "正在上传到服务器..."
                     : task.status === "ocr"
                       ? task.ocrTotalPages
