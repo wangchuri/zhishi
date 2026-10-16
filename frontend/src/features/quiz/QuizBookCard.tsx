@@ -134,22 +134,28 @@ export function QuizBookCard({ doc, stats, onClick, onDelete, onReparse }: QuizB
           </div>
         )}
 
-        {/* 浮动统计覆盖层 */}
+        {/* 浮动统计覆盖层：hover 时从底部浮出。
+            原来是「深黑渐变 + 白字」，和纸本风格不搭；改成与进度角标同款：
+            浅色面 + backdrop-blur + 墨色字，细轨道，只占底部一条。 */}
         {stats && stats.total > 0 && (
-          <div className="pointer-events-none absolute inset-0 z-[1] bg-gradient-to-t from-black/70 via-black/20 to-transparent
-                          flex flex-col justify-end p-3 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
-            <div className="text-white text-small space-y-1">
-              <div className="flex items-center justify-between">
+          <div
+            className="pointer-events-none absolute inset-x-0 bottom-0 z-[1] p-3
+                       bg-surface/90 backdrop-blur-sm border-t border-line-soft
+                       translate-y-1.5 opacity-0 group-hover:translate-y-0 group-hover:opacity-100
+                       transition-all duration-200"
+          >
+            <div className="text-small space-y-1">
+              <div className="flex items-center justify-between text-ink-secondary">
                 <span>进度</span>
-                <span className="font-medium">{progress}%</span>
+                <span className="font-medium text-ink-primary tabular-nums">{progress}%</span>
               </div>
-              <div className="h-1.5 bg-white/20 rounded-full overflow-hidden">
+              <div className="h-1 rounded-full bg-surface-soft overflow-hidden">
                 <div
                   className="h-full bg-primary rounded-full transition-all duration-300"
                   style={{ width: `${progress}%` }}
                 />
               </div>
-              <div className="flex justify-between text-caption text-white/80 mt-1">
+              <div className="flex justify-between text-caption text-ink-tertiary">
                 <span>已做 {stats.answered}</span>
                 <span>共 {stats.total} 题</span>
               </div>
