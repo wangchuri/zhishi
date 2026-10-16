@@ -11,6 +11,7 @@ import {
 } from "lucide-react"
 import { useSearchParams, useNavigate } from "react-router-dom"
 import { AppShell } from "@/components/layout/AppShell"
+import { useKeyboardInset } from "@/hooks/useKeyboardInset"
 import { ChatCitationSidebar } from "@/components/blocks/ChatCitationSidebar"
 import { Button } from "@/components/ui/button"
 import {
@@ -180,6 +181,8 @@ export function ChatPage() {
   const [collectionId, setCollectionId] = useState<string>("")
   const scrollRef = useRef<HTMLDivElement>(null)
   const stickToBottomRef = useRef(true)
+  // 软键盘挡住的高度：键盘只压小 visual viewport、不改 dvh，聊天面板要自己让出这段
+  const keyboardInset = useKeyboardInset()
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const sessionIdRef = useRef<string | null>(null)
   const streamingRef = useRef(false)
@@ -271,6 +274,11 @@ export function ChatPage() {
   useLayoutEffect(() => {
     pinToBottom()
   }, [messages, isStreaming, pinToBottom])
+
+  // 键盘弹起/收起后可视高度变了，把最新消息重新贴回输入框上方（用户在上翻时不拽回去）
+  useLayoutEffect(() => {
+    pinToBottom()
+  }, [keyboardInset, pinToBottom])
 
   // ─── 打开会话 ──────────────────────────────────────
 
@@ -863,7 +871,10 @@ export function ChatPage() {
         </div>
 
         {/* ────── 对话主区域 ────── */}
-        <div className="flex-1 flex flex-col min-w-0">
+        <div
+          className="flex-1 flex flex-col min-w-0"
+          style={keyboardInset > 0 ? { paddingBottom: keyboardInset } : undefined}
+        >
           {/* 手机：历史是覆盖抽屉，用不占聊天位的小按钮唤出 */}
           <div className="lg:hidden shrink-0 flex items-center gap-2 px-3 pt-2">
             <button
