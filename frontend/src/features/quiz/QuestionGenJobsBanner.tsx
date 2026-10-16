@@ -16,13 +16,13 @@ export function QuestionGenJobsBanner({ jobs }: { jobs: QuestionGenJob[] }) {
 
   return (
     <>
-      <div className="rounded-lg border border-primary/30 bg-primary-soft px-4 py-3 space-y-2">
+      <div className="rounded-lg border border-line-soft bg-surface shadow-xs px-4 py-3 space-y-2">
         {jobs.map((job) => (
           <button
             key={job.id}
             type="button"
             onClick={() => setLiveId(job.id)}
-            className="w-full flex items-start gap-3 text-left rounded-md hover:bg-primary/5 transition-colors -mx-1 px-1 py-0.5"
+            className="w-full flex items-start gap-3 text-left rounded-md hover:bg-surface-soft transition-colors -mx-1 px-1 py-0.5"
           >
             <Loader2 className="w-5 h-5 animate-spin text-primary shrink-0 mt-0.5" />
             <div className="min-w-0 flex-1">
