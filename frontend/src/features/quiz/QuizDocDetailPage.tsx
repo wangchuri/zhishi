@@ -662,6 +662,7 @@ export function QuizDocDetailPage() {
                 questions={questionData?.questions || []}
                 chapters={learningPath?.chapters}
                 availableTags={startTags}
+                subject={doc?.name}
                 activeSession={activeSession}
                 onResume={() => {
                   setStartOpen(false)

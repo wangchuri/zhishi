@@ -250,6 +250,7 @@ export function QuizGroupDetailPage() {
                 onOpenChange={setStartOpen}
                 questions={questionData?.questions || []}
                 availableTags={availableTags}
+                subject={group?.name}
                 starting={starting}
                 scope={{ groupId }}
                 onStart={(body) => void handleStart(body)}
