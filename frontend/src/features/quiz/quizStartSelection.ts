@@ -111,9 +111,20 @@ export function countByChapter(questions: Question[]): Record<string, number> {
   return out
 }
 
+/** 自定义分布实际生效的配额（只算当前勾选的题型；没勾=全部） */
+export function effectiveTypeCounts(sel: QuizStartSelection): Record<string, number> {
+  const allowed = sel.types.length ? new Set(sel.types) : null
+  const out: Record<string, number> = {}
+  for (const [k, v] of Object.entries(sel.typeCounts || {})) {
+    const n = Number(v) || 0
+    if (n > 0 && (!allowed || allowed.has(k))) out[k] = n
+  }
+  return out
+}
+
 /** 自定义分布时本次会抽几题 */
 export function customCountTotal(sel: QuizStartSelection): number {
-  return Object.values(sel.typeCounts || {}).reduce((sum, n) => sum + (Number(n) || 0), 0)
+  return Object.values(effectiveTypeCounts(sel)).reduce((sum, n) => sum + (Number(n) || 0), 0)
 }
 
 /** 本次刷几题（用于按钮文案） */
@@ -138,11 +149,7 @@ export function buildQuizStartBody(
   if (sel.tags.length) body.tags = sel.tags
 
   if (sel.distribute === "custom") {
-    const counts: Record<string, number> = {}
-    for (const [k, v] of Object.entries(sel.typeCounts || {})) {
-      const n = Number(v) || 0
-      if (n > 0) counts[k] = n
-    }
+    const counts = effectiveTypeCounts(sel)
     if (Object.keys(counts).length) body.type_counts = counts
   } else {
     if (sel.count > 0) body.count = sel.count

@@ -8,6 +8,7 @@ import {
   countByDifficulty,
   countQuizSelection,
   customCountTotal,
+  effectiveTypeCounts,
   emptyQuizStartSelection,
   questionBucket,
   questionMatchesSelection,
@@ -145,5 +146,17 @@ describe("本次题数", () => {
     }
     expect(customCountTotal(sel)).toBe(5)
     expect(quizStartTotal(sel, 99)).toBe(5)
+  })
+
+  it("自定义：只算当前勾选的题型（取消勾选的配额不计/不入参）", () => {
+    const sel = {
+      ...emptyQuizStartSelection(),
+      distribute: "custom" as const,
+      types: ["fill_blank"],
+      typeCounts: { single_choice: 3, fill_blank: 2 },
+    }
+    expect(effectiveTypeCounts(sel)).toEqual({ fill_blank: 2 })
+    expect(customCountTotal(sel)).toBe(2)
+    expect(buildQuizStartBody(sel).type_counts).toEqual({ fill_blank: 2 })
   })
 })
