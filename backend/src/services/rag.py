@@ -7,6 +7,7 @@ tina 工具（tools 属性），供 Agent 使用——领域对象的工具是�
 from __future__ import annotations
 
 import logging
+import os
 import threading
 from typing import Optional
 
@@ -17,6 +18,11 @@ from ..core.config import config
 logger = logging.getLogger(__name__)
 
 _COLLECTION_PREFIX = "doc_"
+
+# fastembed/ONNX 推理的批大小。fastembed 默认 256，而注意力矩阵是
+# batch × heads × seq² —— 实测 340 页的书导入峰值 6.9GB，压到 16 后降到几百 MB。
+# 可用 ZHISHI_EMBED_BATCH 覆盖（大机器想要更快可以调大）。
+_EMBED_BATCH = max(1, int(os.environ.get("ZHISHI_EMBED_BATCH") or 16))
 
 
 class ChromaStore:
@@ -73,7 +79,9 @@ class ChromaStore:
             def _embed(texts):
                 items = [t if isinstance(t, str) else str(t) for t in texts]
                 out = []
-                for v in model.embed(items):
+                # 必须显式传 batch_size：fastembed 默认 256，ONNX 的注意力矩阵
+                # 会随 batch 线性放大（256×12×512²×4B ≈ 3.2GB），是导入 OOM 的主因
+                for v in model.embed(items, batch_size=_EMBED_BATCH):
                     out.append(v.tolist() if hasattr(v, "tolist") else list(v))
                 return out
 
