@@ -1,5 +1,13 @@
 import { useMemo, useState, type ReactNode } from "react"
-import { ChevronDown, ChevronRight, Loader2, Play, RefreshCw, Search } from "lucide-react"
+import {
+  Check,
+  ChevronDown,
+  ChevronRight,
+  Loader2,
+  Play,
+  RefreshCw,
+  Search,
+} from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -45,18 +53,49 @@ type QuizStartDialogProps = {
   onStart: (body: Record<string, unknown>) => void
 }
 
-function chipClass(active: boolean, disabled = false): string {
-  return cn(
-    "inline-flex items-center gap-1 h-10 sm:h-9 px-3.5 rounded-full border text-small transition-colors",
-    disabled
-      ? "opacity-40 cursor-not-allowed border-line-soft text-ink-tertiary"
-      : active
-        ? "bg-sea text-paper border-sea font-medium"
-        : "bg-paper text-ink-secondary border-line hover:border-sea/40 hover:text-ink-primary",
+/**
+ * 筛选 chip。
+ *
+ * 这里**不用**设计规范里「选中 = sea 实心」那套：本浮窗是 5 段同样形状的 chip 行，
+ * 实心胶囊会被眼睛读成「段落标题」（用户反馈过）。密集多行选择器改用
+ * 「浅底 + 勾」——实心色只留给底部的主按钮，层级才立得住。
+ */
+function Chip({
+  active,
+  disabled,
+  onClick,
+  title,
+  children,
+}: {
+  active?: boolean
+  disabled?: boolean
+  onClick?: () => void
+  title?: string
+  children: ReactNode
+}) {
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={onClick}
+      title={title}
+      aria-pressed={active ? true : undefined}
+      className={cn(
+        "inline-flex items-center gap-1.5 h-10 sm:h-9 px-3.5 rounded-full border text-caption transition-colors",
+        disabled
+          ? "border-line-soft text-ink-tertiary opacity-45 cursor-not-allowed"
+          : active
+            ? "border-sea/45 bg-sea-subtle text-sea font-medium"
+            : "border-line bg-paper text-ink-secondary hover:border-sea/40 hover:text-ink-primary",
+      )}
+    >
+      {active ? <Check className="w-3.5 h-3.5 shrink-0" strokeWidth={2.5} /> : null}
+      {children}
+    </button>
   )
 }
 
-/** 编号 + 标题 + 说明：让「点开该干什么」一眼可读 */
+/** 编号 + 标题 + 说明：段标题必须是这一行里最重的元素，别让 chip 抢戏 */
 function Section({
   step,
   title,
@@ -69,13 +108,13 @@ function Section({
   children: ReactNode
 }) {
   return (
-    <section>
-      <div className="flex items-center gap-2 mb-2.5 flex-wrap">
-        <span className="w-5 h-5 shrink-0 rounded-full bg-sea-subtle text-sea text-[11px] font-semibold flex items-center justify-center">
+    <section className="border-t border-line-soft pt-5 first:border-t-0 first:pt-0">
+      <div className="flex items-center gap-2.5 mb-3">
+        <span className="w-6 h-6 shrink-0 rounded-full bg-sea-subtle text-sea text-caption font-semibold flex items-center justify-center">
           {step}
         </span>
-        <span className="text-small font-semibold text-ink-primary">{title}</span>
-        {hint ? <span className="text-caption text-ink-tertiary">{hint}</span> : null}
+        <span className="text-card-title text-ink-primary">{title}</span>
+        {hint ? <span className="text-small text-ink-tertiary">{hint}</span> : null}
       </div>
       {children}
     </section>
@@ -115,21 +154,26 @@ export function QuizStartDialog({
   const difficultyCounts = useMemo(() => countByDifficulty(questions), [questions])
   const chapterCounts = useMemo(() => countByChapter(questions), [questions])
 
-  const chapterRows = useMemo(() => {
-    return (chapters || [])
-      .map((ch, i) => ({
-        id: (ch.id || "").trim(),
-        title: ch.title || `第 ${ch.order || i + 1} 章`,
-        count: ch.id ? chapterCounts[ch.id] || 0 : 0,
-      }))
-      .filter((c) => c.id)
-  }, [chapters, chapterCounts])
+  const allChapterRows = useMemo(
+    () =>
+      (chapters || [])
+        .map((ch, i) => ({
+          id: (ch.id || "").trim(),
+          title: ch.title || `第 ${ch.order || i + 1} 章`,
+          count: ch.id ? chapterCounts[ch.id] || 0 : 0,
+        }))
+        .filter((c) => c.id),
+    [chapters, chapterCounts],
+  )
+  // 只列有题的章节：没题的章节灰着也点不动，纯噪音
+  const chapterRows = useMemo(() => allChapterRows.filter((c) => c.count > 0), [allChapterRows])
+  const emptyChapterCount = allChapterRows.length - chapterRows.length
 
   const chapterTitles = useMemo(() => {
     const out: Record<string, string> = {}
-    for (const c of chapterRows) out[c.id] = c.title
+    for (const c of allChapterRows) out[c.id] = c.title
     return out
-  }, [chapterRows])
+  }, [allChapterRows])
 
   const matched = useMemo(() => countQuizSelection(questions, sel), [questions, sel])
   const total = quizStartTotal(sel, matched)
@@ -145,7 +189,8 @@ export function QuizStartDialog({
     list.includes(v) ? list.filter((x) => x !== v) : [...list, v]
 
   const availableTypeKeys = QUIZ_TYPE_KEYS.filter((k) => (typeCounts[k] || 0) > 0)
-  const hasDifficultyLabel = (difficultyCounts[1] || 0) + (difficultyCounts[2] || 0) + (difficultyCounts[3] || 0) > 0
+  const hasDifficultyLabel =
+    (difficultyCounts[1] || 0) + (difficultyCounts[2] || 0) + (difficultyCounts[3] || 0) > 0
 
   // 编号：章节/知识点可能整段不显示（资料组没有章节、没有标签），编号要跟着顺延
   const steps = useMemo(() => {
@@ -171,16 +216,17 @@ export function QuizStartDialog({
       <DialogContent className="sm:!max-w-3xl max-h-[90dvh] flex flex-col gap-0 p-0 overflow-hidden">
         <DialogHeader className="px-5 sm:px-7 pt-5 sm:pt-6 pb-4 border-b border-line-soft shrink-0">
           <DialogTitle className="text-title-s">刷题</DialogTitle>
-          <DialogDescription className="text-small leading-relaxed">
-            下面几项<strong className="font-medium text-ink-secondary">都不用改</strong>
-            ，直接点右下「开始刷题」就按默认抽题；想只练某一块，再点一下对应的标签。
+          <DialogDescription className="text-body leading-relaxed">
+            <span className="text-sea font-medium">默认就能开始</span>
+            ：直接点右下「开始刷题」，按下面的默认（全书 · 全部题型 · 10 题）抽题；
+            想只练某一块，再点一下对应那一段里的标签。
           </DialogDescription>
         </DialogHeader>
 
-        <div className="flex-1 min-h-0 overflow-y-auto scroll-thin px-5 sm:px-7 py-5 space-y-6">
+        <div className="flex-1 min-h-0 overflow-y-auto scroll-thin px-5 sm:px-7 py-5 space-y-5">
           {activeSession && onResume ? (
-            <div className="flex items-center justify-between gap-3 rounded-lg border border-line-soft bg-surface-soft px-4 py-3">
-              <div className="flex items-center gap-2.5 min-w-0 text-small text-ink-primary">
+            <div className="flex items-center justify-between gap-3 rounded-lg border border-line-soft bg-surface px-4 py-2.5">
+              <div className="flex items-center gap-2.5 min-w-0 text-small text-ink-secondary">
                 <RefreshCw className="w-4 h-4 text-sea shrink-0" />
                 <span className="truncate">
                   有未完成的练习（{activeSession.answered_count}/{activeSession.total_questions} 题已答）
@@ -195,78 +241,75 @@ export function QuizStartDialog({
           {chapterRows.length > 0 && (
             <Section step={steps.chapter} title="章节" hint="默认全书；只点一个就只刷那一章">
               <div className="flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  className={chipClass(sel.chapterIds.length === 0)}
+                <Chip
+                  active={sel.chapterIds.length === 0}
                   onClick={() => setSel((s) => ({ ...s, chapterIds: [] }))}
                 >
                   全部章节
-                </button>
+                </Chip>
                 {chapterRows.map((c) => (
-                  <button
+                  <Chip
                     key={c.id}
-                    type="button"
-                    disabled={c.count === 0}
-                    title={c.count === 0 ? "这一章还没有题目" : c.title}
-                    className={chipClass(sel.chapterIds.includes(c.id), c.count === 0)}
+                    active={sel.chapterIds.includes(c.id)}
                     onClick={() => setSel((s) => ({ ...s, chapterIds: toggle(s.chapterIds, c.id) }))}
                   >
                     <span className="truncate max-w-[13rem]">{c.title}</span>
-                    <span className="text-caption opacity-70">{c.count}</span>
-                  </button>
+                    <span className="text-small opacity-70">{c.count}</span>
+                  </Chip>
                 ))}
               </div>
+              {emptyChapterCount > 0 && (
+                <p className="mt-2 text-caption text-ink-tertiary">
+                  另有 {emptyChapterCount} 章暂时没有题目，已隐藏。
+                </p>
+              )}
             </Section>
           )}
 
           <Section step={steps.type} title="题型" hint="默认全部；点几个就是那几个">
             <div className="flex flex-wrap gap-2">
-              <button
-                type="button"
-                className={chipClass(sel.types.length === 0)}
+              <Chip
+                active={sel.types.length === 0}
                 onClick={() => setSel((s) => ({ ...s, types: [] }))}
               >
                 全部题型
-              </button>
+              </Chip>
               {availableTypeKeys.map((k) => (
-                <button
+                <Chip
                   key={k}
-                  type="button"
-                  className={chipClass(sel.types.includes(k))}
+                  active={sel.types.includes(k)}
                   onClick={() => setSel((s) => ({ ...s, types: toggle(s.types, k) }))}
                 >
                   {QUIZ_TYPE_LABELS[k] || k}
-                  <span className="text-caption opacity-70">{typeCounts[k] || 0}</span>
-                </button>
+                  <span className="text-small opacity-70">{typeCounts[k] || 0}</span>
+                </Chip>
               ))}
             </div>
           </Section>
 
           <Section step={steps.difficulty} title="难度" hint="默认不限">
             <div className="flex flex-wrap gap-2">
-              <button
-                type="button"
-                className={chipClass(sel.difficulties.length === 0)}
+              <Chip
+                active={sel.difficulties.length === 0}
                 onClick={() => setSel((s) => ({ ...s, difficulties: [] }))}
               >
                 不限难度
-              </button>
+              </Chip>
               {DIFFICULTY_OPTIONS.map((d) => {
                 const n = difficultyCounts[d.value] || 0
                 return (
-                  <button
+                  <Chip
                     key={d.value}
-                    type="button"
+                    active={sel.difficulties.includes(d.value)}
                     disabled={n === 0}
                     title={n === 0 ? "还没有标注为该难度的题" : `${d.label} ${n} 题`}
-                    className={chipClass(sel.difficulties.includes(d.value), n === 0)}
                     onClick={() =>
                       setSel((s) => ({ ...s, difficulties: toggle(s.difficulties, d.value) }))
                     }
                   >
                     {d.label}
-                    <span className="text-caption opacity-70">{n}</span>
-                  </button>
+                    <span className="text-small opacity-70">{n}</span>
+                  </Chip>
                 )
               })}
             </div>
@@ -283,21 +326,21 @@ export function QuizStartDialog({
                 type="button"
                 onClick={() => setTagsOpen((v) => !v)}
                 className={cn(
-                  "w-full flex items-center gap-2 h-10 sm:h-9 px-3.5 rounded-full border text-small transition-colors",
+                  "w-full flex items-center gap-2 h-10 px-3.5 rounded-lg border text-caption transition-colors",
                   sel.tags.length > 0
-                    ? "border-sea/40 text-ink-primary"
-                    : "border-line text-ink-secondary hover:border-sea/40",
+                    ? "border-sea/45 bg-sea-subtle text-sea"
+                    : "border-line bg-paper text-ink-secondary hover:border-sea/40",
                 )}
               >
                 {tagsOpen ? (
-                  <ChevronDown className="w-4 h-4 text-ink-tertiary shrink-0" />
+                  <ChevronDown className="w-4 h-4 shrink-0" />
                 ) : (
-                  <ChevronRight className="w-4 h-4 text-ink-tertiary shrink-0" />
+                  <ChevronRight className="w-4 h-4 shrink-0" />
                 )}
                 <span className="truncate">
                   {sel.tags.length === 0 ? "全部知识点" : `已选 ${sel.tags.length} 个知识点`}
                 </span>
-                <span className="ml-auto text-caption text-sea shrink-0">
+                <span className="ml-auto text-small shrink-0 opacity-80">
                   {tagsOpen ? "收起" : "展开选择"}
                 </span>
               </button>
@@ -314,22 +357,20 @@ export function QuizStartDialog({
                   </div>
                   <div className="max-h-44 overflow-y-auto scroll-thin">
                     <div className="flex flex-wrap gap-2">
-                      <button
-                        type="button"
-                        className={chipClass(sel.tags.length === 0)}
+                      <Chip
+                        active={sel.tags.length === 0}
                         onClick={() => setSel((s) => ({ ...s, tags: [] }))}
                       >
                         全部知识点
-                      </button>
+                      </Chip>
                       {visibleTags.map((t) => (
-                        <button
+                        <Chip
                           key={t}
-                          type="button"
-                          className={chipClass(sel.tags.includes(t))}
+                          active={sel.tags.includes(t)}
                           onClick={() => setSel((s) => ({ ...s, tags: toggle(s.tags, t) }))}
                         >
                           {t}
-                        </button>
+                        </Chip>
                       ))}
                     </div>
                   </div>
@@ -340,20 +381,18 @@ export function QuizStartDialog({
 
           <Section step={steps.amount} title="数量与分布" hint="决定这一场怎么组">
             <div className="flex flex-wrap gap-2 mb-3">
-              <button
-                type="button"
-                className={chipClass(sel.distribute === "balanced")}
+              <Chip
+                active={sel.distribute === "balanced"}
                 onClick={() => setSel((s) => ({ ...s, distribute: "balanced" }))}
               >
                 均衡随机
-              </button>
-              <button
-                type="button"
-                className={chipClass(sel.distribute === "custom")}
+              </Chip>
+              <Chip
+                active={sel.distribute === "custom"}
                 onClick={() => setSel((s) => ({ ...s, distribute: "custom" }))}
               >
                 自定义每种题型数量
-              </button>
+              </Chip>
             </div>
 
             {sel.distribute === "balanced" ? (
@@ -376,14 +415,13 @@ export function QuizStartDialog({
                   <span className="text-small text-ink-primary">题</span>
                   <div className="flex flex-wrap gap-2">
                     {COUNT_PRESETS.map((n) => (
-                      <button
+                      <Chip
                         key={n}
-                        type="button"
-                        className={chipClass(sel.count === n)}
+                        active={sel.count === n}
                         onClick={() => setSel((s) => ({ ...s, count: n }))}
                       >
                         {n === 0 ? "全部" : n}
-                      </button>
+                      </Chip>
                     ))}
                   </div>
                 </div>
@@ -429,7 +467,7 @@ export function QuizStartDialog({
         </div>
 
         {/* 底部：先告诉你「这一场会刷什么」，再给按钮 */}
-        <div className="shrink-0 border-t border-line-soft px-5 sm:px-7 py-4 space-y-3 sm:space-y-0 sm:flex sm:items-center sm:gap-4">
+        <div className="shrink-0 border-t border-line-soft bg-surface-soft/50 px-5 sm:px-7 py-4 space-y-3 sm:space-y-0 sm:flex sm:items-center sm:gap-4">
           <div className="sm:flex-1 min-w-0 text-caption leading-relaxed">
             {matched === 0 ? (
               <span className="text-warning">

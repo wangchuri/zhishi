@@ -209,8 +209,13 @@
 |------|------|
 | 筛选 Chip（未选中） | `border border-line text-ink-soft rounded-full px-3 py-1` |
 | 筛选 Chip（选中） | `bg-sea text-paper rounded-full px-3 py-1` |
+| 筛选 Chip（选中 · **密集多行**选择器） | `border-sea/45 bg-sea-subtle text-sea` + **✓ 图标**（不用实心） |
 | 内容 tag | `text-sea text-[13px]` 小号文字，不加实心背景 |
 | 类型 tag（文档类型） | `text-ember text-[12px] uppercase tracking-wider` |
+
+> **实心选中只在「一行筛选」里用**（如资料页的章节筛选条）。像刷题浮窗这种**5 段同样形状**的选择器，
+> 每段都有一个实心胶囊时，眼睛会把它读成"段落标题"而不是"当前选中"，而且会把底部主按钮的实心色冲淡。
+> 密集场景统一用「浅底 + ✓」，实心色只留给一个主按钮。
 
 ### 5.6 输入框 / 表单
 
