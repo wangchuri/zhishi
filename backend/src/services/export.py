@@ -195,14 +195,19 @@ class ExportService:
         return buf.getvalue(), f"{safe_name}-书本包.zip"
 
 
-    async def import_package(
+    def import_package(
         self,
         db: Session,
         content: bytes,
         filename: str,
         collection_id: Optional[str],
     ) -> dict:
-        """导入 zip：优先还原 pages/，否则从 parsed.md 拆页。"""
+        """导入 zip：优先还原 pages/，否则从 parsed.md 拆页。
+
+        同步实现：内部全是阻塞 I/O 与 CPU（解包、落盘、分段、向量化），
+        没有任何 await，因此必须由调用方放进线程池执行（见 api/kb.py），
+        否则会堵住单进程 uvicorn 的事件循环，导致全站请求排队超时（502）。
+        """
         imported_questions = 0
         reused_questions = 0
 

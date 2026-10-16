@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from typing import Optional
@@ -420,7 +421,16 @@ async def import_doc(
     db: Session = Depends(get_db),
 ):
     content = await file.read()
-    result = await export_service.import_package(db, content, file.filename or "package.zip", collection_id)
+    # 导包 = 解包 + 落盘 + 分段 + 向量化，全程阻塞 I/O 与 CPU，没有一处 await。
+    # 之前直接在事件循环里跑：单进程 uvicorn 下会把全站请求一起堵死（nginx 等不到上游 → 502）。
+    # 放进线程池执行（SQLite 引擎已配 check_same_thread=False + NullPool，支持跨线程会话）。
+    result = await asyncio.to_thread(
+        export_service.import_package,
+        db,
+        content,
+        file.filename or "package.zip",
+        collection_id,
+    )
     return kb_schemas.ImportPackageResult(**result)
 
 
