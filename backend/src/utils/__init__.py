@@ -34,6 +34,29 @@ def sha256_file(path: str | Path, chunk_size: int = 1 << 20) -> str:
     return h.hexdigest()
 
 
+# markdown 图片引用：![alt](images/xxx.jpg)
+_IMG_REF_RE = re.compile(r"(!\[[^\]]*\]\()\s*(?:\./)?images/([^)\s]+)\s*(\))")
+
+
+def absolutize_image_refs(md: str, base_url: str | None) -> str:
+    """把 markdown 里的 `images/xxx` 相对引用改写成绝对 URL。
+
+    题目会在多处渲染（题目列表 / 详情 / 答题 / tip），有的入口拿不到 document_id，
+    相对路径就会请求到前端路由下变 404。在接口出口统一改成绝对路径最省事。
+    """
+    if not md or not base_url or "images/" not in md:
+        return md
+    base = base_url.rstrip("/")
+    return _IMG_REF_RE.sub(
+        lambda m: f"{m.group(1)}{base}/{m.group(2)}{m.group(3)}", md
+    )
+
+
+def document_image_base(doc_id: str | None) -> str | None:
+    """文档图片接口的 base（供 absolutize_image_refs 使用）。"""
+    return f"/api/v1/kb/documents/{doc_id}/images" if doc_id else None
+
+
 def random_suffix(length: int = 5) -> str:
     """随机字母数字串（默认 5 位）。"""
     chars = string.ascii_lowercase + string.digits

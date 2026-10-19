@@ -39,10 +39,9 @@ def _note_folder(n: UserNote) -> str:
     """笔记所属文件夹：报告固定学习报告，tip 归 tip，其余用存储值。"""
     if n.note_type == "report":
         return "学习报告"
-    if n.note_type == "tip":
+    # question_reflection 是旧的「题目思路」，现在统一归到 tip（见 save_question_reflection）
+    if n.note_type in ("tip", "question_reflection"):
         return "tip"
-    if n.note_type == "question_reflection":
-        return "题目思路"
     return ((getattr(n, "folder", None) or "我的笔记") or "").strip() or "我的笔记"
 
 
@@ -119,14 +118,51 @@ class NoteService:
         document_id: Optional[str] = None,
         title: Optional[str] = None,
     ) -> UserNote:
-        """追加一条「做题思路」（只增不改；旧条不可编辑）。"""
+        """追加一条「题目感想」（只增不改），直接记成 tip。
+
+        以前写的是 note_type="question_reflection" / folder="题目思路"，会跑到笔记页，
+        但那边没有题目上下文、看着像一堆散落的句子。现在归到 tip：阅读页的 tip 面板
+        里能按「上面题目、下面感想」展示，笔记页不再出现。
+        """
+        from ..models import GlobalQuestion, QuestionProvenance, QuestionRef
+
+        doc_id = document_id or None
+        if not doc_id:
+            prov = (
+                db.query(QuestionProvenance)
+                .filter(QuestionProvenance.question_id == question_id)
+                .first()
+            )
+            doc_id = prov.document_id if prov else None
+
+        # 系统 tag：资料名 / 感想 / 难度，答错或不会再加一个「错题」
+        tags: list[str] = []
+        if doc_id:
+            doc = db.get(Document, doc_id)
+            if doc and doc.display_name:
+                tags.append(doc.display_name)
+        tags.append("感想")
+        gq = db.get(GlobalQuestion, question_id)
+        diff = getattr(gq, "difficulty", None) if gq else None
+        if diff in (1, 2, 3):
+            tags.append({1: "难度·简单", 2: "难度·中等", 3: "难度·困难"}[diff])
+        ref = (
+            db.query(QuestionRef)
+            .filter(QuestionRef.question_id == question_id)
+            .order_by(QuestionRef.last_answered_at.desc(), QuestionRef.created_at.desc())
+            .first()
+        )
+        if ref and ref.last_status in ("wrong", "unknown"):
+            tags.append("错题")
+
         note = UserNote(
             question_id=question_id,
-            document_id=document_id or None,
+            document_id=doc_id,
             title=(title or "").strip()[:255] or None,
             content_md=content_md or "",
-            note_type="question_reflection",
-            folder="题目思路",
+            note_type="tip",
+            folder="tip",
+            user_tags=_dump_user_tags(tags),
         )
         db.add(note)
         db.commit()
@@ -134,12 +170,16 @@ class NoteService:
         return note
 
     def list_question_reflections(self, db: Session, question_id: str) -> list[UserNote]:
-        """某题的全部思路，按时间升序（旧 → 新）。"""
+        """某题的全部感想，按时间升序（旧 → 新）。
+
+        新数据写的是 note_type="tip"（见 save_question_reflection），
+        旧的 question_reflection 记录也一并返回，避免历史感想凭空消失。
+        """
         return (
             db.query(UserNote)
             .filter(
-                UserNote.note_type == "question_reflection",
                 UserNote.question_id == question_id,
+                UserNote.note_type.in_(("tip", "question_reflection")),
             )
             .order_by(UserNote.created_at.asc())
             .all()
@@ -221,8 +261,12 @@ class NoteService:
         return True
 
     def list_folders(self, db: Session) -> list[dict]:
-        """笔记文件夹及数量（不含 tip）。含自建的空文件夹。"""
-        rows = db.query(UserNote).filter(UserNote.note_type != "tip").all()
+        """笔记文件夹及数量（不含 tip / 旧的题目思路）。含自建的空文件夹。"""
+        rows = (
+            db.query(UserNote)
+            .filter(UserNote.note_type.notin_(("tip", "question_reflection")))
+            .all()
+        )
         counts: dict[str, int] = {}
         for n in rows:
             name = _note_folder(n)
@@ -275,7 +319,43 @@ class NoteService:
         return _note_out(note, names)
 
     def list_tips(self, db: Session, document_id: str) -> dict:
-        return self.list_notes(db, document_id=document_id, note_type="tip")
+        """本书的 tip（含旧的「题目思路」记录），并给题目感想补上题干。"""
+        notes = (
+            db.query(UserNote)
+            .filter(
+                UserNote.document_id == document_id,
+                UserNote.note_type.in_(("tip", "question_reflection")),
+            )
+            .order_by(UserNote.created_at.desc())
+            .all()
+        )
+        names = _doc_names(db, notes)
+        items = [_note_out(n, names) for n in notes]
+        self._attach_question_brief(db, items)
+        return {"notes": items, "total": len(items)}
+
+    def _attach_question_brief(self, db: Session, items: list[dict]) -> None:
+        """给带 question_id 的 tip 补题干/答案，前端按「上面题目、下面感想」展示。"""
+        ids = {it.get("question_id") for it in items if it.get("question_id")}
+        if not ids:
+            return
+        from ..models import GlobalQuestion
+        from ..utils import absolutize_image_refs, document_image_base
+
+        rows = db.query(GlobalQuestion).filter(GlobalQuestion.id.in_(ids)).all()
+        by_id = {g.id: g for g in rows}
+        for it in items:
+            gq = by_id.get(it.get("question_id"))
+            if not gq:
+                continue
+            base = document_image_base(it.get("document_id"))
+            it["question"] = {
+                "id": gq.id,
+                "stem": absolutize_image_refs(gq.stem or "", base),
+                "question_type": gq.question_type,
+                "difficulty": gq.difficulty,
+                "answer": absolutize_image_refs(gq.answer or "", base),
+            }
 
     def list_tip_tags(self, db: Session) -> list[str]:
         rows = (

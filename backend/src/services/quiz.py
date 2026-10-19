@@ -25,7 +25,7 @@ from ..models import (
     QuizSession,
     QuizSessionQuestion,
 )
-from ..utils import parse_tags
+from ..utils import absolutize_image_refs, document_image_base, parse_tags
 
 
 # ---- 纯函数工具 ----
@@ -627,12 +627,13 @@ class QuizService:
             for a in answers:
                 if a.question_id not in last_times and a.time_spent_seconds is not None:
                     last_times[a.question_id] = int(a.time_spent_seconds)
+        image_base = document_image_base(session.document_id)
         questions = []
         for sq, gq in rows:
             questions.append({
                 "question_id": gq.id,
                 "order_index": sq.order_index,
-                "stem": gq.stem,
+                "stem": absolutize_image_refs(gq.stem or "", image_base),
                 "question_type": gq.question_type,
                 "options": json.loads(gq.options) if gq.options else None,
                 "source_type": gq.source_type,
@@ -1056,6 +1057,7 @@ class QuizService:
             .order_by(QuizAnswer.answered_at)
             .all()
         )
+        image_base = document_image_base(session.document_id)
         correct = wrong = unknown = 0
         items = []
         for a, gq in rows:
@@ -1068,11 +1070,11 @@ class QuizService:
             if a.status in ("wrong", "unknown"):
                 items.append({
                     "question_id": gq.id,
-                    "stem": gq.stem,
+                    "stem": absolutize_image_refs(gq.stem or "", image_base),
                     "user_answer": a.user_answer,
                     "status": a.status,
-                    "correct_answer": gq.answer,
-                    "explanation": gq.explanation,
+                    "correct_answer": absolutize_image_refs(gq.answer or "", image_base),
+                    "explanation": absolutize_image_refs(gq.explanation or "", image_base),
                     "attachments": json.loads(a.attachments) if a.attachments else [],
                 })
         total = db.query(QuizSessionQuestion).filter(QuizSessionQuestion.session_id == session.id).count()

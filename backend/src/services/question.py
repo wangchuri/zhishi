@@ -19,7 +19,12 @@ from ..models import (
     QuestionProvenance,
     QuestionRef,
 )
-from ..utils import parse_tags, sha256_hex
+from ..utils import (
+    absolutize_image_refs,
+    document_image_base,
+    parse_tags,
+    sha256_hex,
+)
 
 
 # ---- 纯函数工具 ----
@@ -166,13 +171,16 @@ def _question_out(
         user_status = ref.last_status
     else:
         user_status = None
+    # 题干/答案/解析里的 images/xxx 统一改成绝对 URL：题目会在列表、详情、答题、
+    # tip 等多个入口渲染，靠每个入口各自传 document_id 迟早漏一个（漏了就 404）
+    image_base = document_image_base(doc_id)
     return {
         "id": gq.id,
-        "stem": gq.stem,
+        "stem": absolutize_image_refs(gq.stem or "", image_base),
         "question_type": gq.question_type,
         "options": options,
-        "answer": gq.answer,
-        "explanation": gq.explanation,
+        "answer": absolutize_image_refs(gq.answer or "", image_base),
+        "explanation": absolutize_image_refs(gq.explanation or "", image_base),
         "tags": tags,
         "source_type": gq.source_type,
         "document_id": doc_id,
