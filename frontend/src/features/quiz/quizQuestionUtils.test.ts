@@ -79,8 +79,8 @@ describe("填空相关工具", () => {
 })
 
 describe("答案展示与提交", () => {
-  it("formatCorrectAnswerDisplay 填空多空以分号连接", () => {
-    expect(formatCorrectAnswerDisplay('["A","B"]', "fill_blank")).toBe("A；B")
+  it("formatCorrectAnswerDisplay 填空多空：解析数组并按空编号", () => {
+    expect(formatCorrectAnswerDisplay('["A","B"]', "fill_blank")).toBe("（1）A　（2）B")
     expect(formatCorrectAnswerDisplay("正确答案", "single_choice")).toBe("正确答案")
   })
 
@@ -108,5 +108,33 @@ describe("答案展示与提交", () => {
       { key: "x", label: "X", type: "text" },
     ])
     expect(parseAnswerParams(null)).toEqual([])
+  })
+})
+
+
+/** 填空题答案在库里是 JSON 数组字符串，展示时不能把原始 JSON 露出来 */
+describe("formatCorrectAnswerDisplay 答案展示", () => {
+  it("填空题多空：解析数组 + 编号 + 裸 LaTeX 补美元符", () => {
+    const out = formatCorrectAnswerDisplay('["u_{max}", "n $\\\\cdot$ u_{max}"]', "fill_blank")
+    expect(out).not.toContain("[")
+    expect(out).toContain("（1）")
+    expect(out).toContain("（2）")
+    expect(out).toContain("$u_{max}$")
+  })
+
+  it("填空题单空：不加编号", () => {
+    expect(formatCorrectAnswerDisplay('["k+1"]', "fill_blank")).toBe("k+1")
+  })
+
+  it("填空题中文答案：不包美元符", () => {
+    const out = formatCorrectAnswerDisplay('["有理式","代数式"]', "fill_blank")
+    expect(out).toContain("（1）有理式")
+    expect(out).not.toContain("$有理式$")
+  })
+
+  it("非填空但存成 JSON 数组：也不露出原始 JSON", () => {
+    const out = formatCorrectAnswerDisplay('["A","B"]')
+    expect(out).toContain("（1）A")
+    expect(out).toContain("（2）B")
   })
 })

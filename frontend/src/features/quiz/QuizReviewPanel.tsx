@@ -5,6 +5,7 @@ import { MessageImages } from "@/components/blocks/ImageAttachments"
 import { MarkdownWithMath } from "@/components/blocks/MarkdownWithMath"
 import { Badge } from "@/components/ui/badge"
 import { cn } from "@/lib/utils"
+import { formatCorrectAnswerDisplay } from "./quizQuestionUtils"
 
 interface QuizReviewPanelProps {
   items: QuizReviewItem[]
@@ -42,7 +43,7 @@ export function QuizReviewPanel({ items, onAskTutor, className }: QuizReviewPane
           <div className="text-small text-ink-secondary">
             你的答案：
             {item.user_answer || (item.attachments?.length ? "（图片作答）" : "—")} · 正确答案：
-            {item.correct_answer}
+            {formatCorrectAnswerDisplay(item.correct_answer) || "—"}
           </div>
           {item.explanation && (
             <div className="text-small text-ink-primary bg-surface rounded-md p-2.5 border border-line-soft">

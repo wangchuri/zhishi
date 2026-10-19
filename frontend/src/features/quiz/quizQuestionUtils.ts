@@ -92,11 +92,36 @@ export function splitStemWithBlanks(stem: string): Array<{ type: "text" | "blank
 export function formatCorrectAnswerDisplay(correctAnswer?: string | null, qtype?: string): string {
   if (!correctAnswer) return ""
   if (qtype === "fill_blank") {
-    const parts = parseBlankAnswers(correctAnswer)
-    if (parts.length > 1) return parts.join("；")
+    const parts = parseBlankAnswers(correctAnswer).map(wrapMathIfNeeded)
+    if (parts.length > 1) return parts.map((p, i) => `（${i + 1}）${p}`).join("　")
     return parts[0] ?? correctAnswer
   }
+  // 非填空也可能存成 JSON 数组（历史数据），别把 ["a","b"] 原样露出去
+  const raw = correctAnswer.trim()
+  if (raw.startsWith("[")) {
+    try {
+      const arr = JSON.parse(raw)
+      if (Array.isArray(arr)) {
+        return arr.map((x, i) => `（${i + 1}）${wrapMathIfNeeded(String(x))}`).join("　")
+      }
+    } catch {
+      /* 不是合法 JSON，按原文显示 */
+    }
+  }
   return correctAnswer
+}
+
+/**
+ * 答案里的裸 LaTeX（如 u_{max}、\frac{1}{2}）没包 $ 时补上，
+ * 否则 Markdown 不会当公式渲染，界面上就是一堆下划线花括号。
+ */
+function wrapMathIfNeeded(text: string): string {
+  const t = (text || "").trim()
+  if (!t) return t
+  if (t.includes("$")) return t // 已经有 $，交给 markdown
+  if (/[\u4e00-\u9fff]/.test(t)) return t // 纯中文答案不包
+  if (/[_^\\{}]/.test(t)) return `$${t}$`
+  return t
 }
 
 export function canSubmitAnswer(

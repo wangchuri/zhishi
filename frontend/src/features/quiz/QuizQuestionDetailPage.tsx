@@ -17,7 +17,7 @@ import { MarkdownWithMath } from "@/components/blocks/MarkdownWithMath"
 import { MessageImages } from "@/components/blocks/ImageAttachments"
 import { TutorPanel } from "@/features/tutor/TutorPanel"
 import { QuizQuestionReflection } from "./QuizQuestionReflection"
-import { QUESTION_TYPE_LABEL } from "./quizQuestionUtils"
+import { QUESTION_TYPE_LABEL, formatCorrectAnswerDisplay } from "./quizQuestionUtils"
 import { getApiBase, quizApi } from "@/lib/api"
 import type { QuestionAnswerRecord, QuestionHistory } from "@/types"
 
@@ -218,7 +218,7 @@ export function QuestionDetailBody({ questionId }: { questionId: string }) {
         <div className="rounded-lg border border-success/25 bg-success/10 p-3">
           <div className="text-caption text-ink-tertiary mb-1">正确答案</div>
           <MarkdownWithMath imageBaseUrl={imageBase}>
-            {question.answer || "—"}
+            {formatCorrectAnswerDisplay(question.answer, question.question_type) || "—"}
           </MarkdownWithMath>
         </div>
 
