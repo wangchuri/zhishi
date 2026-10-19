@@ -137,4 +137,10 @@ describe("formatCorrectAnswerDisplay 答案展示", () => {
     expect(out).toContain("（1）A")
     expect(out).toContain("（2）B")
   })
+
+  it("混合写法：已有公式段与裸 LaTeX 合并成一段公式", () => {
+    // 真实数据里长这样：n $\cdot$ u_{max}（前段有 $，后面的 u_{max} 是裸的）
+    const out = formatCorrectAnswerDisplay('["n $\\\\cdot$ u_{max}"]', "fill_blank")
+    expect(out).toBe("$n \\cdot u_{max}$")
+  })
 })

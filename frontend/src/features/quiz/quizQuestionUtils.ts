@@ -114,14 +114,18 @@ export function formatCorrectAnswerDisplay(correctAnswer?: string | null, qtype?
 /**
  * 答案里的裸 LaTeX（如 u_{max}、\frac{1}{2}）没包 $ 时补上，
  * 否则 Markdown 不会当公式渲染，界面上就是一堆下划线花括号。
+ *
+ * 混合写法要特别处理：`n $\cdot$ u_{max}` 里前段有 $、后面是裸的。
+ * 不能拼成 `n $\cdot$$u_{max}$`（两个公式紧邻，remark-math 解析不出来，
+ * 实测会整段退回源码），而是去掉内部 $ 整体包一层 → `$n \cdot u_{max}$`。
  */
 function wrapMathIfNeeded(text: string): string {
   const t = (text || "").trim()
   if (!t) return t
-  if (t.includes("$")) return t // 已经有 $，交给 markdown
-  if (/[\u4e00-\u9fff]/.test(t)) return t // 纯中文答案不包
-  if (/[_^\\{}]/.test(t)) return `$${t}$`
-  return t
+  if (/[\u4e00-\u9fff]/.test(t)) return t // 含中文的答案不当公式
+  if (!/[_^\\{}]/.test(t)) return t // 完全不像数学
+  if (/^\$[^$]*\$$/.test(t)) return t // 已经是完整的一段公式
+  return `$${t.replace(/\$/g, "").trim()}$`
 }
 
 export function canSubmitAnswer(
