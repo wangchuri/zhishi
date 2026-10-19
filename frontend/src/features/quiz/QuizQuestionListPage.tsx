@@ -4,6 +4,7 @@ import { ArrowLeft, Filter, Loader2, Search } from "lucide-react"
 import { AppShell } from "@/components/layout/AppShell"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { MarkdownWithMath } from "@/components/blocks/MarkdownWithMath"
 import { QuestionDetailBody } from "./QuizQuestionDetailPage"
 import { QUESTION_TYPE_LABEL } from "./quizQuestionUtils"
 import { questionsApi } from "@/lib/api"
@@ -53,7 +54,16 @@ const STATUS_BADGE: Record<Exclude<StatusKey, "all">, { label: string; variant: 
   unknown: { label: "不会", variant: "warning" },
 }
 
-/** 题干摘要：去掉 markdown 图片/公式符号，只留能看懂的字符 */
+/** 题干摘要：去掉图片引用和 markdown 符号，但保留 LaTeX（交给 MarkdownWithMath 渲染） */
+function stemForList(stem: string): string {
+  return (stem || "")
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, "［图］")
+    .replace(/[#>*`]/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+}
+
+/** 材料正文摘要：纯文本，材料里一般没有公式 */
 function plainStem(stem: string, max = 90): string {
   const text = (stem || "")
     .replace(/!\[[^\]]*\]\([^)]*\)/g, "［图］")
@@ -346,8 +356,13 @@ export function QuizQuestionListPage() {
                         </span>
                       ) : null}
                     </div>
-                    <div className="text-small text-ink-primary leading-relaxed line-clamp-2">
-                      {plainStem(q.stem) || "（无题干）"}
+                    <div className="text-small text-ink-primary leading-relaxed">
+                      <MarkdownWithMath
+                        proseClass="prose prose-sm max-w-none [&_p]:my-0 [&_p]:inline [&_.katex]:text-[0.95em]"
+                        className="line-clamp-2 !overflow-hidden"
+                      >
+                        {stemForList(q.stem) || "（无题干）"}
+                      </MarkdownWithMath>
                     </div>
                   </button>
                 )
