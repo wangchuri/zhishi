@@ -150,7 +150,13 @@ export function QuestionDetailBody({ questionId }: { questionId: string }) {
             {question.options.map((o) => (
               <div key={o.key} className="text-body text-ink-primary">
                 <span className="text-ink-tertiary mr-1.5">{o.key}.</span>
-                {o.text}
+                <MarkdownWithMath
+                  proseClass="prose prose-sm max-w-none inline prose-p:inline prose-p:my-0 prose-p:text-inherit"
+                  className="inline"
+                  imageBaseUrl={imageBase}
+                >
+                  {o.text}
+                </MarkdownWithMath>
               </div>
             ))}
           </div>

@@ -179,7 +179,12 @@ function QuestionBody({ q, onInsert }: { q: RawQuestion; onInsert: () => void })
                 )}
               >
                 <span className="font-medium mr-1">{o.key}.</span>
-                {o.text}
+                <MarkdownWithMath
+                  proseClass="prose prose-sm max-w-none inline prose-p:inline prose-p:my-0 prose-p:text-inherit"
+                  className="inline"
+                >
+                  {o.text}
+                </MarkdownWithMath>
               </button>
             )
           })}
