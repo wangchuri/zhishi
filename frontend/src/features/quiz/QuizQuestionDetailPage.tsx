@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import { Link, useNavigate, useParams } from "react-router-dom"
 import {
   ArrowLeft,
@@ -16,10 +16,10 @@ import { Button } from "@/components/ui/button"
 import { MarkdownWithMath } from "@/components/blocks/MarkdownWithMath"
 import { MessageImages } from "@/components/blocks/ImageAttachments"
 import { TutorPanel } from "@/features/tutor/TutorPanel"
-import { QuizQuestionReflection } from "./QuizQuestionReflection"
+import { ReflectionComposer, ReflectionItem } from "./QuizQuestionReflection"
 import { QUESTION_TYPE_LABEL, formatCorrectAnswerDisplay } from "./quizQuestionUtils"
 import { getApiBase, quizApi } from "@/lib/api"
-import type { QuestionAnswerRecord, QuestionHistory } from "@/types"
+import type { QuestionAnswerRecord, QuestionHistory, QuestionNote } from "@/types"
 
 type BadgeVariant = "success" | "danger" | "warning" | "neutral"
 
@@ -76,6 +76,8 @@ export function QuestionDetailBody({ questionId }: { questionId: string }) {
   const [data, setData] = useState<QuestionHistory | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState("")
+  // 感想：按时间插到「那一次作答」后面
+  const [notes, setNotes] = useState<QuestionNote[]>([])
   // 材料题：在「同材料的各小题」之间切换，材料本身只显示一次
   const [activeId, setActiveId] = useState(questionId)
 
@@ -110,6 +112,47 @@ export function QuestionDetailBody({ questionId }: { questionId: string }) {
   const imageBase = imageBaseDocId
     ? `${getApiBase().replace(/\/$/, "")}/api/v1/kb/documents/${encodeURIComponent(imageBaseDocId)}/images`
     : undefined
+
+  // 感想列表（按题目加载）
+  useEffect(() => {
+    const qid = data?.question?.id
+    if (!qid) {
+      setNotes([])
+      return
+    }
+    let cancelled = false
+    quizApi
+      .listQuestionNotes(qid)
+      .then((res) => {
+        if (!cancelled) setNotes(res.notes || [])
+      })
+      .catch(() => {
+        if (!cancelled) setNotes([])
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [data?.question?.id])
+
+  // 作答记录按时间升序（第一次 → 最近），并把感想归到「它之后的那次作答」
+  const grouped = useMemo(() => {
+    const asc = [...answers].sort((a, b) =>
+      (a.answered_at || "").localeCompare(b.answered_at || "")
+    )
+    const map = new Map<string, QuestionNote[]>()
+    const used = new Set<string>()
+    asc.forEach((a, i) => {
+      const from = a.answered_at || ""
+      const to = asc[i + 1]?.answered_at || "9999"
+      const list = notes.filter((n) => {
+        const t = n.created_at || ""
+        return !used.has(n.id) && t >= from && t <= to
+      })
+      list.forEach((n) => used.add(n.id))
+      map.set(a.id, list)
+    })
+    return { asc, map, rest: notes.filter((n) => !used.has(n.id)) }
+  }, [answers, notes])
 
   if (loading) {
     return (
@@ -250,14 +293,16 @@ export function QuestionDetailBody({ questionId }: { questionId: string }) {
         <h2 className="text-card-title font-semibold text-ink mb-3">
           作答记录{answers.length ? `（${answers.length}）` : ""}
         </h2>
-        {answers.length === 0 ? (
+        {grouped.asc.length === 0 ? (
           <p className="text-small text-ink-tertiary">还没答过这道题。</p>
         ) : (
           <div className="space-y-3">
-            {answers.map((a: QuestionAnswerRecord) => {
+            {grouped.asc.map((a: QuestionAnswerRecord) => {
               const meta = statusMeta(a.status)
+              const afterNotes = grouped.map.get(a.id) || []
               return (
-                <div key={a.id} className="rounded-xl border border-line-soft bg-paper p-3 space-y-2">
+                <div key={a.id} className="space-y-2">
+                <div className="rounded-xl border border-line-soft bg-paper p-3 space-y-2">
                   <div className="flex flex-wrap items-center gap-2">
                     <Badge variant={meta.variant}>{meta.label}</Badge>
                     {a.grade_method === "ai" && (
@@ -290,17 +335,31 @@ export function QuestionDetailBody({ questionId }: { questionId: string }) {
                     </div>
                   )}
                 </div>
+                  {/* 这次作答之后写的感想，跟着这条记录 */}
+                  {afterNotes.map((n) => (
+                    <ReflectionItem key={n.id} note={n} compact />
+                  ))}
+                </div>
               )
             })}
           </div>
         )}
       </section>
 
-      {/* 感想（只增不改，同时进 tip） */}
+      {/* 感想：没归到某次作答的（比如还没答过就写的）显示在这里，下面是输入框 */}
       <section className="mt-6">
-        <QuizQuestionReflection
+        <h2 className="text-card-title font-semibold text-ink mb-3">我的感想</h2>
+        {grouped.rest.length > 0 ? (
+          <div className="space-y-2 mb-3">
+            {grouped.rest.map((n) => (
+              <ReflectionItem key={n.id} note={n} />
+            ))}
+          </div>
+        ) : null}
+        <ReflectionComposer
           questionId={question.id}
           documentId={imageBaseDocId || undefined}
+          onCreated={(note) => setNotes((prev) => [...prev, note])}
         />
       </section>
 
