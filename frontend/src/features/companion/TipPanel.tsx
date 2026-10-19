@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react"
+import { useNavigate } from "react-router-dom"
 import { FileText, Loader2, X } from "lucide-react"
 import { MarkdownWithMath } from "@/components/blocks/MarkdownWithMath"
 import { documentImageBase, notesApi, type NoteItem } from "@/lib/api"
@@ -13,6 +14,7 @@ interface TipPanelProps {
 }
 
 export function TipPanel({ docId, open, onOpenChange, onJumpToPage }: TipPanelProps) {
+  const navigate = useNavigate()
   const [tips, setTips] = useState<NoteItem[]>([])
   const [loading, setLoading] = useState(false)
 
@@ -93,10 +95,20 @@ export function TipPanel({ docId, open, onOpenChange, onJumpToPage }: TipPanelPr
                 <button
                   key={tip.id}
                   type="button"
-                  onClick={() => page != null && onJumpToPage?.(page)}
+                  onClick={() => {
+                    // 题目感想：直接跳到那道题；普通 tip：跳到对应页
+                    if (tip.question_id) {
+                      onOpenChange(false)
+                      navigate(`/quiz/question/${tip.question_id}`)
+                      return
+                    }
+                    if (page != null) onJumpToPage?.(page)
+                  }}
                   className={cn(
                     "w-full text-left rounded-lg border border-line-light bg-paper-2 px-3 py-2.5 space-y-1.5 transition-colors",
-                    page != null ? "hover:border-sea/40 hover:bg-paper" : "cursor-default"
+                    page != null || tip.question_id
+                      ? "hover:border-sea/40 hover:bg-paper"
+                      : "cursor-default"
                   )}
                 >
                   {/* 题目感想类 tip：上面是题目 */}
