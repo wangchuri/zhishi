@@ -103,9 +103,8 @@ export function QuizQuestionListPage() {
     setError("")
     try {
       const res = await questionsApi.list({ document_id: docId })
-      const list = (res as QuestionListResult).questions || []
       setData(res as QuestionListResult)
-      setSelectedId((prev) => prev || list[0]?.id || null)
+      // 选中交给下面的 effect（桌面端选第一题、手机端保持列表）
     } catch (err) {
       setError(err instanceof Error ? err.message : "加载题目失败")
       setData(null)
@@ -159,12 +158,15 @@ export function QuizQuestionListPage() {
     return out
   }, [filtered])
 
-  // 筛选后如果当前选中项被过滤掉，自动选中第一条
+  // 筛选后如果当前选中项被过滤掉：
+  // - 桌面端：自动选中第一条（右侧常驻详情）
+  // - 手机端：保持未选中，先让用户看到列表（否则一进来就被推进详情，得点「题目列表」才能回来）
   useEffect(() => {
     if (filtered.length === 0) return
-    if (!selectedId || !filtered.some((q) => q.id === selectedId)) {
-      setSelectedId(filtered[0].id)
-    }
+    if (selectedId && filtered.some((q) => q.id === selectedId)) return
+    const desktop =
+      typeof window !== "undefined" && window.matchMedia("(min-width: 768px)").matches
+    setSelectedId(desktop ? filtered[0].id : null)
   }, [filtered, selectedId])
 
   const selected = filtered.find((q) => q.id === selectedId) || null
