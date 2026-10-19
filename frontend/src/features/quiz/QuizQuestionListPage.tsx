@@ -103,7 +103,7 @@ export function QuizQuestionListPage() {
     void load()
   }, [load])
 
-  const all = data?.questions || []
+  const all = useMemo(() => data?.questions || [], [data])
 
   const filtered = useMemo(() => {
     const k = keyword.trim().toLowerCase()
@@ -281,6 +281,9 @@ export function QuizQuestionListPage() {
                       ) : null}
                     </div>
                     <div className="text-small text-ink-primary leading-relaxed line-clamp-2">
+                      {q.material?.title ? (
+                        <span className="text-caption text-sea mr-1">［{q.material.title}］</span>
+                      ) : null}
                       {plainStem(q.stem) || "（无题干）"}
                     </div>
                   </button>

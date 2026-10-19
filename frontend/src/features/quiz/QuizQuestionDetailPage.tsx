@@ -141,6 +141,31 @@ export function QuestionDetailBody({ questionId }: { questionId: string }) {
           ))}
         </div>
 
+        {/* 材料题：材料作为上下文常驻在题目上方（可折叠，限高滚动） */}
+        {question.material?.content ? (
+          <details
+            open
+            className="rounded-lg border border-line-soft bg-paper-2/50"
+          >
+            <summary className="flex cursor-pointer select-none items-center gap-2 px-3 py-2">
+              <Badge variant="neutral" size="sm">
+                {question.material.kind === "cloze" ? "完形填空" : "阅读材料"}
+              </Badge>
+              <span className="text-small font-medium text-ink-primary truncate flex-1">
+                {question.material.title || "材料"}
+              </span>
+              {question.sub_index != null ? (
+                <span className="text-caption text-ink-tertiary shrink-0">
+                  第 {question.sub_index} 小题
+                </span>
+              ) : null}
+            </summary>
+            <div className="max-h-[45vh] overflow-y-auto scroll-thin px-3 pb-3 text-small text-ink leading-relaxed whitespace-pre-wrap break-words">
+              {question.material.content}
+            </div>
+          </details>
+        ) : null}
+
         <MarkdownWithMath imageBaseUrl={imageBase}>
           {question.stem}
         </MarkdownWithMath>

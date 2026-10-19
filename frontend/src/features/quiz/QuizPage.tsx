@@ -52,7 +52,6 @@ import type {
 } from "@/types"
 import { QuizReviewPanel } from "./QuizReviewPanel"
 import { QuizQuestionInput } from "./QuizQuestionInput"
-import { QuizMaterialGroup, type MaterialGroupSummary } from "./QuizMaterialGroup"
 import { QuizAnswerFeedback, QuizAnswerFeedbackActions, getSubmitButtonLabel } from "./QuizAnswerFeedback"
 import { StreakCelebrationDialog } from "./StreakCelebrationDialog"
 import {
@@ -334,20 +333,6 @@ export function QuizPage() {
 
   const currentQuestion = session?.questions[currentIndex]
 
-  // 材料题：从当前位置起、同一材料且连续的若干子题一组
-  const materialGroup = useMemo(() => {
-    if (!session) return []
-    const start = session.questions[currentIndex]
-    if (!start?.material?.content || !start.material_id) return []
-    const mid = start.material_id
-    const group = []
-    for (let i = currentIndex; i < session.questions.length; i++) {
-      if (session.questions[i].material_id !== mid) break
-      group.push(session.questions[i])
-    }
-    return group
-  }, [session, currentIndex])
-
   useEffect(() => {
     if (phase !== "quiz" || !currentQuestion || lastResult) {
       return
@@ -517,34 +502,6 @@ export function QuizPage() {
     setBlankAnswers([])
     setLastResult(null)
     setReviewItems([])
-    setQuestionStartTime(Date.now())
-    attachments.clear()
-    setMobilePane("question")
-  }
-
-  const handleGroupDone = async (summary: MaterialGroupSummary) => {
-    if (!session) return
-    setSession((prev) =>
-      prev
-        ? {
-            ...prev,
-            answered_count: summary.answeredCount,
-            status: summary.completed ? "completed" : prev.status,
-          }
-        : prev,
-    )
-    if (summary.maxStreak >= 3) setStreakDialog({ open: true, streak: summary.maxStreak })
-    setReviewItems(summary.reviewItems)
-    const next = currentIndex + materialGroup.length
-    if (summary.completed || next >= session.total_questions) {
-      await finishSession(session.id)
-      return
-    }
-    setCurrentIndex(next)
-    setSelectedOption(null)
-    setTextAnswer("")
-    setBlankAnswers([])
-    setLastResult(null)
     setQuestionStartTime(Date.now())
     attachments.clear()
     setMobilePane("question")
@@ -943,9 +900,9 @@ export function QuizPage() {
                   {QUESTION_TYPE_LABEL[currentQuestion.question_type] ||
                     currentQuestion.question_type}
                 </Badge>
-                {materialGroup.length > 1 ? (
+                {currentQuestion.material_id ? (
                   <Badge variant="neutral" size="sm">
-                    材料题 · {materialGroup.length} 小题
+                    材料题
                   </Badge>
                 ) : null}
                 {currentQuestion.source_type === "textbook" ? (
@@ -966,44 +923,33 @@ export function QuizPage() {
               </span>
             </div>
 
-            {materialGroup.length > 1 && currentQuestion.material ? (
-              <QuizMaterialGroup
-                key={currentQuestion.material_id || currentQuestion.question_id}
-                sessionId={session.id}
-                material={currentQuestion.material}
-                questions={materialGroup}
-                documentId={selectedDocumentId || undefined}
-                onGroupDone={(s) => void handleGroupDone(s)}
-                onError={(msg) => {
-                  if (isSessionExpiredError(msg)) handleSessionExpired()
-                  else setError(msg)
-                }}
-              />
-            ) : (
+            {/* 材料题也逐题作答：材料作为上下文挂在题目上方（可折叠），不再整组一次提交 */}
             <>
             {/* 题干滚动区：只滚动题目/反馈内容 */}
             <div className="flex-1 min-h-0 overflow-y-auto scroll-thin p-6">
               {currentQuestion.material?.content ? (
-                <div className="mb-5 rounded-lg border border-line-soft bg-paper-2/50 p-4">
-                  <div className="flex items-center gap-2 mb-2">
+                <details
+                  key={currentQuestion.material_id || currentQuestion.question_id}
+                  open
+                  className="mb-5 rounded-lg border border-line-soft bg-paper-2/50"
+                >
+                  <summary className="flex cursor-pointer select-none items-center gap-2 px-4 py-2.5">
                     <Badge variant="neutral" size="sm">
                       {currentQuestion.material.kind === "cloze" ? "完形填空" : "阅读材料"}
                     </Badge>
-                    {currentQuestion.material.title ? (
-                      <span className="text-small font-medium text-ink-primary truncate">
-                        {currentQuestion.material.title}
-                      </span>
-                    ) : null}
+                    <span className="text-small font-medium text-ink-primary truncate flex-1">
+                      {currentQuestion.material.title || "材料"}
+                    </span>
                     {currentQuestion.sub_index != null ? (
-                      <span className="text-caption text-ink-tertiary ml-auto shrink-0">
+                      <span className="text-caption text-ink-tertiary shrink-0">
                         第 {currentQuestion.sub_index} 小题
                       </span>
                     ) : null}
-                  </div>
-                  <div className="text-body text-ink leading-relaxed whitespace-pre-wrap break-words">
+                  </summary>
+                  <div className="max-h-[45vh] overflow-y-auto scroll-thin px-4 pb-4 text-body text-ink leading-relaxed whitespace-pre-wrap break-words">
                     {currentQuestion.material.content}
                   </div>
-                </div>
+                </details>
               ) : null}
 
               <QuizQuestionInput
@@ -1014,6 +960,7 @@ export function QuizPage() {
                 customAnswers={customAnswers}
                 lastResult={lastResult}
                 submitting={submitting}
+                documentId={session?.document_id ?? null}
                 onSelectOption={setSelectedOption}
                 onTextAnswerChange={setTextAnswer}
                 onBlankAnswersChange={setBlankAnswers}
@@ -1104,7 +1051,6 @@ export function QuizPage() {
               )}
             </div>
             </>
-            )}
           </div>
 
           <div
@@ -1115,8 +1061,8 @@ export function QuizPage() {
           >
             <TutorPanel
               ref={tutorPanelRef}
-              key={(materialGroup[0] ?? currentQuestion).question_id}
-              questionId={(materialGroup[0] ?? currentQuestion).question_id}
+              key={currentQuestion.question_id}
+              questionId={currentQuestion.question_id}
               quizSessionId={session.id}
               className="flex-1 min-h-0"
             />
