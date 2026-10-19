@@ -19,8 +19,8 @@ function fmt(iso?: string | null): string {
 }
 
 /**
- * 每题「思路/灵感」：只追加、旧条不可改，按时间排序；答题后显示。
- * 内容同时归入笔记页的「题目思路」文件夹。
+ * 每题「感想」：只追加、旧条不可改，按时间排序；答题后显示。
+ * 同时作为 tip 出现在阅读页的 tip 面板（上面题目、下面感想），不再进笔记页。
  */
 export function QuizQuestionReflection({
   questionId,
@@ -76,7 +76,7 @@ export function QuizQuestionReflection({
     <div className="rounded-md border border-primary/20 bg-primary-soft/25 px-3 py-3">
       <div className="flex items-center gap-2 text-caption font-medium text-ink-tertiary mb-2">
         <Sparkles className="w-3.5 h-3.5 text-primary" />
-        我的思路 · 只增不改
+        我的感想 · 只增不改
       </div>
 
       {loading ? (
@@ -100,7 +100,7 @@ export function QuizQuestionReflection({
       <textarea
         value={draft}
         onChange={(e) => setDraft(e.target.value)}
-        placeholder="写写这题的思路 / 灵感（答对答错都行）…"
+        placeholder="写写这题的感想 / 思路（答对答错都行）…"
         rows={3}
         className="w-full rounded-md border border-line bg-paper px-3 py-2 text-body text-ink placeholder:text-ink-disabled focus:border-sea focus:ring-1 focus:ring-sea-subtle outline-none transition-all resize-y"
       />
@@ -113,7 +113,7 @@ export function QuizQuestionReflection({
           disabled={saving || !draft.trim()}
         >
           {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
-          追加思路
+          追加感想
         </Button>
       </div>
     </div>

@@ -332,6 +332,7 @@ export function ReadingAssistSidebar({
             tips.map((tip) => {
               const page = parsePage(tip)
               const tipDocId = tip.document_id || docId
+              const brief = tip.question
               return (
                 <button
                   key={tip.id}
@@ -342,12 +343,29 @@ export function ReadingAssistSidebar({
                     page != null ? "hover:border-sea/40 hover:bg-paper" : "cursor-default"
                   )}
                 >
+                  {/* 题目感想类 tip：上面是题目 */}
+                  {brief?.stem ? (
+                    <div
+                      className="rounded-md border border-line-light bg-paper px-2 py-1.5 text-caption text-ink-soft max-h-24 overflow-hidden [&_img]:max-h-16 [&_img]:rounded-md [&_p]:my-0.5"
+                      data-no-tip
+                    >
+                      <MarkdownWithMath
+                        proseClass="prose prose-sm max-w-none text-ink-soft"
+                        imageBaseUrl={tipDocId ? documentImageBase(tipDocId) : undefined}
+                      >
+                        {brief.stem}
+                      </MarkdownWithMath>
+                    </div>
+                  ) : null}
+
                   <div className="flex items-center gap-2">
                     <span className="text-caption font-medium text-sea shrink-0">
                       第 {page ?? "—"} 页
                     </span>
                     <span className="text-small font-medium text-ink truncate flex-1">{tip.title}</span>
                   </div>
+
+                  {/* 下面是感想 */}
                   <div
                     className="text-caption text-ink-soft leading-relaxed max-h-28 overflow-hidden [&_img]:max-h-16 [&_img]:rounded-md [&_img]:my-1 [&_p]:my-0.5"
                     data-no-tip
@@ -359,6 +377,19 @@ export function ReadingAssistSidebar({
                       {tip.content_md || ""}
                     </MarkdownWithMath>
                   </div>
+
+                  {tip.tags && tip.tags.length > 0 ? (
+                    <div className="flex flex-wrap gap-1 pt-0.5">
+                      {tip.tags.map((tag) => (
+                        <span
+                          key={tag}
+                          className="rounded-full bg-surface px-1.5 py-0.5 text-[11px] text-ink-tertiary border border-line-light"
+                        >
+                          {tag}
+                        </span>
+                      ))}
+                    </div>
+                  ) : null}
                 </button>
               )
             })

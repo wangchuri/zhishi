@@ -1370,8 +1370,20 @@ export interface NoteItem {
   folder?: string | null
   /** 自动保存但尚未手动保存的草稿 */
   is_draft?: boolean
+  /** 题目感想类 tip 附带的题目摘要（后端 _attach_question_brief 补） */
+  question?: NoteQuestionBrief | null
+  question_id?: string | null
   created_at?: string
   updated_at?: string
+}
+
+/** tip 里附带的题目摘要：上面显示题目，下面显示感想 */
+export interface NoteQuestionBrief {
+  id: string
+  stem: string
+  question_type?: string | null
+  difficulty?: number | null
+  answer?: string | null
 }
 
 export interface NoteFolder {

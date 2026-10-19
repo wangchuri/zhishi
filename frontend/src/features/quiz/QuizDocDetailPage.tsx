@@ -11,6 +11,7 @@ import {
   Flame,
   HelpCircle,
   Loader2,
+  MoreHorizontal,
   Play,
   XCircle,
   RefreshCw,
@@ -44,10 +45,15 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import { Checkbox } from "@/components/ui/checkbox"
 import { SectionHeader } from "@/components/blocks/SectionHeader"
 import { ChapterMindMap } from "@/components/blocks/ChapterMindMap"
-import { QuizQuestionPreviewDialog } from "./QuizQuestionPreviewDialog"
 import { QuestionGenJobsBanner } from "./QuestionGenJobsBanner"
 import { QuizStartDialog } from "./QuizStartDialog"
 import { questionsApi, quizApi, analyticsApi, kbApi, getThumbnailUrl } from "@/lib/api"
@@ -112,7 +118,6 @@ export function QuizDocDetailPage() {
   const [loadingPath, setLoadingPath] = useState(false)
   const [generatingPath, setGeneratingPath] = useState(false)
   const pathPollRef = useRef<ReturnType<typeof setInterval> | null>(null)
-  const [previewOpen, setPreviewOpen] = useState(false)
   const [genJobs, setGenJobs] = useState<QuestionGenJob[]>([])
   const [expandedChapter, setExpandedChapter] = useState<number | null>(null)
   const [chapterView, setChapterView] = useState<"list" | "map">("list")
@@ -489,56 +494,102 @@ export function QuizDocDetailPage() {
         <Button variant="ghost" size="md" onClick={() => navigate("/quiz")}>
           <ArrowLeft className="w-4 h-4" />返回
         </Button>
-        {/* 手机：让 7 个按钮换行，缩进占位只在 md 以上起作用 */}
+        {/* 手机：只留「阅读 / 查看题目」，「重新解析 / 导出 / 删除」收进 ⋯ */}
         <div className="hidden md:block md:flex-1" />
         <Button variant="secondary" size="md" onClick={() => navigate(`/companion/doc/${doc.id}`)}>
           <BookOpen className="w-4 h-4 mr-2" />
           阅读
         </Button>
-        <Button variant="secondary" size="md" onClick={() => setPreviewOpen(true)} disabled={!hasQuestions && !loadingQuestions}>
+        <Button
+          variant="secondary"
+          size="md"
+          onClick={() => navigate(`/quiz/doc/${doc.id}/questions`)}
+          disabled={!hasQuestions && !loadingQuestions}
+        >
           <ListChecks className="w-4 h-4 mr-2" />
           查看题目
         </Button>
-        <Button variant="secondary" size="md" onClick={() => navigate(`/question-gen/doc/${doc.id}`)}>
-          <PenLine className="w-4 h-4 mr-2" />
-          出题
-        </Button>
-        <Button
-          variant="secondary"
-          size="md"
-          onClick={() => {
-            setReparseError(null)
-            setReparseForce(false)
-            setReparseOpen(true)
-          }}
-        >
-          <RefreshCw className="w-4 h-4 mr-2" />
-          重新解析
-        </Button>
-        <Button
-          variant="secondary"
-          size="md"
-          onClick={() => {
-            setIncludeOriginal(false)
-            setExportOpen(true)
-          }}
-          disabled={exporting}
-        >
-          {exporting ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Download className="w-4 h-4 mr-2" />}
-          导出书本包
-        </Button>
-        <Button
-          variant="secondary"
-          size="md"
-          onClick={() => {
-            setDeleteError(null)
-            setDeleteOpen(true)
-          }}
-          className="text-danger hover:text-danger"
-        >
-          <Trash2 className="w-4 h-4 mr-2" />
-          删除
-        </Button>
+
+        {/* 桌面端：三个次要操作直接铺开 */}
+        <div className="hidden md:flex items-center gap-2 md:gap-3">
+          <Button
+            variant="secondary"
+            size="md"
+            onClick={() => {
+              setReparseError(null)
+              setReparseForce(false)
+              setReparseOpen(true)
+            }}
+          >
+            <RefreshCw className="w-4 h-4 mr-2" />
+            重新解析
+          </Button>
+          <Button
+            variant="secondary"
+            size="md"
+            onClick={() => {
+              setIncludeOriginal(false)
+              setExportOpen(true)
+            }}
+            disabled={exporting}
+          >
+            {exporting ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Download className="w-4 h-4 mr-2" />}
+            导出书本包
+          </Button>
+          <Button
+            variant="secondary"
+            size="md"
+            onClick={() => {
+              setDeleteError(null)
+              setDeleteOpen(true)
+            }}
+            className="text-danger hover:text-danger"
+          >
+            <Trash2 className="w-4 h-4 mr-2" />
+            删除
+          </Button>
+        </div>
+
+        {/* 手机端：折叠菜单 */}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="secondary" size="md" className="md:hidden" aria-label="更多操作">
+              <MoreHorizontal className="w-4 h-4" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-44">
+            <DropdownMenuItem
+              onSelect={() => {
+                setReparseError(null)
+                setReparseForce(false)
+                setReparseOpen(true)
+              }}
+            >
+              <RefreshCw className="w-4 h-4 mr-2" />
+              重新解析
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onSelect={() => {
+                setIncludeOriginal(false)
+                setExportOpen(true)
+              }}
+              disabled={exporting}
+            >
+              <Download className="w-4 h-4 mr-2" />
+              导出书本包
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onSelect={() => {
+                setDeleteError(null)
+                setDeleteOpen(true)
+              }}
+              className="text-danger focus:text-danger"
+            >
+              <Trash2 className="w-4 h-4 mr-2" />
+              删除
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
 
       {error && (
@@ -611,7 +662,7 @@ export function QuizDocDetailPage() {
             <div className="grid grid-cols-2 gap-3">
               <button
                 type="button"
-                onClick={() => setPreviewOpen(true)}
+                onClick={() => navigate(`/quiz/doc/${doc.id}/questions`)}
                 className="text-left rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
               >
                 <StatCard icon={FileText} label="总题数" value={stats.total} hint="点击查看题目" tone="primary" />
@@ -635,54 +686,67 @@ export function QuizDocDetailPage() {
             </div>
           )}
 
-          {hasQuestions ? (
-            <div className="space-y-3">
-              <Button
-                variant="primary"
-                size="lg"
-                className="w-full"
-                style={{ color: "#FFFFFF" }}
-                disabled={starting || loadingQuestions || startingChapter !== null}
-                onClick={() => setStartOpen(true)}
-              >
-                {starting ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  <Play className="w-4 h-4" strokeWidth={2} />
-                )}
-                刷题
-              </Button>
-              <p className="text-caption text-ink-tertiary text-center">
-                按章节 / 题型 / 难度 / 数量自选
-                {activeSession ? " · 有未完成的练习可在浮窗里继续" : ""}
-              </p>
-              <QuizStartDialog
-                open={startOpen}
-                onOpenChange={setStartOpen}
-                questions={questionData?.questions || []}
-                chapters={learningPath?.chapters}
-                availableTags={startTags}
-                subject={doc?.name}
-                activeSession={activeSession}
-                onResume={() => {
-                  setStartOpen(false)
-                  void handleResume()
-                }}
-                starting={starting}
-                scope={{ documentId: docId, title: doc?.name ? `${doc.name} · 刷题` : undefined }}
-                onStart={(body) => void handleStartDialog(body)}
-              />
-            </div>
-          ) : (
-            <div className="bg-surface border border-line-soft rounded-lg p-5 text-center">
-              {doc.question_gen_status === "processing" || genJobs.length > 0 ? (
-                <div className="flex items-center justify-center gap-2 text-ink-tertiary">
-                  <Loader2 className="w-4 h-4 animate-spin" /><span>文档正在出题中，请稍后再来</span>
-                </div>
-              ) : <p className="text-body text-ink-tertiary">该文档暂无题目</p>}
-              <Button variant="secondary" size="md" className="mt-3" onClick={() => navigate(`/question-gen/doc/${doc.id}`)}>出题</Button>
-            </div>
-          )}
+          {/* 刷题 + 出题：同一列垂直并排（出题固定在刷题下方） */}
+          <div className="space-y-3">
+            {hasQuestions ? (
+              <>
+                <Button
+                  variant="primary"
+                  size="lg"
+                  className="w-full"
+                  style={{ color: "#FFFFFF" }}
+                  disabled={starting || loadingQuestions || startingChapter !== null}
+                  onClick={() => setStartOpen(true)}
+                >
+                  {starting ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Play className="w-4 h-4" strokeWidth={2} />
+                  )}
+                  刷题
+                </Button>
+                <p className="text-caption text-ink-tertiary text-center">
+                  按章节 / 题型 / 难度 / 数量自选
+                  {activeSession ? " · 有未完成的练习可在浮窗里继续" : ""}
+                </p>
+              </>
+            ) : (
+              <div className="bg-surface border border-line-soft rounded-lg p-5 text-center">
+                {doc.question_gen_status === "processing" || genJobs.length > 0 ? (
+                  <div className="flex items-center justify-center gap-2 text-ink-tertiary">
+                    <Loader2 className="w-4 h-4 animate-spin" /><span>文档正在出题中，请稍后再来</span>
+                  </div>
+                ) : <p className="text-body text-ink-tertiary">该文档暂无题目</p>}
+              </div>
+            )}
+
+            <Button
+              variant="secondary"
+              size="lg"
+              className="w-full"
+              onClick={() => navigate(`/question-gen/doc/${doc.id}`)}
+            >
+              <PenLine className="w-4 h-4 mr-2" />
+              出题
+            </Button>
+
+            <QuizStartDialog
+              open={startOpen}
+              onOpenChange={setStartOpen}
+              questions={questionData?.questions || []}
+              chapters={learningPath?.chapters}
+              availableTags={startTags}
+              subject={doc?.name}
+              activeSession={activeSession}
+              onResume={() => {
+                setStartOpen(false)
+                void handleResume()
+              }}
+              starting={starting}
+              scope={{ documentId: docId, title: doc?.name ? `${doc.name} · 刷题` : undefined }}
+              onStart={(body) => void handleStartDialog(body)}
+            />
+          </div>
         </div>
       </div>
 
@@ -1019,15 +1083,6 @@ export function QuizDocDetailPage() {
           )}
         </div>
       )}
-
-      <QuizQuestionPreviewDialog
-        open={previewOpen}
-        onOpenChange={setPreviewOpen}
-        documentId={doc.id}
-        documentName={doc.name}
-        questions={questionData?.questions || []}
-        loading={loadingQuestions}
-      />
 
       <Dialog
         open={exportOpen}

@@ -20,6 +20,7 @@ import { AuthScaffold } from "@/components/layout/AuthScaffold"
 import { QuizBookListPage } from "@/features/quiz/QuizBookListPage"
 import { QuizDocDetailPage } from "@/features/quiz/QuizDocDetailPage"
 import { QuizQuestionDetailPage } from "@/features/quiz/QuizQuestionDetailPage"
+import { QuizQuestionListPage } from "@/features/quiz/QuizQuestionListPage"
 import { QuizGroupDetailPage } from "@/features/quiz/QuizGroupDetailPage"
 import { QuizOngoingPage } from "@/features/quiz/QuizOngoingPage"
 import { QuizPage } from "@/features/quiz/QuizPage"
@@ -93,6 +94,7 @@ export function AppRoutes() {
       <Route path="/quiz/ongoing" element={<RequireServer><QuizOngoingPage /></RequireServer>} />
       <Route path="/quiz/group/:groupId" element={<RequireServer><QuizGroupDetailPage /></RequireServer>} />
       <Route path="/quiz/doc/:docId" element={<RequireServer><QuizDocDetailPage /></RequireServer>} />
+      <Route path="/quiz/doc/:docId/questions" element={<RequireServer><QuizQuestionListPage /></RequireServer>} />
       <Route path="/quiz/question/:questionId" element={<RequireServer><QuizQuestionDetailPage /></RequireServer>} />
       <Route path="/quiz/session" element={<RequireServer><QuizPage /></RequireServer>} />
       <Route path="/question-gen" element={<Navigate to="/quiz" replace />} />
