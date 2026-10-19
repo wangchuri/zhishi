@@ -264,12 +264,25 @@ export interface QuestionProvenanceItem {
   excerpt?: string | null
 }
 
+/** 材料题里的一道小题（详情页做子题切换用） */
+export interface QuestionMaterialSibling {
+  id: string
+  sub_index?: number | null
+  question_type?: string | null
+  difficulty?: number | null
+  stem: string
+}
+
 /** 单题详情（题目 + 统计 + 历次作答 + 来源） */
 export interface QuestionHistory {
   question: Question
   stats: QuestionHistoryStats
   answers: QuestionAnswerRecord[]
   provenance: QuestionProvenanceItem[]
+  /** 题目所属材料的正文（材料题才有；详情页只显示一次，子题在其下切换） */
+  material?: QuizQuestionMaterial | null
+  /** 同一材料下的全部小题（按 sub_index 排） */
+  material_questions?: QuestionMaterialSibling[]
 }
 export interface AnswerParam {
   key: string

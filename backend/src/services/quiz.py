@@ -1178,7 +1178,52 @@ class QuizService:
                 }
                 for p in provs
             ],
+            "material_questions": self._material_siblings(db, question),
+            "material": self._material_brief(db, question),
         }
+
+    def _material_brief(self, db: Session, question: GlobalQuestion) -> dict | None:
+        """题目所属材料的正文（详情页上方只显示一次，子题在其下切换）。"""
+        if not question.material_id:
+            return None
+        m = db.get(QuestionMaterial, question.material_id)
+        if not m:
+            return None
+        return {"id": m.id, "kind": m.kind, "title": m.title, "content": m.content}
+
+    def _material_siblings(self, db: Session, question: GlobalQuestion) -> list[dict]:
+        """同一材料下的全部小题（按 sub_index 排）。
+
+        材料题在详情页要按「一篇材料 + 若干小题」组织，前端靠这个列表做子题切换，
+        而不是每道题各自贴一遍材料。
+        """
+        if not question.material_id:
+            return []
+        rows = (
+            db.query(GlobalQuestion)
+            .filter(GlobalQuestion.material_id == question.material_id)
+            .all()
+        )
+        rows.sort(key=lambda r: (r.sub_index is None, r.sub_index or 0, r.created_at or 0))
+        doc_id = None
+        prov = (
+            db.query(QuestionProvenance)
+            .filter(QuestionProvenance.question_id == question.id)
+            .first()
+        )
+        if prov:
+            doc_id = prov.document_id
+        base = document_image_base(doc_id)
+        return [
+            {
+                "id": r.id,
+                "sub_index": r.sub_index,
+                "question_type": r.question_type,
+                "difficulty": r.difficulty,
+                "stem": absolutize_image_refs(r.stem or "", base),
+            }
+            for r in rows
+        ]
 
 
 # 模块级单例：调用方仍用 quiz_service.xxx()

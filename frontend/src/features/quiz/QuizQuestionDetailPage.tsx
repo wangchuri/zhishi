@@ -76,19 +76,25 @@ export function QuestionDetailBody({ questionId }: { questionId: string }) {
   const [data, setData] = useState<QuestionHistory | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState("")
+  // 材料题：在「同材料的各小题」之间切换，材料本身只显示一次
+  const [activeId, setActiveId] = useState(questionId)
+
+  useEffect(() => {
+    setActiveId(questionId)
+  }, [questionId])
 
   const load = useCallback(async () => {
-    if (!questionId) return
+    if (!activeId) return
     setLoading(true)
     setError("")
     try {
-      setData(await quizApi.questionHistory(questionId))
+      setData(await quizApi.questionHistory(activeId))
     } catch (err) {
       setError(err instanceof Error ? err.message : "加载失败")
     } finally {
       setLoading(false)
     }
-  }, [questionId])
+  }, [activeId])
 
   useEffect(() => {
     void load()
@@ -98,6 +104,8 @@ export function QuestionDetailBody({ questionId }: { questionId: string }) {
   const stats = data?.stats
   const provenance = data?.provenance || []
   const answers = data?.answers || []
+  const material = data?.material
+  const siblings = data?.material_questions || []
   const imageBaseDocId = provenance.find((p) => p.document_id)?.document_id
   const imageBase = imageBaseDocId
     ? `${getApiBase().replace(/\/$/, "")}/api/v1/kb/documents/${encodeURIComponent(imageBaseDocId)}/images`
@@ -141,29 +149,49 @@ export function QuestionDetailBody({ questionId }: { questionId: string }) {
           ))}
         </div>
 
-        {/* 材料题：材料作为上下文常驻在题目上方（可折叠，限高滚动） */}
-        {question.material?.content ? (
+        {/* 材料题：材料只显示一次，下面用子题切换（一篇材料 + 若干小题） */}
+        {material?.content ? (
           <details
             open
             className="rounded-lg border border-line-soft bg-paper-2/50"
           >
             <summary className="flex cursor-pointer select-none items-center gap-2 px-3 py-2">
               <Badge variant="neutral" size="sm">
-                {question.material.kind === "cloze" ? "完形填空" : "阅读材料"}
+                {material.kind === "cloze" ? "完形填空" : "阅读材料"}
               </Badge>
               <span className="text-small font-medium text-ink-primary truncate flex-1">
-                {question.material.title || "材料"}
+                {material.title || "材料"}
               </span>
-              {question.sub_index != null ? (
+              {siblings.length > 1 ? (
                 <span className="text-caption text-ink-tertiary shrink-0">
-                  第 {question.sub_index} 小题
+                  共 {siblings.length} 小题
                 </span>
               ) : null}
             </summary>
             <div className="max-h-[45vh] overflow-y-auto scroll-thin px-3 pb-3 text-small text-ink leading-relaxed whitespace-pre-wrap break-words">
-              {question.material.content}
+              {material.content}
             </div>
           </details>
+        ) : null}
+
+        {/* 子题切换：同一材料下的各小题 */}
+        {siblings.length > 1 ? (
+          <div className="flex flex-wrap gap-1.5">
+            {siblings.map((s, i) => (
+              <button
+                key={s.id}
+                type="button"
+                onClick={() => setActiveId(s.id)}
+                className={
+                  s.id === activeId
+                    ? "rounded-full px-3 py-1 text-caption font-medium bg-sea text-paper"
+                    : "rounded-full px-3 py-1 text-caption font-medium bg-paper text-ink-soft border border-line hover:border-sea/35"
+                }
+              >
+                {s.sub_index ?? i + 1}
+              </button>
+            ))}
+          </div>
         ) : null}
 
         <MarkdownWithMath imageBaseUrl={imageBase}>

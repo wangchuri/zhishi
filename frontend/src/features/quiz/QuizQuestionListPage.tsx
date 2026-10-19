@@ -8,7 +8,7 @@ import { QuestionDetailBody } from "./QuizQuestionDetailPage"
 import { QUESTION_TYPE_LABEL } from "./quizQuestionUtils"
 import { questionsApi } from "@/lib/api"
 import { cn } from "@/lib/utils"
-import type { Question, QuestionListResult } from "@/types"
+import type { Question, QuestionListResult, QuizQuestionMaterial } from "@/types"
 
 type StatusKey = "all" | "todo" | "correct" | "wrong" | "unknown"
 
@@ -63,6 +63,11 @@ function plainStem(stem: string, max = 90): string {
     .trim()
   return text.length > max ? `${text.slice(0, max)}…` : text
 }
+
+/** 列表里的一行：普通题一条；材料题按「一篇材料」合并成一条 */
+type ListRow =
+  | { kind: "single"; q: Question }
+  | { kind: "material"; materialId: string; material: QuizQuestionMaterial; questions: Question[] }
 
 /**
  * 题目页：左边筛选 + 题目列表，右边题目详情。
@@ -122,6 +127,28 @@ export function QuizQuestionListPage() {
     })
   }, [all, keyword, status, qtype, difficulty])
 
+  // 材料题按「一篇材料」合并成一条：列表里不出现 34 条子题
+  const rows = useMemo<ListRow[]>(() => {
+    const out: ListRow[] = []
+    const seen = new Set<string>()
+    for (const q of filtered) {
+      const mid = q.material_id
+      if (mid && q.material) {
+        if (seen.has(mid)) continue
+        seen.add(mid)
+        out.push({
+          kind: "material",
+          materialId: mid,
+          material: q.material,
+          questions: filtered.filter((x) => x.material_id === mid),
+        })
+      } else {
+        out.push({ kind: "single", q })
+      }
+    }
+    return out
+  }, [filtered])
+
   // 筛选后如果当前选中项被过滤掉，自动选中第一条
   useEffect(() => {
     if (filtered.length === 0) return
@@ -154,7 +181,7 @@ export function QuizQuestionListPage() {
                 资料
               </Button>
               <span className="text-small text-ink-tertiary ml-auto tabular-nums">
-                {filtered.length}/{all.length} 题
+                {rows.length} 条 · {filtered.length} 题
               </span>
               <Button
                 variant={showFilters ? "secondary" : "ghost"}
@@ -251,7 +278,46 @@ export function QuizQuestionListPage() {
                 {all.length === 0 ? "这本书还没有题目" : "没有符合筛选的题目"}
               </p>
             ) : (
-              filtered.map((q, i) => {
+              rows.map((row, i) => {
+                if (row.kind === "material") {
+                  const active = row.questions.some((q) => q.id === selectedId)
+                  const done = row.questions.filter((q) => statusOf(q) !== "todo").length
+                  return (
+                    <button
+                      key={row.materialId}
+                      type="button"
+                      onClick={() => setSelectedId(row.questions[0].id)}
+                      className={cn(
+                        "w-full text-left rounded-lg border px-3 py-2.5 transition-colors",
+                        active
+                          ? "border-sea/50 bg-primary-soft/40"
+                          : "border-line-soft bg-paper hover:border-sea/35"
+                      )}
+                    >
+                      <div className="flex flex-wrap items-center gap-1.5 mb-1">
+                        <span className="text-caption text-ink-tertiary tabular-nums">{i + 1}.</span>
+                        <Badge variant="primary" size="sm">
+                          {row.material.kind === "cloze" ? "完形填空" : "阅读材料"}
+                        </Badge>
+                        <Badge variant="neutral" size="sm">
+                          {row.questions.length} 小题
+                        </Badge>
+                        {done > 0 ? (
+                          <span className="text-caption text-ink-tertiary">
+                            已做 {done}/{row.questions.length}
+                          </span>
+                        ) : null}
+                      </div>
+                      <div className="text-small font-medium text-ink-primary line-clamp-1">
+                        {row.material.title || "材料题"}
+                      </div>
+                      <div className="text-caption text-ink-tertiary line-clamp-2 mt-0.5">
+                        {plainStem(row.material.content || "", 70)}
+                      </div>
+                    </button>
+                  )
+                }
+                const q = row.q
                 const st = STATUS_BADGE[statusOf(q)]
                 const active = q.id === selectedId
                 return (
@@ -281,9 +347,6 @@ export function QuizQuestionListPage() {
                       ) : null}
                     </div>
                     <div className="text-small text-ink-primary leading-relaxed line-clamp-2">
-                      {q.material?.title ? (
-                        <span className="text-caption text-sea mr-1">［{q.material.title}］</span>
-                      ) : null}
                       {plainStem(q.stem) || "（无题干）"}
                     </div>
                   </button>
