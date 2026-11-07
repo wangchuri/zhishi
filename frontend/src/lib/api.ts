@@ -907,6 +907,14 @@ export const quizApi = {
     return request<{ sessions: import("@/types").QuizSession[] }>("GET", "/api/v1/quiz/active-sessions")
   },
 
+  /** 最近的刷题会话（含已完成），刷题页历史列表用 */
+  listSessionHistory(limit = 30) {
+    return request<{ sessions: import("@/types").QuizSessionSummary[] }>(
+      "GET",
+      `/api/v1/quiz/session-history?limit=${limit}`,
+    )
+  },
+
   completeSession(sessionId: string) {
     return request<any>("POST", `/api/v1/quiz/sessions/${sessionId}/complete`)
   },

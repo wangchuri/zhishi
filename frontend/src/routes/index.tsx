@@ -22,7 +22,7 @@ import { QuizDocDetailPage } from "@/features/quiz/QuizDocDetailPage"
 import { QuizQuestionDetailPage } from "@/features/quiz/QuizQuestionDetailPage"
 import { QuizQuestionListPage } from "@/features/quiz/QuizQuestionListPage"
 import { QuizGroupDetailPage } from "@/features/quiz/QuizGroupDetailPage"
-import { QuizOngoingPage } from "@/features/quiz/QuizOngoingPage"
+import { QuizPracticePage } from "@/features/quiz/QuizPracticePage"
 import { QuizPage } from "@/features/quiz/QuizPage"
 import { QuestionGenDocPage } from "@/features/question-gen/QuestionGenDocPage"
 import { CompanionReadPage } from "@/features/companion/CompanionReadPage"
@@ -91,7 +91,8 @@ export function AppRoutes() {
       <Route path="/profile" element={<RequireServer><ProfilePage /></RequireServer>} />
       <Route path="/settings" element={<RequireServer><SettingsPage /></RequireServer>} />
       <Route path="/quiz" element={<RequireServer><QuizBookListPage /></RequireServer>} />
-      <Route path="/quiz/ongoing" element={<RequireServer><QuizOngoingPage /></RequireServer>} />
+      <Route path="/quiz/practice" element={<RequireServer><QuizPracticePage /></RequireServer>} />
+      <Route path="/quiz/ongoing" element={<Navigate to="/quiz/practice" replace />} />
       <Route path="/quiz/group/:groupId" element={<RequireServer><QuizGroupDetailPage /></RequireServer>} />
       <Route path="/quiz/doc/:docId" element={<RequireServer><QuizDocDetailPage /></RequireServer>} />
       <Route path="/quiz/doc/:docId/questions" element={<RequireServer><QuizQuestionListPage /></RequireServer>} />

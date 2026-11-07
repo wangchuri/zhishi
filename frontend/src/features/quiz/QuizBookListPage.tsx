@@ -259,7 +259,7 @@ export function QuizBookListPage() {
           {ongoingCount > 0 ? (
             <button
               type="button"
-              onClick={() => navigate("/quiz/ongoing")}
+              onClick={() => navigate("/quiz/practice")}
               className="w-full flex items-center gap-3 rounded-2xl border border-sea/30 bg-sea-subtle/60 px-4 py-3.5 text-left hover:border-sea/50 transition-colors"
             >
               <Play className="w-5 h-5 text-sea shrink-0" strokeWidth={2} />

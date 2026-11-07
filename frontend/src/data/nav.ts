@@ -7,6 +7,7 @@ import {
   BarChart3,
   Settings,
   ListChecks,
+  Zap,
 } from "lucide-react"
 
 export const navGroups: NavGroup[] = [
@@ -20,6 +21,7 @@ export const navGroups: NavGroup[] = [
       { label: "Tina", to: "/chat", icon: MessageSquare },
       { label: "笔记", to: "/notes", icon: NotebookPen },
       { label: "资料", to: "/quiz", icon: Library },
+      { label: "刷题", to: "/quiz/practice", icon: Zap },
     ],
   },
   {

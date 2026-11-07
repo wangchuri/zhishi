@@ -579,6 +579,48 @@ class QuizService:
             out.append(data)
         return out
 
+    def list_recent_sessions(self, db: Session, *, limit: int = 30) -> list[dict]:
+        """最近的刷题会话（含已完成），供独立刷题页的历史列表使用。
+
+        轻量输出：不带题目详情，避免历史列表把整份会话题目都拖下来。
+        """
+        rows = (
+            db.query(QuizSession)
+            .order_by(QuizSession.started_at.desc())
+            .limit(max(1, min(limit, 100)))
+            .all()
+        )
+        out = []
+        for session in rows:
+            total = (
+                db.query(QuizSessionQuestion)
+                .filter(QuizSessionQuestion.session_id == session.id)
+                .count()
+            )
+            answered = (
+                db.query(QuizAnswer)
+                .filter(QuizAnswer.session_id == session.id)
+                .count()
+            )
+            status = session.status
+            # 答完却没显式结束的会话，按已完成处理（与续刷页判定保持一致）
+            if status != "completed" and total > 0 and answered >= total:
+                self.complete_session(db, session)
+                status = "completed"
+            doc = db.get(Document, session.document_id) if session.document_id else None
+            out.append({
+                "id": session.id,
+                "title": session.title,
+                "status": status,
+                "document_id": session.document_id,
+                "document_name": doc.display_name if doc else None,
+                "total_questions": total,
+                "answered_count": answered,
+                "started_at": session.started_at.isoformat() if session.started_at else None,
+                "finished_at": session.finished_at.isoformat() if session.finished_at else None,
+            })
+        return out
+
     def get_session(self, db: Session, session_id: str) -> QuizSession:
         session = db.get(QuizSession, session_id)
         if not session:

@@ -75,6 +75,12 @@ def list_active_sessions(db: Session = Depends(get_db)):
     return {"sessions": quiz_service.list_unfinished_sessions(db)}
 
 
+@router.get("/session-history")
+def list_session_history(limit: int = 30, db: Session = Depends(get_db)):
+    """最近的刷题会话（含已完成），供独立刷题页的历史列表使用。"""
+    return {"sessions": quiz_service.list_recent_sessions(db, limit=limit)}
+
+
 @router.post("/sessions/{session_id}/complete", response_model=quiz_schemas.QuizSession)
 def complete_session(session_id: str, db: Session = Depends(get_db)):
     session = quiz_service.get_session(db, session_id)

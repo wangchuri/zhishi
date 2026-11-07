@@ -315,6 +315,19 @@ export interface QuizQuestionMaterial {
   chapter_id?: string | null
 }
 
+/** 刷题会话摘要（历史列表用，不含题目详情） */
+export interface QuizSessionSummary {
+  id: string
+  title?: string | null
+  status: "active" | "completed" | string
+  document_id?: string | null
+  document_name?: string | null
+  total_questions: number
+  answered_count: number
+  started_at?: string | null
+  finished_at?: string | null
+}
+
 /** 刷题会话 */
 export interface QuizSession {
   id: string
