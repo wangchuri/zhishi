@@ -120,4 +120,7 @@ desktop/
 
 # ─── 使用说明书（仅本地，不上传）───────────
 docs/知拾使用说明书.*
-
+code_agent.py
+.tina/
+*.env
+scratch/

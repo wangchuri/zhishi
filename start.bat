@@ -8,7 +8,7 @@ if not exist ".venv\Scripts\python.exe" (
     exit /b 1
 )
 
-echo 知拾后端  http://127.0.0.1:7777
+echo 知拾后端  http://127.0.0.1:17777
 echo 开发前端请另开终端:  cd frontend ^&^& npm run dev
 echo.
 cd backend
