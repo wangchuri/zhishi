@@ -1,19 +1,39 @@
-"""Tina 对用户的长期记忆（偏好、习惯、个性等）。"""
+"""Tina 对用户的长期记忆（偏好、习惯、个性等）。
+
+- SQLite（UserProfile.tina_memory_json）：给 prompt 注入的最近记忆
+- Chroma 向量库：按语义召回，供 recall_memory 工具使用
+- 历史压缩：对话上下文接近上限时，把最老的一批消息总结成记忆存下来
+"""
 
 from __future__ import annotations
 
 import json
+import logging
+import os
 import uuid
 from datetime import datetime, timezone
 from typing import Any, Optional
 
+from sqlalchemy import literal_column
 from sqlalchemy.orm import Session
 
 from ..models.goal import UserProfile
 from .profile import get_or_create_profile
 from .task import USER_ID
 
+logger = logging.getLogger(__name__)
+
 _VALID_CATEGORIES = frozenset({"preference", "personality", "habit", "fact", "other"})
+
+# 同一批写入的消息 created_at 可能完全相同，排序补 rowid（SQLite 插入顺序）兜底
+_ROWID = literal_column("chat_messages.rowid")
+
+# 上下文预算（字符，中文约等于 token 数）。超过 70% 触发压缩。
+# 可用 ZHISHI_CHAT_CONTEXT_CHARS 覆盖；70% 是压缩阈值，见 _COMPRESS_RATIO。
+_CONTEXT_BUDGET_CHARS = max(4_000, int(os.environ.get("ZHISHI_CHAT_CONTEXT_CHARS") or 80_000))
+_COMPRESS_RATIO = 0.7
+# 压缩时保留最近多少条消息原样回放（其余进记忆）
+_KEEP_RECENT_MESSAGES = 12
 
 
 def _now() -> datetime:
@@ -61,7 +81,9 @@ def remember(
     content: str,
     *,
     category: str = "preference",
+    embed: bool = True,
 ) -> tuple[bool, str]:
+    """写一条长期记忆（SQLite + 向量库）。"""
     text = (content or "").strip()
     if not text:
         return False, "记忆内容不能为空"
@@ -76,10 +98,11 @@ def remember(
     for item in items:
         if str(item.get("content") or "").strip().lower() == norm:
             return True, f"已有相同记忆，未重复保存：{text}"
+    mid = uuid.uuid4().hex
     items.insert(
         0,
         {
-            "id": uuid.uuid4().hex,
+            "id": mid,
             "content": text,
             "category": cat,
             "created_at": _now().isoformat(),
@@ -87,6 +110,17 @@ def remember(
     )
     items = items[:50]
     _save_raw(db, row, items)
+
+    if embed:
+        try:
+            from .rag import chroma_store
+
+            chroma_store.add_memory(
+                USER_ID, text, metadata={"category": cat, "memory_id": mid}
+            )
+        except Exception:
+            # 向量库不可用不该让"记住"失败：SQLite 里已经有这条
+            logger.warning("记忆写入向量库失败：%s", text[:40])
     return True, f"已记住：{text}"
 
 
@@ -108,3 +142,153 @@ def format_for_agent(db: Session) -> str:
     if not lines:
         return "（暂无长期记忆）"
     return "\n".join(f"- {line}" for line in lines)
+
+
+# ---- 召回（recall_memory 工具用） ----
+
+
+def recall(db: Session, query: str, *, top_k: int = 5) -> list[str]:
+    """按语义召回记忆；向量库不可用时退回最近记忆。"""
+    q = (query or "").strip()
+    if not q:
+        return memory_brief_lines(db, limit=top_k)
+    hits: list[str] = []
+    try:
+        from .rag import chroma_store
+
+        for item in chroma_store.search_memories(USER_ID, q, top_k=top_k):
+            text = str(item.get("text") or "").strip()
+            if text and text not in hits:
+                hits.append(text)
+    except Exception:
+        logger.warning("记忆检索失败，退回最近记忆")
+    if hits:
+        return hits
+    return memory_brief_lines(db, limit=top_k)
+
+
+# ---- 历史压缩 ----
+
+
+def history_chars(messages: list[dict]) -> int:
+    """粗略估算历史体积（字符数 ≈ 中文 token 数）。"""
+    total = 0
+    for m in messages:
+        content = m.get("content")
+        if isinstance(content, str):
+            total += len(content)
+        elif content:
+            total += len(str(content))
+    return total
+
+
+def needs_compress(messages: list[dict]) -> bool:
+    return history_chars(messages) >= int(_CONTEXT_BUDGET_CHARS * _COMPRESS_RATIO)
+
+
+def compress_to_memory(
+    db: Session,
+    messages: list[dict],
+    *,
+    max_items: int = 6,
+) -> list[str]:
+    """把一段历史消息总结成几条长期记忆并落库，返回写入的记忆文本。"""
+    if not messages:
+        return []
+    transcript_lines = []
+    for m in messages:
+        role = m.get("role") or "user"
+        content = (m.get("content") or "").strip()
+        if not content:
+            continue
+        who = "用户" if role == "user" else "Tina"
+        transcript_lines.append(f"{who}：{content}")
+    transcript = "\n".join(transcript_lines).strip()
+    if not transcript:
+        return []
+
+    summary = _summarize(transcript, max_items=max_items)
+    if not summary:
+        return []
+
+    written: list[str] = []
+    for line in summary:
+        ok, _ = remember(db, line, category="fact", embed=True)
+        if ok:
+            written.append(line)
+    return written
+
+
+def _summarize(transcript: str, *, max_items: int = 6) -> list[str]:
+    """调模型把对话压成「值得长期记住」的要点。失败返回空列表。"""
+    try:
+        from ..core.llm import create_llm
+
+        llm = create_llm()
+        prompt = (
+            "下面是一段学习助手与用户的对话。请提炼出**值得长期记住**的信息，"
+            f"最多 {max_items} 条，每条一行，用「- 」开头。\n"
+            "只保留：学习目标与计划、薄弱点与错因、偏好与习惯、正在推进的具体事项。\n"
+            "不要保留寒暄、重复内容和一次性问答。每条不超过 60 字。\n\n"
+            f"{transcript[:12000]}"
+        )
+        resp = llm.predict_no_stream(
+            input_text=prompt,
+            sys_prompt="你是学习档案整理助手，只输出要点列表，不要解释。",
+            temperature=0.3,
+            max_tokens=800,
+        )
+        text = ""
+        if isinstance(resp, dict):
+            text = str(resp.get("content") or "")
+        else:
+            text = str(resp or "")
+        out: list[str] = []
+        for raw in text.splitlines():
+            line = raw.strip().lstrip("-•*").strip()
+            if not line or line.endswith("：") or line.endswith(":"):
+                continue
+            if len(line) < 4:
+                continue
+            out.append(line[:200])
+        return out[:max_items]
+    except Exception:
+        logger.exception("对话压缩失败")
+        return []
+
+
+def maybe_compress_history(db: Session, session, *, max_messages: int = 50) -> int:
+    """会话历史超过 70% 预算时，把最老的一批消息压成记忆。
+
+    返回本轮压缩掉的消息条数（0 表示没压）。压缩后 session.memory_cursor
+    前移，回放时这些消息不再进上下文，改由记忆摘要承接。
+    """
+    from ..models import ChatMessage
+
+    base = db.query(ChatMessage).filter(ChatMessage.session_id == session.id)
+    total = base.count()
+    cursor = int(getattr(session, "memory_cursor", 0) or 0)
+    if total <= cursor:
+        return 0
+
+    rows = (
+        base.order_by(ChatMessage.created_at, _ROWID)
+        .offset(cursor)
+        .limit(max_messages)
+        .all()
+    )
+    messages = [{"role": r.role, "content": r.content or ""} for r in rows]
+    if not messages or not needs_compress(messages):
+        return 0
+    if len(messages) <= _KEEP_RECENT_MESSAGES:
+        return 0
+
+    cut = len(messages) - _KEEP_RECENT_MESSAGES
+    written = compress_to_memory(db, messages[:cut])
+    if not written:
+        return 0
+
+    session.memory_cursor = cursor + cut
+    db.commit()
+    logger.info("会话 %s 压缩 %s 条历史为 %s 条记忆", session.id, cut, len(written))
+    return cut

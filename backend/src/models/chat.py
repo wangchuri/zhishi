@@ -28,6 +28,8 @@ class ChatSession(Base):
     title: Mapped[str] = mapped_column(String(200), default="对话")
     kind: Mapped[str | None] = mapped_column(String(20), default="chat")  # chat/onboarding
     crisis: Mapped[bool] = mapped_column(Boolean, default=False)
+    # 已压缩进长期记忆的历史消息条数：回放时跳过这些，改由记忆摘要承接
+    memory_cursor: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=_now, onupdate=_now)
 

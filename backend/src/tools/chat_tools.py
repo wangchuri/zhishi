@@ -147,6 +147,7 @@ class ChatTools:
         self.tools.register_tool(tool=self.set_chapter_learned)
         self.tools.register_tool(tool=self.remember_about_user)
         self.tools.register_tool(tool=self.list_user_memory)
+        self.tools.register_tool(tool=self.recall_memory)
         self.tools.register_tool(tool=self.forget_user_memory)
 
     def drain_ui(self) -> list[dict]:
@@ -538,6 +539,25 @@ class ChatTools:
             return "用户长期记忆：\n" + format_for_agent(db)
         finally:
             db.close()
+
+    def recall_memory(self, query: str, top_k: int = 5) -> str:
+        """按语义检索长期记忆（过去的对话、学习目标、薄弱点、偏好等）。
+        当用户提到"之前说过""上次聊的""我以前"这类跨会话内容，或需要回忆他的
+        长期目标/习惯时调用。
+        Args:
+            query: 要回忆的主题或关键词，例如「定积分的薄弱点」
+            top_k: 最多返回几条，默认 5
+        """
+        from ..services.memory import recall
+
+        db = SessionLocal()
+        try:
+            items = recall(db, query, top_k=max(1, min(int(top_k or 5), 10)))
+        finally:
+            db.close()
+        if not items:
+            return "没有检索到相关的长期记忆。"
+        return "相关记忆：\n" + "\n".join(f"- {t}" for t in items)
 
     def forget_user_memory(self, memory_id: str) -> str:
         """删除一条不再适用的长期记忆。

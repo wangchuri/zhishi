@@ -8,9 +8,11 @@ from __future__ import annotations
 import json
 import logging
 import re
+import threading
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
+from sqlalchemy import literal_column
 from sqlalchemy.orm import Session
 
 from ..core.database import SessionLocal
@@ -22,6 +24,10 @@ from ..tools.chat_tools import ChatTools, format_question_for_agent
 from ..tools.tina_mood_actions import TinaMoodActions, last_assistant_raw_text
 
 logger = logging.getLogger(__name__)
+
+# 同一批写入的消息 created_at 会完全相同（SQLAlchemy 批量插入复用默认值），
+# 排序一律补上 SQLite 的 rowid（插入顺序）兜底。
+_ROWID = literal_column("chat_messages.rowid")
 
 # 历史回放时最多重新带上多少轮图片（按 file_id 引用，命中 FilesAPI 缓存不重复上传）。
 # 带上图片很花 token，所以只回放最近几轮，保证「接着上一张图追问」能用。
@@ -371,7 +377,12 @@ class ChatService:
         return result
 
     def get_history(self, db: Session, session_id: str) -> list[dict]:
-        msgs = db.query(ChatMessage).filter(ChatMessage.session_id == session_id).order_by(ChatMessage.created_at).all()
+        msgs = (
+            db.query(ChatMessage)
+            .filter(ChatMessage.session_id == session_id)
+            .order_by(ChatMessage.created_at, _ROWID)
+            .all()
+        )
         out = []
         for m in msgs:
             payload = json.loads(m.payload) if m.payload else None
@@ -421,11 +432,30 @@ class ChatService:
         db.refresh(msg)
         return msg.id
 
-    def _load_messages(self, db: Session, session_id: str, max_messages: int = 50) -> list[dict]:
-        msgs = db.query(ChatMessage).filter(ChatMessage.session_id == session_id).order_by(ChatMessage.created_at.desc()).limit(max_messages).all()
-        msgs.reverse()
+    def _load_messages(
+        self,
+        db: Session,
+        session_id: str,
+        max_messages: int = 50,
+        *,
+        skip: int = 0,
+    ) -> list[dict]:
+        """读最近若干条消息；skip 用于跳过已压缩进长期记忆的老消息。"""
+        base = db.query(ChatMessage).filter(ChatMessage.session_id == session_id)
+        total = base.count() if skip > 0 else 0
+        # 同一批写入的消息 created_at 会完全相同，加 rowid 兜底保证插入顺序
+        msgs = (
+            base.order_by(ChatMessage.created_at.desc(), _ROWID.desc())
+            .limit(max_messages)
+            .all()
+        )
+        msgs.reverse()  # 取的是最近 N 条，翻回时间正序
+        # 这条窗口在全会话里的绝对起点（skip 是从会话开头算起的条数）
+        start_abs = max(0, total - len(msgs)) if skip > 0 else 0
         rows = []
-        for m in msgs:
+        for i, m in enumerate(msgs):
+            if skip > 0 and start_abs + i < skip:
+                continue
             content = m.content or ""
             content += _ui_note_from_payload(m.payload)
             if m.role == "user":
@@ -436,6 +466,34 @@ class ChatService:
                 "attachments": json.loads(m.attachments) if m.attachments else None,
             })
         return rows
+
+    def _maybe_compress_async(self, session_id: str, recent: list[dict]) -> None:
+        """上下文接近预算上限时，后台线程把最老的一批消息压成长期记忆。
+
+        放后台跑：压缩要调一次模型，不该把本轮回复卡住。
+        """
+        try:
+            from ..services.memory import needs_compress
+
+            if not needs_compress(recent):
+                return
+        except Exception:
+            return
+
+        def worker() -> None:
+            from ..services.memory import maybe_compress_history
+
+            db2 = SessionLocal()
+            try:
+                session = db2.get(ChatSession, session_id)
+                if session is not None:
+                    maybe_compress_history(db2, session)
+            except Exception:
+                logger.exception("历史压缩失败")
+            finally:
+                db2.close()
+
+        threading.Thread(target=worker, daemon=True, name="chat-memory-compress").start()
 
     def session_in_crisis(self, db: Session, session_id: str) -> bool:
         session = db.get(ChatSession, session_id)
@@ -571,7 +629,13 @@ class ChatService:
 
         # 历史必须在建 agent 之前读：历史里有图时，即使本轮没带图，也得用多模态 Agent，
         # 否则模型看不到上一张图（只能收到一条空文本）。
-        history = self._load_messages(db, session_id)
+        # memory_cursor 之前的消息已压进长期记忆，不再回放。
+        cursor = int(getattr(session, "memory_cursor", 0) or 0)
+        history = self._load_messages(db, session_id, skip=cursor)
+        # 上下文接近上限（70% 预算）时，后台把最老的一批消息压成长期记忆。
+        # 压缩不阻塞本轮：本轮照常回放，下一轮起由记忆摘要 + 最近消息承接。
+        if not kickoff:
+            self._maybe_compress_async(session_id, history[:-1])
         prior = history if kickoff else history[:-1]
         history_image_idx = {
             i for i, m in enumerate(prior) if m.get("attachments")

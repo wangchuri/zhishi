@@ -9,6 +9,7 @@ from __future__ import annotations
 import logging
 import os
 import threading
+from datetime import datetime, timezone
 from typing import Optional
 
 from tina import Tools
@@ -18,6 +19,8 @@ from ..core.config import config
 logger = logging.getLogger(__name__)
 
 _COLLECTION_PREFIX = "doc_"
+# 长期记忆的 collection 前缀（与文档索引分开，避免被 search_documents 扫到）
+_MEMORY_PREFIX = "mem_"
 
 # fastembed/ONNX 推理的批大小。fastembed 默认 256，而注意力矩阵是
 # batch × heads × seq² —— 实测 340 页的书导入峰值 6.9GB，压到 16 后降到几百 MB。
@@ -234,6 +237,74 @@ class ChromaStore:
 
         results.sort(key=lambda x: x["distance"])
         return results[:top_k]
+
+    # ---- 长期记忆（Tina 记住用户说过的事，按向量检索召回） ----
+
+    def _memory_collection_name(self, user_id: int) -> str:
+        return f"{_MEMORY_PREFIX}{user_id}"
+
+    def add_memory(
+        self,
+        user_id: int,
+        text: str,
+        *,
+        metadata: Optional[dict] = None,
+    ) -> str:
+        """把一条记忆写进向量库，返回 memory_id（失败返回空串）。"""
+        import uuid as _uuid
+
+        content = (text or "").strip()
+        if not content:
+            return ""
+        mid = _uuid.uuid4().hex
+        # chroma 的 metadata 只收标量，None/嵌套结构先过滤掉
+        meta = {
+            k: v
+            for k, v in (metadata or {}).items()
+            if isinstance(v, (str, int, float, bool))
+        }
+        meta.setdefault("created_at", datetime.now(timezone.utc).isoformat())
+        with self._lock:
+            client = self._get_client()
+            collection = client.get_or_create_collection(
+                self._memory_collection_name(user_id),
+                embedding_function=None,
+            )
+            collection.add(
+                ids=[mid],
+                documents=[content],
+                embeddings=self._get_embedding_fn()([content]),
+                metadatas=[meta],
+            )
+        return mid
+
+    def search_memories(
+        self,
+        user_id: int,
+        query: str,
+        top_k: int = 5,
+    ) -> list[dict]:
+        """按语义检索长期记忆，返回 [{text, distance, metadata}]。"""
+        q = (query or "").strip()
+        if not q:
+            return []
+        with self._lock:
+            client = self._get_client()
+            try:
+                collection = client.get_collection(self._memory_collection_name(user_id))
+            except Exception:
+                return []
+            result = collection.query(
+                query_embeddings=self._get_embedding_fn()([q]),
+                n_results=max(1, int(top_k)),
+            )
+        docs = result.get("documents", [[]])[0] or []
+        dists = result.get("distances", [[]])[0] or []
+        metas = result.get("metadatas", [[]])[0] or []
+        return [
+            {"text": t, "distance": d, "metadata": m or {}}
+            for t, d, m in zip(docs, dists, metas)
+        ]
 
     # ---- 工具注册 ----
 
