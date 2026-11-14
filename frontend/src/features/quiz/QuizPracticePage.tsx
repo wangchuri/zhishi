@@ -57,6 +57,8 @@ export function QuizPracticePage() {
   const navigate = useNavigate()
   const [sessions, setSessions] = useState<QuizSessionSummary[]>([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [reloadKey, setReloadKey] = useState(0)
   const [completedOpen, setCompletedOpen] = useState(false)
 
   useEffect(() => {
@@ -66,9 +68,12 @@ export function QuizPracticePage() {
       .then((res) => {
         if (cancelled) return
         setSessions(res.sessions || [])
+        setError(null)
       })
-      .catch(() => {
-        if (!cancelled) setSessions([])
+      .catch((err) => {
+        if (cancelled) return
+        setSessions([])
+        setError(err instanceof Error ? err.message : "刷题记录加载失败")
       })
       .finally(() => {
         if (!cancelled) setLoading(false)
@@ -76,7 +81,12 @@ export function QuizPracticePage() {
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [reloadKey])
+
+  const retry = () => {
+    setLoading(true)
+    setReloadKey((k) => k + 1)
+  }
 
   const { latestActive, otherActive, completed } = useMemo(() => {
     const active = sessions.filter(
@@ -98,7 +108,20 @@ export function QuizPracticePage() {
         </Button>
       </PageHeader>
 
-      {loading ? (
+      {error ? (
+        <div className="rounded-2xl border border-danger/30 bg-danger-soft px-4 py-3.5">
+          <p className="text-body font-medium text-danger">刷题记录没能加载</p>
+          <p className="mt-1 text-small text-ink-secondary break-words">{error}</p>
+          <p className="mt-1.5 text-caption text-ink-soft">
+            如果刚更新过版本，重启一次后端服务再试（刷题页用的是新接口
+            <code className="mx-1 px-1 rounded bg-paper/70">/api/v1/quiz/session-history</code>
+            ）。
+          </p>
+          <Button variant="secondary" size="sm" className="mt-3" onClick={retry}>
+            重试
+          </Button>
+        </div>
+      ) : loading ? (
         <div className="flex items-center justify-center gap-2 py-16 text-body text-ink-soft">
           <Loader2 className="w-5 h-5 animate-spin" />
           <span>正在加载刷题记录…</span>

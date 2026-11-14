@@ -4,6 +4,7 @@ import {
   AlertCircle,
   Brain,
   CheckCircle2,
+  ChevronDown,
   ChevronLeft,
   FileText,
   HelpCircle,
@@ -136,6 +137,8 @@ export function QuizPage() {
   // 手机：题目 / 辅导 二选一（桌面两栏并排）
   const [mobilePane, setMobilePane] = useState<"question" | "tutor">("question")
   const [reviewItems, setReviewItems] = useState<QuizReviewItem[]>([])
+  // 本题回顾：默认展开，不再塞进 200px 的小滚动框
+  const [reviewOpen, setReviewOpen] = useState(true)
   const [resultsSummary, setResultsSummary] = useState<{
     correct: number
     wrong: number
@@ -1070,9 +1073,31 @@ export function QuizPage() {
         </div>
       )}
       {phase === "quiz" && reviewItems.length > 0 && (
-        <div className="mt-4 bg-surface border border-line-soft rounded-lg p-4 max-h-[200px] overflow-y-auto scroll-thin">
-          <div className="text-card-title font-semibold text-ink-primary mb-3">本题回顾</div>
-          <QuizReviewPanel items={reviewItems} />
+        <div className="mt-4 bg-surface border border-line-soft rounded-lg">
+          <button
+            type="button"
+            onClick={() => setReviewOpen((v) => !v)}
+            aria-expanded={reviewOpen}
+            className="w-full flex items-center gap-2 px-4 py-3 text-left"
+          >
+            <span className="text-card-title font-semibold text-ink-primary">本题回顾</span>
+            <span className="text-caption text-ink-soft">{reviewItems.length} 道</span>
+            <span className="ml-auto text-caption text-ink-soft">
+              {reviewOpen ? "收起" : "展开"}
+            </span>
+            <ChevronDown
+              className={cn(
+                "w-4 h-4 text-ink-soft shrink-0 transition-transform",
+                reviewOpen && "rotate-180",
+              )}
+              strokeWidth={2}
+            />
+          </button>
+          {reviewOpen && (
+            <div className="px-4 pb-4">
+              <QuizReviewPanel items={reviewItems} />
+            </div>
+          )}
         </div>
       )}
 

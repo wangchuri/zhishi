@@ -8,6 +8,8 @@ export interface NavItem {
   to: string
   icon: LucideIcon
   badge?: string | number
+  /** 只在该路径精确命中时高亮（如 /quiz 不应把 /quiz/practice 也算作自己的子页） */
+  end?: boolean
 }
 
 /** 导航分组 */

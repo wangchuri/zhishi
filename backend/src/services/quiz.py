@@ -896,13 +896,12 @@ class QuizService:
             file_ids=file_ids,
         )
 
-        # 答案/解析展示（错题给正确答案 + citation）
+        # 答案/解析展示：错题给正确答案 + citation；答对也给解析（学习者要确认自己的思路）
         correct_answer = None
-        explanation = None
+        explanation = question.explanation
         citation = None
         if status != "correct":
             correct_answer = question.answer
-            explanation = question.explanation
             prov = db.query(QuestionProvenance).filter_by(question_id=question_id).first()
             if prov and prov.document_id:
                 seg = None
@@ -1046,11 +1045,10 @@ class QuizService:
             document_id = prov.document_id if prov else None
 
         correct_answer = None
-        explanation = None
+        explanation = question.explanation
         citation = None
         if status != "correct":
             correct_answer = question.answer
-            explanation = question.explanation
             if document_id:
                 prov = db.query(QuestionProvenance).filter_by(question_id=question_id, document_id=document_id).first()
                 if not prov:

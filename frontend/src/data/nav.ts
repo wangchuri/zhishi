@@ -20,7 +20,7 @@ export const navGroups: NavGroup[] = [
     items: [
       { label: "Tina", to: "/chat", icon: MessageSquare },
       { label: "笔记", to: "/notes", icon: NotebookPen },
-      { label: "资料", to: "/quiz", icon: Library },
+      { label: "资料", to: "/quiz", icon: Library, end: true },
       { label: "刷题", to: "/quiz/practice", icon: Zap },
     ],
   },

@@ -39,7 +39,7 @@ function SidebarNavItem({
     <div className={cn("flex items-center gap-0.5", collapsed && "flex-col")}>
       <NavLink
         to={item.to}
-        end={item.to === "/"}
+        end={item.end ?? item.to === "/"}
         onClick={(e) => {
           if (locked || escaping) {
             e.preventDefault()

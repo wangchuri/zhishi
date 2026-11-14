@@ -27,6 +27,9 @@ function resolveTitle(pathname: string): string {
   if (titleMap[pathname]) return titleMap[pathname]
   if (pathname.startsWith("/notes/")) return "笔记"
   if (pathname.startsWith("/companion/doc/")) return "阅读"
+  if (pathname.startsWith("/quiz/doc/") || pathname.startsWith("/quiz/group/")) return "资料"
+  if (pathname.startsWith("/quiz/session")) return "刷题"
+  if (pathname.startsWith("/quiz/question/")) return "题目详情"
   return "知拾"
 }
 

@@ -109,6 +109,7 @@ export function QuizAnswerFeedback({
 
       {!isUnknown && lastResult.explanation && (
         <div className="text-body text-ink-primary bg-surface-soft rounded-md p-3 border border-line-soft">
+          <p className="text-caption font-medium text-ink-tertiary mb-1.5">解析</p>
           <MarkdownWithMath imageBaseUrl={imageBase}>{lastResult.explanation}</MarkdownWithMath>
         </div>
       )}
