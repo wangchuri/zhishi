@@ -125,9 +125,11 @@ class QuizResults(BaseModel):
 
 
 class TutorMessage(BaseModel):
+    id: Optional[str] = None
     role: str  # user/assistant
     content: str
     reasoning_content: Optional[str] = None
+    attachments: list[str] = []
     created_at: Optional[datetime] = None
 
 
@@ -143,6 +145,7 @@ class TutorSession(BaseModel):
     document_id: Optional[str] = None
     segment_id: Optional[str] = None
     quiz_answer_id: Optional[str] = None
+    quiz_session_id: Optional[str] = None
     status: str = "active"
     question_stem: Optional[str] = None
     segment_context: Optional[dict] = None

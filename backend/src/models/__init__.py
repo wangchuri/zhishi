@@ -10,7 +10,7 @@ from .kb import (
 )
 from .question import GlobalQuestion, QuestionMaterial, QuestionProvenance, QuestionRef
 from .learning_path import DocumentLearningPath
-from .quiz import QuizAnswer, QuizSession, QuizSessionQuestion, TutorSession
+from .quiz import QuizAnswer, QuizSession, QuizSessionQuestion, TutorMessage, TutorSession
 from .tracking import (
     DailyActivity,
     NoteFolder,
@@ -41,6 +41,7 @@ __all__ = [
     "QuizSessionQuestion",
     "QuizAnswer",
     "TutorSession",
+    "TutorMessage",
     "DailyActivity",
     "UserAchievement",
     "UserNote",

@@ -82,3 +82,21 @@ class TutorSession(Base):
     status: Mapped[str] = mapped_column(String(20), default="active")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=_now, onupdate=_now)
+
+
+class TutorMessage(Base):
+    """辅导会话里的一条消息。
+
+    消息必须落库：Agent 的上下文只活在进程内存里，后端一重启、
+    或者用户从刷题页「继续刷题」重进，聊天记录就全没了。
+    """
+
+    __tablename__ = "tutor_messages"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    session_id: Mapped[str] = mapped_column(String(36), index=True, nullable=False)
+    role: Mapped[str] = mapped_column(String(20), nullable=False)  # user / assistant
+    content: Mapped[str | None] = mapped_column(Text)
+    reasoning_content: Mapped[str | None] = mapped_column(Text)
+    attachments: Mapped[str | None] = mapped_column(Text)  # JSON：图片附件 id 列表
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_now, index=True)
