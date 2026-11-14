@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import uuid
 from datetime import datetime, timezone
 from typing import Any, Optional
@@ -17,6 +16,7 @@ from typing import Any, Optional
 from sqlalchemy import literal_column
 from sqlalchemy.orm import Session
 
+from ..core.llm import MODEL_CONTEXT_TOKENS
 from ..models.goal import UserProfile
 from .profile import get_or_create_profile
 from .task import USER_ID
@@ -28,10 +28,7 @@ _VALID_CATEGORIES = frozenset({"preference", "personality", "habit", "fact", "ot
 # 同一批写入的消息 created_at 可能完全相同，排序补 rowid（SQLite 插入顺序）兜底
 _ROWID = literal_column("chat_messages.rowid")
 
-# 模型上下文窗口（token）。压缩触发看模型 API 返回的 prompt_tokens 占用，
-# 不用字符数估算；窗口大小按实际用的模型配 ZHISHI_MODEL_CONTEXT_TOKENS。
-MODEL_CONTEXT_TOKENS = max(2_000, int(os.environ.get("ZHISHI_MODEL_CONTEXT_TOKENS") or 64_000))
-# 占用到窗口的 70% 就压缩
+# 压缩触发：上下文占模型窗口（core.llm.MODEL_CONTEXT_TOKENS，默认 1M）的 70%
 COMPRESS_RATIO = 0.7
 # 压缩时保留最近多少条消息原样回放（其余进记忆）
 _KEEP_RECENT_MESSAGES = 12

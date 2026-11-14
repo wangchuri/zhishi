@@ -28,6 +28,12 @@ except ImportError:  # pragma: no cover
 
 logger = logging.getLogger(__name__)
 
+# 模型上下文窗口（token）。压缩触发按模型 API 返回的真实 prompt_tokens 算，
+# 窗口大小按实际模型配 ZHISHI_MODEL_CONTEXT_TOKENS（默认 1M）。
+MODEL_CONTEXT_TOKENS = max(
+    8_000, int(os.environ.get("ZHISHI_MODEL_CONTEXT_TOKENS") or 1_000_000)
+)
+
 _BACKEND_DIR = Path(__file__).resolve().parent.parent.parent
 
 
@@ -285,16 +291,21 @@ def create_agent(
     *,
     model: str | None = None,
     max_tool_loop: int | None = None,
-    max_context_length: int = 500_000,
+    max_context_length: int | None = None,
     keyword_actions: "KeywordActions | None" = None,
     multimodal: bool = False,
 ) -> Agent:
     """创建 tina Agent（默认后端模型配置）。
 
     multimodal=True 时返回 MultimodalAgent，apredict 支持 image= / file_id=。
+
+    max_context_length 是 tina 自己的滚动截断线（按字符算）。默认跟随模型窗口，
+    让"到 70% 就压缩进长期记忆"先于框架硬截断发生；否则框架会先把老消息丢掉。
     """
     llm = create_llm(model=model, multimodal=multimodal)
-    kwargs: dict = {"max_context_length": max_context_length}
+    kwargs: dict = {
+        "max_context_length": int(max_context_length or MODEL_CONTEXT_TOKENS)
+    }
     if max_tool_loop is not None:
         kwargs["max_tool_loop"] = max_tool_loop
     if keyword_actions is not None:
