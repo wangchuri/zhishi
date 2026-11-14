@@ -14,6 +14,7 @@ from ..core.database import SessionLocal, get_db
 from ..core.llm import (
     format_agent_error,
     is_tool_related_chunk,
+    last_prompt_tokens,
     predict_stream,
     visible_assistant_delta,
 )
@@ -240,6 +241,8 @@ async def send(body: ai_schemas.ChatSend, db: Session = Depends(get_db)):
                 kind = chat_service.session_kind(sdb, sid)
                 think = GLITCH_THINK if in_crisis else (reasoning or None)
                 message_id = chat_service.persist_assistant(sid, persist_text, think, None, payload)
+                # 记下这轮模型 API 报的上下文占用，下一轮据此判断要不要压缩
+                chat_service.record_usage(sid, last_prompt_tokens(agent))
                 yield _json_line({
                     "event": "assistant_saved",
                     "message_id": message_id,
@@ -260,6 +263,7 @@ async def send(body: ai_schemas.ChatSend, db: Session = Depends(get_db)):
     full, reasoning, citations = await chat_service.consume_and_save(
         agent, sid, user_content, tools, media
     )
+    chat_service.record_usage(sid, last_prompt_tokens(agent))
     return {
         "content": full,
         "session_id": sid,

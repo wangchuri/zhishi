@@ -30,6 +30,8 @@ class ChatSession(Base):
     crisis: Mapped[bool] = mapped_column(Boolean, default=False)
     # 已压缩进长期记忆的历史消息条数：回放时跳过这些，改由记忆摘要承接
     memory_cursor: Mapped[int] = mapped_column(Integer, default=0)
+    # 最近一次请求模型时，API 返回的 prompt token 占用（压缩触发依据）
+    last_prompt_tokens: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=_now, onupdate=_now)
 

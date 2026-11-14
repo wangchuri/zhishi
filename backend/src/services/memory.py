@@ -28,10 +28,11 @@ _VALID_CATEGORIES = frozenset({"preference", "personality", "habit", "fact", "ot
 # 同一批写入的消息 created_at 可能完全相同，排序补 rowid（SQLite 插入顺序）兜底
 _ROWID = literal_column("chat_messages.rowid")
 
-# 上下文预算（字符，中文约等于 token 数）。超过 70% 触发压缩。
-# 可用 ZHISHI_CHAT_CONTEXT_CHARS 覆盖；70% 是压缩阈值，见 _COMPRESS_RATIO。
-_CONTEXT_BUDGET_CHARS = max(4_000, int(os.environ.get("ZHISHI_CHAT_CONTEXT_CHARS") or 80_000))
-_COMPRESS_RATIO = 0.7
+# 模型上下文窗口（token）。压缩触发看模型 API 返回的 prompt_tokens 占用，
+# 不用字符数估算；窗口大小按实际用的模型配 ZHISHI_MODEL_CONTEXT_TOKENS。
+MODEL_CONTEXT_TOKENS = max(2_000, int(os.environ.get("ZHISHI_MODEL_CONTEXT_TOKENS") or 64_000))
+# 占用到窗口的 70% 就压缩
+COMPRESS_RATIO = 0.7
 # 压缩时保留最近多少条消息原样回放（其余进记忆）
 _KEEP_RECENT_MESSAGES = 12
 
@@ -170,20 +171,26 @@ def recall(db: Session, query: str, *, top_k: int = 5) -> list[str]:
 # ---- 历史压缩 ----
 
 
-def history_chars(messages: list[dict]) -> int:
-    """粗略估算历史体积（字符数 ≈ 中文 token 数）。"""
-    total = 0
-    for m in messages:
-        content = m.get("content")
-        if isinstance(content, str):
-            total += len(content)
-        elif content:
-            total += len(str(content))
-    return total
+def should_compress(prompt_tokens: int) -> bool:
+    """上下文占用是否到了压缩阈值（依据模型 API 返回的 prompt_tokens）。"""
+    try:
+        used = int(prompt_tokens or 0)
+    except Exception:
+        return False
+    if used <= 0:
+        return False
+    return used >= int(MODEL_CONTEXT_TOKENS * COMPRESS_RATIO)
 
 
-def needs_compress(messages: list[dict]) -> bool:
-    return history_chars(messages) >= int(_CONTEXT_BUDGET_CHARS * _COMPRESS_RATIO)
+def context_usage(prompt_tokens: int) -> float:
+    """当前占用比例（0~1），日志/调试用。"""
+    try:
+        used = int(prompt_tokens or 0)
+    except Exception:
+        return 0.0
+    if used <= 0:
+        return 0.0
+    return min(1.0, used / float(MODEL_CONTEXT_TOKENS))
 
 
 def compress_to_memory(
@@ -258,7 +265,7 @@ def _summarize(transcript: str, *, max_items: int = 6) -> list[str]:
 
 
 def maybe_compress_history(db: Session, session, *, max_messages: int = 50) -> int:
-    """会话历史超过 70% 预算时，把最老的一批消息压成记忆。
+    """把最老的一批历史消息压成长期记忆（调用方已确认上下文占用到阈值）。
 
     返回本轮压缩掉的消息条数（0 表示没压）。压缩后 session.memory_cursor
     前移，回放时这些消息不再进上下文，改由记忆摘要承接。
@@ -278,8 +285,6 @@ def maybe_compress_history(db: Session, session, *, max_messages: int = 50) -> i
         .all()
     )
     messages = [{"role": r.role, "content": r.content or ""} for r in rows]
-    if not messages or not needs_compress(messages):
-        return 0
     if len(messages) <= _KEEP_RECENT_MESSAGES:
         return 0
 
@@ -288,7 +293,16 @@ def maybe_compress_history(db: Session, session, *, max_messages: int = 50) -> i
     if not written:
         return 0
 
+    before_tokens = int(getattr(session, "last_prompt_tokens", 0) or 0)
     session.memory_cursor = cursor + cut
+    # 压缩后上下文已经变小，等下一轮 API 返回新的占用再判断
+    session.last_prompt_tokens = 0
     db.commit()
-    logger.info("会话 %s 压缩 %s 条历史为 %s 条记忆", session.id, cut, len(written))
+    logger.info(
+        "会话 %s 压缩 %s 条历史为 %s 条记忆（压缩前占用 %s token）",
+        session.id,
+        cut,
+        len(written),
+        before_tokens,
+    )
     return cut

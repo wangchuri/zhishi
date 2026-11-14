@@ -239,6 +239,46 @@ def _attach_reasoning_roundtrip(agent: Agent) -> None:
     agent.add_after_tool_call_handler(_after_tool_call)
 
 
+def _attach_usage_recorder(agent: Agent) -> None:
+    """记下每次请求模型 API 返回的 usage（含 prompt_tokens）。
+
+    上下文占用以模型自己报的 token 数为准，不靠字符数估算。
+    """
+
+    def _on_usage(usage) -> None:
+        try:
+            prompt = getattr(usage, "prompt_tokens", None)
+            if prompt is None and isinstance(usage, dict):
+                prompt = usage.get("prompt_tokens")
+            total = getattr(usage, "total_tokens", None)
+            if total is None and isinstance(usage, dict):
+                total = usage.get("total_tokens")
+            setattr(
+                agent,
+                "_zhishi_last_usage",
+                {
+                    "prompt_tokens": int(prompt or 0),
+                    "total_tokens": int(total or 0),
+                },
+            )
+        except Exception:
+            logger.debug("记录 usage 失败", exc_info=True)
+
+    try:
+        agent.events.add_on_usage_handler(_on_usage)
+    except Exception:
+        logger.warning("注册 usage 事件失败，上下文占用将无法统计")
+
+
+def last_prompt_tokens(agent: Agent) -> int:
+    """最近一次请求实际占用的 prompt token 数（拿不到时返回 0）。"""
+    usage = getattr(agent, "_zhishi_last_usage", None) or {}
+    try:
+        return int(usage.get("prompt_tokens") or 0)
+    except Exception:
+        return 0
+
+
 def create_agent(
     tools: Tools | list[Tools] | None = None,
     system_prompt: str | None = None,
@@ -262,6 +302,7 @@ def create_agent(
     agent_cls = MultimodalAgent if multimodal else Agent
     agent = agent_cls(llm=llm, tools=tools, system_prompt=system_prompt, **kwargs)
     _attach_reasoning_roundtrip(agent)
+    _attach_usage_recorder(agent)
     return agent
 
 

@@ -467,17 +467,21 @@ class ChatService:
             })
         return rows
 
-    def _maybe_compress_async(self, session_id: str, recent: list[dict]) -> None:
-        """上下文接近预算上限时，后台线程把最老的一批消息压成长期记忆。
+    def _maybe_compress_async(self, session_id: str) -> None:
+        """上下文占用到 70% 窗口时，后台线程把最老的一批消息压成长期记忆。
 
+        占用取模型 API 返回的 prompt_tokens（上一轮请求实测值），不靠字符估算。
         放后台跑：压缩要调一次模型，不该把本轮回复卡住。
         """
-        try:
-            from ..services.memory import needs_compress
+        from ..services.memory import should_compress
 
-            if not needs_compress(recent):
-                return
-        except Exception:
+        db0 = SessionLocal()
+        try:
+            session = db0.get(ChatSession, session_id)
+            used = int(getattr(session, "last_prompt_tokens", 0) or 0) if session else 0
+        finally:
+            db0.close()
+        if not should_compress(used):
             return
 
         def worker() -> None:
@@ -494,6 +498,23 @@ class ChatService:
                 db2.close()
 
         threading.Thread(target=worker, daemon=True, name="chat-memory-compress").start()
+
+    def record_usage(self, session_id: str, prompt_tokens: int) -> None:
+        """记录本次请求模型 API 返回的上下文占用，供下一轮判断是否压缩。"""
+        tokens = int(prompt_tokens or 0)
+        if tokens <= 0:
+            return
+        db = SessionLocal()
+        try:
+            session = db.get(ChatSession, session_id)
+            if session is None:
+                return
+            session.last_prompt_tokens = tokens
+            db.commit()
+        except Exception:
+            logger.warning("记录上下文占用失败", exc_info=True)
+        finally:
+            db.close()
 
     def session_in_crisis(self, db: Session, session_id: str) -> bool:
         session = db.get(ChatSession, session_id)
@@ -632,10 +653,10 @@ class ChatService:
         # memory_cursor 之前的消息已压进长期记忆，不再回放。
         cursor = int(getattr(session, "memory_cursor", 0) or 0)
         history = self._load_messages(db, session_id, skip=cursor)
-        # 上下文接近上限（70% 预算）时，后台把最老的一批消息压成长期记忆。
-        # 压缩不阻塞本轮：本轮照常回放，下一轮起由记忆摘要 + 最近消息承接。
+        # 上下文占用到窗口 70%（上一轮 API 返回的 prompt_tokens）时，
+        # 后台把最老的一批消息压成长期记忆；压缩不阻塞本轮。
         if not kickoff:
-            self._maybe_compress_async(session_id, history[:-1])
+            self._maybe_compress_async(session_id)
         prior = history if kickoff else history[:-1]
         history_image_idx = {
             i for i, m in enumerate(prior) if m.get("attachments")
