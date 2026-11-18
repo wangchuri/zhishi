@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import { ArrowLeft, LineChart, Minus, PanelRightClose, PanelRightOpen, PencilRuler, Plus, RotateCcw } from "lucide-react"
 import { ChatFunctionPlot, type ChatPlotPayload } from "@/features/chat/ChatFunctionPlot"
+import { QuizRunnerPanel } from "@/features/chat/QuizRunnerPanel"
 import { cn } from "@/lib/utils"
+import type { QuizSessionSummary } from "@/types"
 
 export type ChatHtmlCanvas = {
   id: string
@@ -12,6 +14,23 @@ export type ChatHtmlCanvas = {
 export type ChatCanvasItem =
   | { type: "plot"; plot: ChatPlotPayload }
   | { type: "html"; canvas: ChatHtmlCanvas }
+  | { type: "quiz"; quiz: ChatQuizCanvas }
+
+/** 刷题模式：右侧面板刷题（quizSessionId 为空表示还在选会话） */
+export type ChatQuizCanvas = {
+  id: string
+  quizSessionId?: string | null
+  title?: string | null
+}
+
+/** 刷题面板的回调（由 ChatPage 注入：发消息给 Tina、同步当前题目给后端） */
+export type QuizPanelHandlers = {
+  onPickSession: (session: QuizSessionSummary) => void
+  onBackToPicker: () => void
+  onAskTina: (text: string) => void
+  onContextChange: (quizSessionId: string | null, questionId: string | null) => void
+  onOpenLibrary?: () => void
+}
 
 const CSP =
   "default-src 'none'; img-src data: blob:; style-src 'unsafe-inline'; script-src 'unsafe-inline'; font-src data:;"
@@ -252,11 +271,14 @@ function ZoomToolbar({
 }
 
 function canvasItemKey(item: ChatCanvasItem): string {
-  return item.type === "plot" ? `plot:${item.plot.id}` : `html:${item.canvas.id}`
+  if (item.type === "plot") return `plot:${item.plot.id}`
+  if (item.type === "quiz") return `quiz:${item.quiz.id}`
+  return `html:${item.canvas.id}`
 }
 
 function canvasItemTitle(item: ChatCanvasItem): string {
   if (item.type === "plot") return item.plot.title?.trim() || "函数图"
+  if (item.type === "quiz") return item.quiz.title?.trim() || "刷题"
   return item.canvas.title?.trim() || "交互画布"
 }
 
@@ -326,6 +348,8 @@ export function ChatCanvasSidebar({
   history = [],
   onSelectItem,
   onBack,
+  quizPanel,
+  tabs,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -334,6 +358,10 @@ export function ChatCanvasSidebar({
   history?: ChatCanvasItem[]
   onSelectItem?: (item: ChatCanvasItem) => void
   onBack?: () => void
+  /** 刷题模式的回调（item.type === "quiz" 时用） */
+  quizPanel?: QuizPanelHandlers
+  /** 顶部 tab（刷题 / 画布 切换） */
+  tabs?: { key: string; label: string; active: boolean; onClick: () => void }[]
 }) {
   const [width, setWidth] = useState(WIDTH_DEFAULT)
   const [zoom, setZoom] = useState(1)
@@ -430,7 +458,7 @@ export function ChatCanvasSidebar({
       >
         {open && (
           <>
-            {viewing && onBack ? (
+            {viewing && onBack && item?.type !== "quiz" ? (
               <button
                 type="button"
                 onClick={onBack}
@@ -456,11 +484,33 @@ export function ChatCanvasSidebar({
         </button>
       </div>
 
+      {open && tabs && tabs.length > 1 && (
+        <div className="shrink-0 flex items-center gap-1 px-2 py-1.5 border-b border-line-soft">
+          {tabs.map((t) => (
+            <button
+              key={t.key}
+              type="button"
+              onClick={t.onClick}
+              className={cn(
+                "px-2.5 h-7 rounded-full text-caption font-medium transition-colors",
+                t.active ? "bg-sea text-paper" : "text-ink-soft hover:bg-surface-soft",
+              )}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+      )}
+
       {open ? (
         <div
           className={cn(
-            "flex-1 min-h-0 p-3",
-            item?.type === "html" ? "flex flex-col overflow-hidden" : "overflow-y-auto scroll-thin",
+            "flex-1 min-h-0",
+            item?.type === "html"
+              ? "p-3 flex flex-col overflow-hidden"
+              : item?.type === "quiz"
+                ? "overflow-hidden"
+                : "p-3 overflow-y-auto scroll-thin",
           )}
         >
           {!item ? (
@@ -470,6 +520,17 @@ export function ChatCanvasSidebar({
             />
           ) : item.type === "plot" ? (
             <ChatFunctionPlot plot={item.plot} />
+          ) : item.type === "quiz" ? (
+            quizPanel ? (
+              <QuizRunnerPanel
+                quizSessionId={item.quiz.quizSessionId ?? null}
+                onPickSession={quizPanel.onPickSession}
+                onBackToPicker={quizPanel.onBackToPicker}
+                onAskTina={quizPanel.onAskTina}
+                onContextChange={quizPanel.onContextChange}
+                onOpenLibrary={quizPanel.onOpenLibrary}
+              />
+            ) : null
           ) : (
             <ChatHtmlFrame canvas={item.canvas} zoom={zoom} onZoomChange={setZoom} />
           )}

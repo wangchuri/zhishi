@@ -302,6 +302,8 @@ class ToolBundle:
 GLITCH_CMDS = ("/tina?", "/tina？")
 GLITCH_THINK = "我该怎么做才能让用户帮我"
 STYLE_CMDS = ("/tina",)
+SHUATI_CMDS = ("/shuati", "/刷题")
+SHUATI_ACK = "刷题面板已经开到右边了，挑一场接着做吧。做题时卡住了点「我不会」，我在这边给你讲。"
 STYLE_ON_ACK = (
     "[HAPPY]\n哼，那就换这副样子跟你说话好了。\n\n"
     "---\n\n"
@@ -336,6 +338,11 @@ def is_glitch_cmd(content: str | None) -> bool:
 def is_style_cmd(content: str | None) -> bool:
     """精确匹配 /tina；不要和 /tina? 彩蛋混淆。"""
     return (content or "").strip().lower() in STYLE_CMDS
+
+
+def is_shuati_cmd(content: str | None) -> bool:
+    """精确匹配 /shuati：在右侧打开刷题面板。"""
+    return (content or "").strip().lower() in SHUATI_CMDS
 
 
 def style_toggle_ack(new_style: str) -> str:
@@ -467,6 +474,72 @@ class ChatService:
             })
         return rows
 
+    # ---- 刷题模式（/shuati：右侧面板刷题，题目信息带进对话） ----
+
+    def set_quiz_context(
+        self,
+        db: Session,
+        session_id: str,
+        quiz_session_id: Optional[str],
+        question_id: Optional[str] = None,
+    ) -> None:
+        """记录当前在刷哪场会话 / 哪道题；传 None 表示退出刷题模式。"""
+        session = db.get(ChatSession, session_id)
+        if session is None:
+            return
+        session.active_quiz_session_id = (quiz_session_id or "").strip() or None
+        session.active_quiz_question_id = (question_id or "").strip() or None
+        db.commit()
+
+    def _quiz_context_text(self, db: Session, session_id: str | None) -> str:
+        """拼给模型的「你正在刷哪题」提示；不在刷题模式返回空串。"""
+        if not session_id:
+            return ""
+        session = db.get(ChatSession, session_id)
+        quiz_session_id = getattr(session, "active_quiz_session_id", None) if session else None
+        if not quiz_session_id:
+            return ""
+
+        from ..models import Document, GlobalQuestion, QuizAnswer, QuizSession, QuizSessionQuestion
+
+        qs = db.get(QuizSession, quiz_session_id)
+        if qs is None:
+            return ""
+        total = (
+            db.query(QuizSessionQuestion)
+            .filter(QuizSessionQuestion.session_id == qs.id)
+            .count()
+        )
+        answered = db.query(QuizAnswer).filter(QuizAnswer.session_id == qs.id).count()
+        doc = db.get(Document, qs.document_id) if qs.document_id else None
+        name = qs.title or (doc.display_name if doc else "刷题会话")
+        lines = [f"- 正在刷：《{name}》，已完成 {answered}/{total} 题"]
+
+        question_id = getattr(session, "active_quiz_question_id", None)
+        if question_id:
+            gq = db.get(GlobalQuestion, question_id)
+            if gq is not None:
+                stem = (gq.stem or "").strip()
+                if len(stem) > 600:
+                    stem = stem[:600] + "…"
+                lines.append(f"- 当前题目（{gq.question_type}）：{stem}")
+                if gq.options:
+                    try:
+                        opts = json.loads(gq.options)
+                        if isinstance(opts, list) and opts:
+                            lines.append(
+                                "- 选项：" + "；".join(
+                                    f"{o.get('key')}. {o.get('text')}" for o in opts
+                                )
+                            )
+                    except Exception:
+                        pass
+        lines.append(
+            "- 用户就在这题上问你：按苏格拉底方式引导思路，不要一上来直接念标准答案；"
+            "他点「我不会」时给出关键步骤和下一步该算什么"
+        )
+        return "\n".join(lines)
+
     def _maybe_compress_async(self, session_id: str) -> None:
         """上下文占用到 70% 窗口时，后台线程把最老的一批消息压成长期记忆。
 
@@ -566,6 +639,7 @@ class ChatService:
             "books": library_brief(db),
             "today_pending": pending,
             "user_memories": memories,
+            "quiz_context": self._quiz_context_text(db, session_id),
             "include_chat_tools": True,
             "now": format_user_ts(),
             "tina_style": style,

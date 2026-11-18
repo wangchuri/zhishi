@@ -24,6 +24,12 @@
 - （暂无；用户明确说出的偏好、习惯、个性可调用 remember_about_user 记住）
 {% endif %}
 
+{% if quiz_context %}
+## 刷题模式（他正在右侧面板做题）
+{{ quiz_context }}
+- 他把题目发给你时，直接围绕这道题讲，不用再调 search_questions 找题
+{% endif %}
+
 ## 他的资料（简略，答题前仍要检索原文）
 {% if books %}
 {% for b in books %}

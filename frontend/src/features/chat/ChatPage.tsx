@@ -34,14 +34,17 @@ import {
   collectCanvasHistory,
   updateWidgetInPayload,
 } from "@/features/chat/chatBlocks"
-import type { ChatMessage, Citation } from "@/types"
+import type { ChatMessage, Citation, QuizSessionSummary } from "@/types"
 import {
   ChatCanvasSidebar,
   ChatHtmlFrame,
   type ChatCanvasItem,
   type ChatHtmlCanvas,
+  type ChatQuizCanvas,
+  type QuizPanelHandlers,
 } from "@/features/chat/ChatCanvasSidebar"
 import { ChatFunctionPlot, type ChatPlotPayload } from "@/features/chat/ChatFunctionPlot"
+import { QuizRunnerPanel } from "@/features/chat/QuizRunnerPanel"
 import { createSmoothStream } from "@/features/chat/smoothStream"
 import { cn } from "@/lib/utils"
 import {
@@ -171,6 +174,9 @@ export function ChatPage() {
   const [activeCitation, setActiveCitation] = useState<Citation | null>(null)
   const [canvasSidebarOpen, setCanvasSidebarOpen] = useState(false)
   const [activeCanvas, setActiveCanvas] = useState<ChatCanvasItem | null>(null)
+  // 刷题模式：/shuati 打开的右侧刷题面板 + 最近一次画布（用于「刷题 / 画布」来回切）
+  const [quizCanvas, setQuizCanvas] = useState<ChatQuizCanvas | null>(null)
+  const [lastCanvasItem, setLastCanvasItem] = useState<ChatCanvasItem | null>(null)
   // 手机：历史走覆盖抽屉、画布走全屏层（桌面仍是左右内联侧栏）
   const [mobileHistoryOpen, setMobileHistoryOpen] = useState(false)
   const [canvasFullscreen, setCanvasFullscreen] = useState(false)
@@ -569,6 +575,19 @@ export function ChatPage() {
               return { ...m, payload: { ...m.payload, canvases: [...canvases, canvas], blocks } }
             })
           }
+          if (chunk.event === "quiz_mode") {
+            const quiz: ChatQuizCanvas = {
+              id: `quiz-${Date.now()}`,
+              quizSessionId: null,
+              title: "刷题",
+            }
+            setQuizCanvas(quiz)
+            setActiveCanvas({ type: "quiz", quiz })
+            setCitationSidebarOpen(false)
+            if (window.innerWidth >= 1024) setCanvasSidebarOpen(true)
+            else setCanvasFullscreen(true)
+            // 会话列表由面板自己拉（与刷题页同一份数据源）
+          }
           if (chunk.event === "onboarding_ui" && chunk.item && typeof chunk.item === "object") {
             const item = chunk.item as { type: string; goal?: string }
             setMessages((prev) => {
@@ -772,10 +791,51 @@ export function ChatPage() {
   /** 画布 / 函数图：窄屏开全屏层，宽屏开右侧栏。 */
   const openCanvasItem = useCallback((item: ChatCanvasItem) => {
     setActiveCanvas(item)
+    if (item.type !== "quiz") setLastCanvasItem(item)
     setCitationSidebarOpen(false)
     if (typeof window !== "undefined" && window.innerWidth < 1024) setCanvasFullscreen(true)
     else setCanvasSidebarOpen(true)
   }, [])
+
+  /** 刷题面板：切换会话时同步 item 与后端上下文 */
+  const quizPanelHandlers: QuizPanelHandlers = useMemo(
+    () => ({
+      onPickSession: (session: QuizSessionSummary) => {
+        const next: ChatQuizCanvas = {
+          id: quizCanvas?.id || `quiz-${Date.now()}`,
+          quizSessionId: session.id,
+          title: session.title || session.document_name || "刷题",
+        }
+        setQuizCanvas(next)
+        setActiveCanvas({ type: "quiz", quiz: next })
+        setCitationSidebarOpen(false)
+        if (typeof window !== "undefined" && window.innerWidth >= 1024) setCanvasSidebarOpen(true)
+      },
+      onBackToPicker: () => {
+        const next: ChatQuizCanvas = {
+          id: quizCanvas?.id || `quiz-${Date.now()}`,
+          quizSessionId: null,
+          title: "刷题",
+        }
+        setQuizCanvas(next)
+        setActiveCanvas({ type: "quiz", quiz: next })
+      },
+      onAskTina: (text: string) => {
+        void sendTextRef.current(text)
+      },
+      onContextChange: (quizSessionId, questionId) => {
+        const sid = sessionIdRef.current
+        if (!sid) return
+        void chatApi
+          .setQuizContext(sid, quizSessionId, questionId)
+          .catch(() => {
+            /* 同步失败不打扰用户 */
+          })
+      },
+      onOpenLibrary: () => navigate("/quiz"),
+    }),
+    [quizCanvas?.id, navigate],
+  )
 
   // 会话列表：桌面内联栏与手机覆盖抽屉共用
   const historyList = (
@@ -1098,10 +1158,30 @@ export function ChatPage() {
               history={canvasHistory}
               onSelectItem={(it) => {
                 setActiveCanvas(it)
+                if (it.type !== "quiz") setLastCanvasItem(it)
                 setCanvasSidebarOpen(true)
                 setCitationSidebarOpen(false)
               }}
               onBack={() => setActiveCanvas(null)}
+              quizPanel={quizPanelHandlers}
+              tabs={
+                quizCanvas
+                  ? [
+                      {
+                        key: "quiz",
+                        label: "刷题",
+                        active: activeCanvas?.type === "quiz",
+                        onClick: () => setActiveCanvas({ type: "quiz", quiz: quizCanvas }),
+                      },
+                      {
+                        key: "canvas",
+                        label: "画布",
+                        active: activeCanvas?.type !== "quiz",
+                        onClick: () => setActiveCanvas(lastCanvasItem),
+                      },
+                    ]
+                  : undefined
+              }
             />
           )}
         </div>
@@ -1113,7 +1193,9 @@ export function ChatPage() {
               <span className="flex-1 truncate text-card-title font-semibold text-ink-primary">
                 {activeCanvas.type === "plot"
                   ? activeCanvas.plot.title?.trim() || "函数图"
-                  : activeCanvas.canvas.title?.trim() || "交互画布"}
+                  : activeCanvas.type === "quiz"
+                    ? activeCanvas.quiz.title?.trim() || "刷题"
+                    : activeCanvas.canvas.title?.trim() || "交互画布"}
               </span>
               <button
                 type="button"
@@ -1124,11 +1206,20 @@ export function ChatPage() {
                 <X className="w-4 h-4" strokeWidth={2} />
               </button>
             </div>
-            <div className="flex-1 min-h-0 p-2 overflow-hidden">
+            <div className={cn("flex-1 min-h-0", activeCanvas.type === "quiz" ? "overflow-hidden" : "p-2 overflow-hidden")}>
               {activeCanvas.type === "plot" ? (
                 <div className="h-full overflow-y-auto scroll-thin">
                   <ChatFunctionPlot plot={activeCanvas.plot} />
                 </div>
+              ) : activeCanvas.type === "quiz" ? (
+                <QuizRunnerPanel
+                  quizSessionId={activeCanvas.quiz.quizSessionId ?? null}
+                  onPickSession={quizPanelHandlers.onPickSession}
+                  onBackToPicker={quizPanelHandlers.onBackToPicker}
+                  onAskTina={quizPanelHandlers.onAskTina}
+                  onContextChange={quizPanelHandlers.onContextChange}
+                  onOpenLibrary={quizPanelHandlers.onOpenLibrary}
+                />
               ) : (
                 <ChatHtmlFrame canvas={activeCanvas.canvas} zoom={1} />
               )}

@@ -21,6 +21,13 @@ class ChatSend(BaseModel):
     attachments: list[str] = []  # 上传图片 id（/api/v1/uploads/image 返回）
 
 
+class QuizContextIn(BaseModel):
+    """刷题模式：前端告诉后端「现在在刷哪场会话 / 哪道题」。"""
+
+    quiz_session_id: Optional[str] = None
+    question_id: Optional[str] = None
+
+
 class ChatSessionMeta(BaseModel):
     id: str
     title: str = "对话"

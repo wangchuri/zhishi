@@ -379,6 +379,15 @@ export const chatApi = {
   deleteSession(sessionId: string) {
     return request<any>("DELETE", `/api/v1/chat/sessions/${sessionId}`)
   },
+
+  /** 刷题模式：把「当前在刷哪场会话/哪道题」告诉后端，题目信息会带进对话 */
+  setQuizContext(sessionId: string, quizSessionId: string | null, questionId: string | null) {
+    return request<{ ok: boolean }>(
+      "POST",
+      `/api/v1/chat/sessions/${encodeURIComponent(sessionId)}/quiz-context`,
+      { quiz_session_id: quizSessionId, question_id: questionId },
+    )
+  },
 }
 
 /** 将 chat history 响应规范为消息数组 */

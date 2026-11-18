@@ -32,6 +32,9 @@ class ChatSession(Base):
     memory_cursor: Mapped[int] = mapped_column(Integer, default=0)
     # 最近一次请求模型时，API 返回的 prompt token 占用（压缩触发依据）
     last_prompt_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    # 刷题模式：当前在 Tina 里刷的是哪场会话 / 哪道题（把题目信息带进对话）
+    active_quiz_session_id: Mapped[str | None] = mapped_column(String(36))
+    active_quiz_question_id: Mapped[str | None] = mapped_column(String(36))
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=_now, onupdate=_now)
 

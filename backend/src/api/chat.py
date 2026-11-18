@@ -21,11 +21,13 @@ from ..core.llm import (
 from ..schemas import ai as ai_schemas
 from ..services.chat import (
     GLITCH_THINK,
+    SHUATI_ACK,
     _append_text_block,
     _merge_tool_ui,
     chat_service,
     drain_tool_ui,
     is_glitch_cmd,
+    is_shuati_cmd,
     is_style_cmd,
     pack_assistant_payload,
 )
@@ -134,6 +136,30 @@ async def send(body: ai_schemas.ChatSend, db: Session = Depends(get_db)):
             yield "data: [DONE]\n\n"
 
         return StreamingResponse(glitch_gen(), media_type="text/event-stream")
+
+    if is_shuati_cmd(body.content):
+        from ..services.quiz import quiz_service
+
+        sessions = quiz_service.list_recent_sessions(db, limit=20)
+        chat_service.set_quiz_context(db, session_id, None, None)
+        _release_request_db(db)
+
+        async def shuati_gen():
+            yield _json_line({"event": "session", "session_id": session_id})
+            # 右侧面板切到刷题模式：先给会话列表，用户在面板里挑一场
+            yield _json_line({
+                "event": "quiz_mode",
+                "session_id": session_id,
+                "sessions": sessions,
+            })
+            yield _json_line({
+                "content": SHUATI_ACK,
+                "session_id": session_id,
+                "role": "assistant",
+            })
+            yield "data: [DONE]\n\n"
+
+        return StreamingResponse(shuati_gen(), media_type="text/event-stream")
 
     if is_style_cmd(body.content):
         new_style, ack = chat_service.apply_style_command(db, session_id, body.content or "/tina")
@@ -271,6 +297,17 @@ async def send(body: ai_schemas.ChatSend, db: Session = Depends(get_db)):
         "reasoning_content": reasoning,
         "citations": citations,
     }
+
+
+@router.post("/sessions/{session_id}/quiz-context")
+def set_quiz_context(
+    session_id: str,
+    body: ai_schemas.QuizContextIn,
+    db: Session = Depends(get_db),
+):
+    """刷题模式：记录当前在刷哪场会话 / 哪道题（题目信息会带进对话）。"""
+    chat_service.set_quiz_context(db, session_id, body.quiz_session_id, body.question_id)
+    return {"ok": True}
 
 
 @router.get("/history")
