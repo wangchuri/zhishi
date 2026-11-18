@@ -534,10 +534,6 @@ class ChatService:
                             )
                     except Exception:
                         pass
-        lines.append(
-            "- 用户就在这题上问你：按苏格拉底方式引导思路，不要一上来直接念标准答案；"
-            "他点「我不会」时给出关键步骤和下一步该算什么"
-        )
         return "\n".join(lines)
 
     def _maybe_compress_async(self, session_id: str) -> None:
