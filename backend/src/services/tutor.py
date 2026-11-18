@@ -109,7 +109,8 @@ class TutorService:
             "role": msg.role,
             "content": msg.content or "",
             "reasoning_content": msg.reasoning_content,
-            "attachments": json.loads(msg.attachments) if msg.attachments else None,
+            # schema 里是 list[str]，没附件也要给空数组（给 None 会 500）
+            "attachments": json.loads(msg.attachments) if msg.attachments else [],
             "created_at": msg.created_at.isoformat() if msg.created_at else None,
         }
 
