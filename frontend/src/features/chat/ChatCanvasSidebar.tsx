@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react"
-import { ArrowLeft, LineChart, Minus, PanelRightClose, PanelRightOpen, PencilRuler, Plus, RotateCcw } from "lucide-react"
+import { ArrowLeft, ArrowLeftRight, LineChart, Minus, PanelRightClose, PanelRightOpen, PencilRuler, Plus, RotateCcw } from "lucide-react"
 import { ChatFunctionPlot, type ChatPlotPayload } from "@/features/chat/ChatFunctionPlot"
 import { QuizRunnerPanel } from "@/features/chat/QuizRunnerPanel"
 import { cn } from "@/lib/utils"
@@ -350,6 +350,8 @@ export function ChatCanvasSidebar({
   onBack,
   quizPanel,
   tabs,
+  side = "right",
+  onSwapSide,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -362,6 +364,10 @@ export function ChatCanvasSidebar({
   quizPanel?: QuizPanelHandlers
   /** 顶部 tab（刷题 / 画布 切换） */
   tabs?: { key: string; label: string; active: boolean; onClick: () => void }[]
+  /** 面板停在哪一侧：决定边框与拖宽手柄的方向 */
+  side?: "left" | "right"
+  /** 与对话区交换位置 */
+  onSwapSide?: () => void
 }) {
   const [width, setWidth] = useState(WIDTH_DEFAULT)
   const [zoom, setZoom] = useState(1)
@@ -384,9 +390,11 @@ export function ChatCanvasSidebar({
   const onDragMove = useCallback((e: MouseEvent) => {
     const drag = dragRef.current
     if (!drag) return
-    const next = clampWidth(drag.startW + (drag.startX - e.clientX))
+    // 面板在右：往左拖变宽；面板在左：往右拖变宽
+    const delta = side === "left" ? e.clientX - drag.startX : drag.startX - e.clientX
+    const next = clampWidth(drag.startW + delta)
     setWidth(next)
-  }, [])
+  }, [side])
 
   const onDragEnd = useCallback(() => {
     dragRef.current = null
@@ -429,7 +437,9 @@ export function ChatCanvasSidebar({
   return (
     <div
       className={cn(
-        "relative shrink-0 border-l border-line-soft bg-surface/60 flex flex-col min-h-0 h-full",
+        "relative shrink-0 bg-surface/60 flex flex-col min-h-0 h-full",
+        side === "left" ? "border-r" : "border-l",
+        "border-line-soft",
         !open && "transition-[width] duration-200",
       )}
       style={{ width: open ? width : 44 }}
@@ -442,8 +452,9 @@ export function ChatCanvasSidebar({
           title="拖动调整宽度"
           onMouseDown={onDragStart}
           className={cn(
-            "absolute left-0 top-0 bottom-0 z-20 w-1.5 -translate-x-1/2 cursor-col-resize",
+            "absolute top-0 bottom-0 z-20 w-1.5 cursor-col-resize",
             "group flex items-center justify-center",
+            side === "left" ? "right-0 translate-x-1/2" : "left-0 -translate-x-1/2",
           )}
         >
           <span className="h-10 w-1 rounded-full bg-line-soft group-hover:bg-sea/50 group-active:bg-sea transition-colors" />
@@ -471,6 +482,16 @@ export function ChatCanvasSidebar({
             <span className="text-card-title font-semibold text-ink-primary flex-1 truncate min-w-0">{title}</span>
             {item?.type === "html" && (
               <ZoomToolbar zoom={zoom} onZoomChange={setZoom} />
+            )}
+            {onSwapSide && (
+              <button
+                type="button"
+                onClick={onSwapSide}
+                className="w-7 h-7 rounded-md flex items-center justify-center text-ink-tertiary hover:text-ink-primary hover:bg-surface-soft transition-colors shrink-0"
+                title={side === "right" ? "换到左边（对话放右边）" : "换回右边（对话放左边）"}
+              >
+                <ArrowLeftRight className="w-4 h-4" strokeWidth={2} />
+              </button>
             )}
           </>
         )}

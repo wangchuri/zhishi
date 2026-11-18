@@ -177,6 +177,14 @@ export function ChatPage() {
   // 刷题模式：/shuati 打开的右侧刷题面板 + 最近一次画布（用于「刷题 / 画布」来回切）
   const [quizCanvas, setQuizCanvas] = useState<ChatQuizCanvas | null>(null)
   const [lastCanvasItem, setLastCanvasItem] = useState<ChatCanvasItem | null>(null)
+  // 画布/刷题面板停在哪一侧：right（默认）或 left（对话换到右边）
+  const [canvasSide, setCanvasSide] = useState<"left" | "right">(() => {
+    try {
+      return localStorage.getItem("zhishi.chat.canvasSide") === "left" ? "left" : "right"
+    } catch {
+      return "right"
+    }
+  })
   // 手机：历史走覆盖抽屉、画布走全屏层（桌面仍是左右内联侧栏）
   const [mobileHistoryOpen, setMobileHistoryOpen] = useState(false)
   const [canvasFullscreen, setCanvasFullscreen] = useState(false)
@@ -788,6 +796,19 @@ export function ChatPage() {
     }
   }
 
+  /** 画布/刷题面板与对话区互换左右位置（记住偏好） */
+  const toggleCanvasSide = useCallback(() => {
+    setCanvasSide((prev) => {
+      const next = prev === "right" ? "left" : "right"
+      try {
+        localStorage.setItem("zhishi.chat.canvasSide", next)
+      } catch {
+        /* ignore */
+      }
+      return next
+    })
+  }, [])
+
   /** 画布 / 函数图：窄屏开全屏层，宽屏开右侧栏。 */
   const openCanvasItem = useCallback((item: ChatCanvasItem) => {
     setActiveCanvas(item)
@@ -884,7 +905,7 @@ export function ChatPage() {
       <div className="flex h-full">
         {/* ────── 左侧历史：桌面内联可折叠；手机用「小按钮 + 覆盖抽屉」 ────── */}
         <div className={cn(
-          "shrink-0 border-r border-line-soft bg-surface/60 flex-col transition-all duration-200 hidden lg:flex",
+          "shrink-0 border-r border-line-soft bg-surface/60 flex-col transition-all duration-200 hidden lg:flex lg:order-1",
           sidebarOpen ? "w-[260px]" : "w-[44px]",
         )}>
           <div className={cn("flex items-center gap-2 px-3 py-3 border-b border-line-soft", !sidebarOpen && "justify-center px-0")}>
@@ -932,7 +953,11 @@ export function ChatPage() {
 
         {/* ────── 对话主区域 ────── */}
         <div
-          className="flex-1 flex flex-col min-w-0"
+          className={cn(
+            "flex-1 flex flex-col min-w-0",
+            // 画布挪到左边时，对话排到最后（右侧）
+            canvasSide === "left" ? "lg:order-3" : "lg:order-2",
+          )}
           style={keyboardInset > 0 ? { paddingBottom: keyboardInset } : undefined}
         >
           {/* 手机：历史是覆盖抽屉，用不占聊天位的小按钮唤出 */}
@@ -1143,7 +1168,12 @@ export function ChatPage() {
         </div>
 
         {/* ────── 右侧画布 / 引用来源（桌面内联侧栏） ────── */}
-        <div className="hidden lg:flex min-h-0 h-full">
+        <div
+          className={cn(
+            "hidden lg:flex min-h-0 h-full",
+            canvasSide === "left" ? "lg:order-2" : "lg:order-3",
+          )}
+        >
           {citationSidebarOpen ? (
             <ChatCitationSidebar
               open={citationSidebarOpen}
@@ -1164,6 +1194,8 @@ export function ChatPage() {
               }}
               onBack={() => setActiveCanvas(null)}
               quizPanel={quizPanelHandlers}
+              side={canvasSide}
+              onSwapSide={toggleCanvasSide}
               tabs={
                 quizCanvas
                   ? [
