@@ -29,6 +29,8 @@ export const DIFFICULTY_OPTIONS: Array<{ value: number; label: string }> = [
   { value: 3, label: "困难" },
 ]
 
+export type QuizStartStatus = "all" | "undone" | "done" | "wrong" | "unknown"
+
 export type QuizStartSelection = {
   /** 空 = 全部章节（含未归类章节） */
   chapterIds: string[]
@@ -38,6 +40,8 @@ export type QuizStartSelection = {
   difficulties: number[]
   /** 空 = 全部知识点 */
   tags: string[]
+  /** 按作答状态挑题：全部 / 未做 / 做过 / 答错 / 不会 */
+  status: QuizStartStatus
   /** 0 = 全部（仅「均衡」模式使用） */
   count: number
   distribute: "balanced" | "custom"
@@ -51,6 +55,7 @@ export function emptyQuizStartSelection(defaultCount = 10): QuizStartSelection {
     types: [],
     difficulties: [],
     tags: [],
+    status: "all",
     count: defaultCount,
     distribute: "balanced",
     typeCounts: {},
@@ -74,7 +79,38 @@ export function questionMatchesSelection(q: Question, sel: QuizStartSelection): 
     const tags = new Set(q.tags || [])
     if (!sel.tags.some((t) => tags.has(t))) return false
   }
+  if (sel.status && sel.status !== "all") {
+    const attempts = q.attempt_count || 0
+    const st = q.user_answer_status
+    if (sel.status === "undone" && attempts > 0) return false
+    if (sel.status === "done" && attempts === 0) return false
+    if (sel.status === "wrong" && !(attempts > 0 && st === "wrong")) return false
+    if (sel.status === "unknown" && !(attempts > 0 && st === "unknown")) return false
+  }
   return true
+}
+
+/** 各作答状态的题数，用于「范围」chip 上的角标 */
+export function countByStatus(questions: Question[]): Record<QuizStartStatus, number> {
+  const out: Record<QuizStartStatus, number> = {
+    all: 0,
+    undone: 0,
+    done: 0,
+    wrong: 0,
+    unknown: 0,
+  }
+  for (const q of questions || []) {
+    out.all += 1
+    const attempts = q.attempt_count || 0
+    if (attempts === 0) {
+      out.undone += 1
+      continue
+    }
+    out.done += 1
+    if (q.user_answer_status === "wrong") out.wrong += 1
+    if (q.user_answer_status === "unknown") out.unknown += 1
+  }
+  return out
 }
 
 /** 只按「章节 / 题型 / 难度 / 知识点」过滤（不看数量）：浮窗里的实时「约 N 题」 */
@@ -192,6 +228,7 @@ export function buildQuizStartBody(
   if (sel.types.length) body.question_types = sel.types
   if (sel.difficulties.length) body.difficulties = sel.difficulties
   if (sel.tags.length) body.tags = sel.tags
+  if (sel.status && sel.status !== "all") body.filter = sel.status
 
   if (sel.distribute === "custom") {
     const counts = effectiveTypeCounts(sel)

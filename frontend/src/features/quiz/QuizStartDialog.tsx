@@ -18,13 +18,24 @@ import {
   countByBucket,
   countByChapter,
   countByDifficulty,
+  countByStatus,
   countQuizSelection,
   customCountTotal,
   describeSelection,
   emptyQuizStartSelection,
   quizStartTotal,
   type QuizStartSelection,
+  type QuizStartStatus,
 } from "./quizStartSelection"
+
+/** 范围（按作答状态挑题） */
+const STATUS_OPTIONS: { key: QuizStartStatus; label: string }[] = [
+  { key: "all", label: "全部" },
+  { key: "undone", label: "未做" },
+  { key: "done", label: "做过" },
+  { key: "wrong", label: "答错" },
+  { key: "unknown", label: "不会" },
+]
 
 /** 数量快捷档（0 = 全部） */
 const COUNT_PRESETS = [5, 10, 20, 0]
@@ -145,6 +156,7 @@ export function QuizStartDialog({
   const typeCounts = useMemo(() => countByBucket(questions), [questions])
   const difficultyCounts = useMemo(() => countByDifficulty(questions), [questions])
   const chapterCounts = useMemo(() => countByChapter(questions), [questions])
+  const statusCounts = useMemo(() => countByStatus(questions), [questions])
 
   // 选择项只列「真的能选」的：没题的章节、没有的难度档一律不出现
   const chapterRows = useMemo(
@@ -191,6 +203,7 @@ export function QuizStartDialog({
   const steps = useMemo(() => {
     let n = 0
     return {
+      status: ++n,
       chapter: chapterRows.length > 0 ? ++n : 0,
       type: ++n,
       difficulty: difficultyLevels.length > 0 ? ++n : 0,
@@ -233,6 +246,21 @@ export function QuizStartDialog({
               </Button>
             </div>
           ) : null}
+
+          <Section step={steps.status} title="范围">
+            <div className="flex flex-wrap gap-2">
+              {STATUS_OPTIONS.map((opt) => (
+                <Chip
+                  key={opt.key}
+                  active={sel.status === opt.key}
+                  onClick={() => setSel((s) => ({ ...s, status: opt.key }))}
+                >
+                  {opt.label}
+                  <span className="text-small opacity-70">{statusCounts[opt.key] || 0}</span>
+                </Chip>
+              ))}
+            </div>
+          </Section>
 
           {chapterRows.length > 0 && (
             <Section step={steps.chapter} title="章节">

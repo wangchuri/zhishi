@@ -198,7 +198,7 @@ class QuizService:
             if not ids:
                 return []
 
-        if filter_mode in ("wrong", "unknown", "undone") and scope_doc_ids:
+        if filter_mode in ("wrong", "unknown", "undone", "done") and scope_doc_ids:
             refs = (
                 db.query(QuestionRef)
                 .filter(QuestionRef.document_id.in_(scope_doc_ids))
@@ -214,6 +214,8 @@ class QuizService:
             for qid in ids:
                 ref = ref_map.get(qid)
                 if filter_mode == "undone" and (ref is None or (ref.attempt_count or 0) == 0):
+                    filtered.append(qid)
+                elif filter_mode == "done" and ref and (ref.attempt_count or 0) > 0:
                     filtered.append(qid)
                 elif filter_mode == "wrong" and ref and ref.last_status == "wrong":
                     filtered.append(qid)
