@@ -534,7 +534,43 @@ class ChatService:
                             )
                     except Exception:
                         pass
+                lines.extend(self._quiz_answer_lines(db, qs.id, gq))
         return "\n".join(lines)
+
+    def _quiz_answer_lines(self, db: Session, quiz_session_id: str, question) -> list[str]:
+        """这道题在本次会话里的作答状态（对/错/我不会/没做），供模型参考。"""
+        from ..models import QuizAnswer
+
+        answer = (
+            db.query(QuizAnswer)
+            .filter(
+                QuizAnswer.session_id == quiz_session_id,
+                QuizAnswer.question_id == question.id,
+            )
+            .first()
+        )
+        if answer is None:
+            return ["- 这道题他还没提交答案"]
+
+        status_label = {
+            "correct": "答对了",
+            "wrong": "答错了",
+            "partial": "部分正确",
+            "unknown": "标记了「我不会」",
+        }.get(answer.status or "", answer.status or "已作答")
+
+        if answer.status == "unknown":
+            return [f"- 这道题他已经作答：{status_label}"]
+
+        user_answer = (answer.user_answer or "").strip()
+        if not user_answer and answer.attachments:
+            user_answer = "（拍照作答）"
+        if len(user_answer) > 300:
+            user_answer = user_answer[:300] + "…"
+        line = f"- 这道题他已经作答：{status_label}"
+        if user_answer:
+            line += f"；他填的答案是：{user_answer}"
+        return [line]
 
     def _maybe_compress_async(self, session_id: str) -> None:
         """上下文占用到 70% 窗口时，后台线程把最老的一批消息压成长期记忆。
