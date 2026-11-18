@@ -537,6 +537,33 @@ class ChatService:
                 lines.extend(self._quiz_answer_lines(db, qs.id, gq))
         return "\n".join(lines)
 
+    def _quiz_answer_attachments(self, db: Session, session) -> list[str]:
+        """刷题模式下当前题拍照作答的图片 id（最多 2 张）。"""
+        quiz_session_id = getattr(session, "active_quiz_session_id", None)
+        question_id = getattr(session, "active_quiz_question_id", None)
+        if not quiz_session_id or not question_id:
+            return []
+
+        from ..models import QuizAnswer
+
+        answer = (
+            db.query(QuizAnswer)
+            .filter(
+                QuizAnswer.session_id == quiz_session_id,
+                QuizAnswer.question_id == question_id,
+            )
+            .first()
+        )
+        if answer is None or not answer.attachments:
+            return []
+        try:
+            ids = json.loads(answer.attachments)
+        except Exception:
+            return []
+        if not isinstance(ids, list):
+            return []
+        return [str(x) for x in ids if x][:2]
+
     def _quiz_answer_lines(self, db: Session, quiz_session_id: str, question) -> list[str]:
         """这道题在本次会话里的作答状态（对/错/我不会/没做），供模型参考。"""
         from ..models import QuizAnswer
@@ -563,8 +590,12 @@ class ChatService:
             return [f"- 这道题他已经作答：{status_label}"]
 
         user_answer = (answer.user_answer or "").strip()
-        if not user_answer and answer.attachments:
-            user_answer = "（拍照作答）"
+        if answer.attachments:
+            # 后端存图片作答时会写成占位符「（图片作答）」，这里补一句说明图片已随消息附上
+            if not user_answer or user_answer == "（图片作答）":
+                user_answer = "（拍照作答，答卷图片随本轮消息附上）"
+            else:
+                user_answer += "（另附答卷图片）"
         if len(user_answer) > 300:
             user_answer = user_answer[:300] + "…"
         line = f"- 这道题他已经作答：{status_label}"
@@ -733,6 +764,12 @@ class ChatService:
             saved_attachments: Optional[list[str]] = [_Path(p).name for p in image_paths]
         else:
             saved_attachments = None
+            # 刷题模式：当前题是拍照作答时，把他那张答卷也带给模型，
+            # 否则模型只看到「（拍照作答）」四个字，没法点评他写的步骤。
+            quiz_attachments = self._quiz_answer_attachments(db, session)
+            if quiz_attachments:
+                image_paths, file_ids = await prepare_images(quiz_attachments)
+                multimodal = bool(image_paths)
 
         if kickoff and onboarding_active:
             user_content = ONBOARDING_KICKOFF_KNOWN if vars_["nickname"] else ONBOARDING_KICKOFF_NEW
