@@ -11,6 +11,7 @@ import {
   Loader2,
   Play,
   Search,
+  SkipForward,
   Trash2,
   X,
 } from "lucide-react"
@@ -358,6 +359,12 @@ export function QuizPage() {
 
   const addReviewItem = useCallback(
     (result: QuizAnswerResult, stem: string, userAnswer?: string) => {
+      if (result.status === "correct") {
+        // AI 复审把「答错」纠正成「答对」时，把这条从本题回顾里摘掉，
+        // 否则回顾里还挂着一条旧的「答错」，看着像没改过来。
+        setReviewItems((prev) => prev.filter((x) => x.question_id !== result.question_id))
+        return
+      }
       if (result.status !== "wrong" && result.status !== "unknown" && result.status !== "partial") return
       const item: QuizReviewItem = {
         question_id: result.question_id,
@@ -632,6 +639,27 @@ export function QuizPage() {
 
   const handleNextAfterReview = () => {
     if (lastResult) advanceOrFinish(lastResult)
+  }
+
+  /** 跳过当前题：不提交、不写作答记录、不计入本题回顾，直接翻下一题。 */
+  const handleSkip = () => {
+    if (!session || !currentQuestion || submitting) return
+    const nextIndex = currentIndex + 1
+    if (nextIndex >= session.total_questions) {
+      // 最后一题跳过：直接结束本轮（没答的题不计分）
+      void finishSession(session.id)
+      return
+    }
+    setCurrentIndex(nextIndex)
+    setSelectedOption(null)
+    setTextAnswer("")
+    setBlankAnswers([])
+    setCustomAnswers({})
+    setLastResult(null)
+    setReviewItems([])
+    setQuestionStartTime(Date.now())
+    attachments.clear()
+    setMobilePane("question")
   }
 
   const quizStats = {
@@ -1039,6 +1067,10 @@ export function QuizPage() {
                   <Button variant="secondary" size="md" onClick={handleUnknown} disabled={submitting}>
                     <HelpCircle className="w-4 h-4" strokeWidth={2} />
                     我不会
+                  </Button>
+                  <Button variant="ghost" size="md" onClick={handleSkip} disabled={submitting}>
+                    <SkipForward className="w-4 h-4" strokeWidth={2} />
+                    跳过
                   </Button>
                 </div>
                 </>
