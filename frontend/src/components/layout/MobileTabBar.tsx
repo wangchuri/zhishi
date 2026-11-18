@@ -1,16 +1,17 @@
 import { NavLink } from "react-router-dom"
-import { Home, Library, MessageSquare, NotebookPen } from "lucide-react"
+import { Home, Library, MessageSquare, NotebookPen, Zap } from "lucide-react"
 import { useTinaCrisis } from "@/context/TinaCrisisContext"
 import { cn } from "@/lib/utils"
 
 /**
- * 移动端底部主导航 · 极简四页：首页 / Tina / 资料 / 笔记。
+ * 移动端底部主导航：首页 / Tina / 资料 / 刷题 / 笔记。
  * 次级入口（上传、任务、进度、设置…）留在「更多」抽屉里，不放主路径。
  */
 const TABS = [
   { to: "/", label: "首页", icon: Home, end: true },
   { to: "/chat", label: "Tina", icon: MessageSquare, end: false },
-  { to: "/quiz", label: "资料", icon: Library, end: false },
+  { to: "/quiz", label: "资料", icon: Library, end: true },
+  { to: "/quiz/practice", label: "刷题", icon: Zap, end: false },
   { to: "/notes", label: "笔记", icon: NotebookPen, end: false },
 ]
 
