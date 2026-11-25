@@ -31,6 +31,8 @@ class QuizSessionQuestion(BaseModel):
     sub_index: Optional[int] = None
     material: Optional[QuizQuestionMaterial] = None
     last_time_spent_seconds: Optional[int] = None
+    # 本会话里这题是否已答：前端据此定位「接着往下做」的位置
+    answered: bool = False
 
 
 class QuizSession(BaseModel):
