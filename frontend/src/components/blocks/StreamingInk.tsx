@@ -1,4 +1,5 @@
 import { cn } from "@/lib/utils"
+import { maskStreamingHtml } from "@/components/blocks/streamingHtmlMask"
 
 /** 按「字素」切分：中文/emoji 不会被切成半截（Intl 不可用时退回按码位）。 */
 function graphemes(text: string): string[] {
@@ -29,7 +30,8 @@ export function StreamingInk({
   crimson?: boolean
   className?: string
 }) {
-  const chars = graphemes(text)
+  const { text: visible, drawing } = maskStreamingHtml(text)
+  const chars = graphemes(visible)
   const split = Math.max(0, chars.length - INK_TAIL)
   const head = chars.slice(0, split).join("")
   const tail = chars.slice(split)
@@ -47,6 +49,12 @@ export function StreamingInk({
           {ch}
         </span>
       ))}
+      {drawing && (
+        <span className="mt-1.5 inline-flex items-center gap-2 rounded-full border border-line bg-surface-soft px-3 py-1 align-middle text-caption text-ink-soft">
+          <span className="w-1.5 h-1.5 rounded-full bg-sea animate-pulse" />
+          正在绘图…
+        </span>
+      )}
     </div>
   )
 }
