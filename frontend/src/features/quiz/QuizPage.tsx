@@ -516,6 +516,14 @@ export function QuizPage() {
     if (!session) return
     const nextIndex = currentIndex + 1
     if (result.session_status === "completed" || nextIndex >= session.total_questions) {
+      // 统一结算模式：先把 pending 的答案判出来，再出结果
+      if ((session.mode || "instant") === "deferred") {
+        try {
+          await quizApi.gradeAll(session.id)
+        } catch {
+          /* 结算失败也要让用户看到页面，finishSession 会再拉结果 */
+        }
+      }
       await finishSession(session.id)
       return
     }
@@ -547,6 +555,7 @@ export function QuizPage() {
     setSubmitting(true)
     setError(null)
     const timeSpent = Math.round((Date.now() - questionStartTime) / 1000)
+    const isDeferred = (session.mode || "instant") === "deferred"
     try {
       const res = await quizApi.submitAnswer(session.id, {
         question_id: currentQuestion.question_id,
@@ -554,13 +563,11 @@ export function QuizPage() {
         time_spent_seconds: timeSpent,
         request_ai_grade: opts?.requestAiGrade,
         attachments: attachIds.length ? attachIds : undefined,
+        // 统一结算：只记答案，判题留到最后
+        defer_grade: isDeferred || undefined,
       })
       const result = res as unknown as QuizAnswerResult
       notifyCompletedTasks(result)
-      setLastResult(result)
-      if (result.status === "correct" && (result.current_streak ?? 0) >= 3) {
-        setStreakDialog({ open: true, streak: result.current_streak ?? 0 })
-      }
       setSession((prev) =>
         prev
           ? {
@@ -570,6 +577,15 @@ export function QuizPage() {
             }
           : prev
       )
+      if (isDeferred) {
+        // 统一结算模式：不显示判题反馈，直接进入下一题
+        await advanceOrFinish(result)
+        return
+      }
+      setLastResult(result)
+      if (result.status === "correct" && (result.current_streak ?? 0) >= 3) {
+        setStreakDialog({ open: true, streak: result.current_streak ?? 0 })
+      }
       addReviewItem(result, currentQuestion.stem, payload)
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "提交失败"
@@ -653,6 +669,23 @@ export function QuizPage() {
 
   const handleNextAfterReview = () => {
     if (lastResult) advanceOrFinish(lastResult)
+  }
+
+  /** 回看上一题（不提交、不判题；该题之前答过的话可以重新作答） */
+  const handlePrev = () => {
+    if (!session || currentIndex <= 0) return
+    const prev = currentIndex - 1
+    setCurrentIndex(prev)
+    reportProgress(prev)
+    setSelectedOption(null)
+    setTextAnswer("")
+    setBlankAnswers([])
+    setCustomAnswers({})
+    setLastResult(null)
+    setReviewItems([])
+    setQuestionStartTime(Date.now())
+    attachments.clear()
+    setMobilePane("question")
   }
 
   /** 跳过当前题：不提交、不写作答记录、不计入本题回顾，直接翻下一题。 */
@@ -963,10 +996,27 @@ export function QuizPage() {
                 <Badge variant="neutral" size="sm" title="本题用时">
                   ⏱ {formatDuration(elapsedSeconds)}
                 </Badge>
+                {(session.mode || "instant") === "deferred" ? (
+                  <Badge variant="neutral" size="sm" title="答完最后一题才统一判题">
+                    统一结算
+                  </Badge>
+                ) : null}
               </div>
-              <span className="text-small text-ink-tertiary truncate max-w-[40%]">
-                {selectedDocument?.name || session.title}
-              </span>
+              <div className="flex items-center gap-2 shrink-0">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={handlePrev}
+                  disabled={currentIndex <= 0}
+                  title="回到上一题"
+                >
+                  <ChevronLeft className="w-3.5 h-3.5" strokeWidth={2} />
+                  上一题
+                </Button>
+                <span className="text-small text-ink-tertiary truncate max-w-[16rem]">
+                  {selectedDocument?.name || session.title}
+                </span>
+              </div>
             </div>
 
             {/* 材料题也逐题作答：材料作为上下文挂在题目上方（可折叠），不再整组一次提交 */}

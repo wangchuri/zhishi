@@ -42,6 +42,8 @@ class QuizSession(BaseModel):
     group_id: Optional[str] = None
     total_questions: int = 0
     answered_count: int = 0
+    # 作答方式：instant / deferred
+    mode: str = "instant"
     # 做题游标：用户当前做到第几题（多端对齐位置用）
     progress_index: int = 0
     started_at: Optional[datetime] = None
@@ -74,6 +76,8 @@ class QuizSessionCreate(BaseModel):
     type_counts: Optional[dict[str, int]] = None
     resume: bool = True  # 同一批题有未完成会话则续刷
     task_id: Optional[str] = None  # 今日刷题任务 id，续刷后回写 href
+    # 作答方式：instant=每答一题立刻判题；deferred=先答完，最后统一结算
+    mode: Optional[str] = "instant"
 
 
 class QuizQuestionNoteCreate(BaseModel):
@@ -91,6 +95,8 @@ class QuizAnswerSubmit(BaseModel):
     document_id: Optional[str] = None
     chat_message_id: Optional[str] = None
     attachments: list[str] = []  # AI 判题时随答案一起提交的图片（手写解答照片等）
+    # 统一结算模式：只记答案，判题留到最后的 grade-all
+    defer_grade: Optional[bool] = None
 
 
 class QuizAnswerResult(BaseModel):

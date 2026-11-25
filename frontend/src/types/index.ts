@@ -343,6 +343,8 @@ export interface QuizSession {
   answered_count: number
   /** 做题游标：用户当前做到第几题（多端对齐位置） */
   progress_index?: number
+  /** 作答方式：instant=每题即时判题；deferred=答完统一结算 */
+  mode?: "instant" | "deferred" | string
   started_at?: string | null
   finished_at?: string | null
   questions: QuizSessionQuestion[]

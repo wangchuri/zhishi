@@ -162,20 +162,27 @@ export function QuizRunnerPanel({
 
     setSubmitting(true)
     setError(null)
+    const isDeferred = (session.mode || "instant") === "deferred" && !opts?.unknown
     try {
       const res = await quizApi.submitAnswer(session.id, {
         question_id: currentQuestion.question_id,
         user_answer: opts?.unknown ? undefined : payload,
         status: opts?.unknown ? "unknown" : undefined,
+        defer_grade: isDeferred || undefined,
       })
       const result = res as QuizAnswerResult
-      setLastResult(result)
       setSession((prev) =>
         prev
           ? { ...prev, answered_count: result.answered_count, status: result.session_status }
           : prev,
       )
       if (opts?.unknown) onAskTina("我不会做这道题，请给我一些提示")
+      if (isDeferred) {
+        // 统一结算：不显示判题反馈，直接下一题
+        goNext()
+        return
+      }
+      setLastResult(result)
     } catch (err) {
       setError(err instanceof Error ? err.message : "提交失败")
     } finally {
@@ -187,6 +194,12 @@ export function QuizRunnerPanel({
     if (!session) return
     const nextIndex = index + 1
     if (nextIndex >= (session.total_questions || 0)) {
+      // 统一结算模式：最后一题答完，先把 pending 判出来
+      if ((session.mode || "instant") === "deferred") {
+        void quizApi.gradeAll(session.id).catch(() => {
+          /* 结算失败不影响退出 */
+        })
+      }
       onBackToPicker()
       return
     }

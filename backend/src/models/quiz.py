@@ -32,6 +32,8 @@ class QuizSession(Base):
     group_id: Mapped[str | None] = mapped_column(String(36), index=True)
     title: Mapped[str | None] = mapped_column(String(200))
     status: Mapped[str] = mapped_column(String(20), default="active")  # active/completed
+    # 作答方式：instant=每答一题立刻判题看解析；deferred=先答完，最后统一结算
+    mode: Mapped[str] = mapped_column(String(20), default="instant")
     # 做题游标：用户当前做到第几题（0-based）。多端/多入口靠它对齐位置，
     # 比"第一道未答的题"更贴合「继续上次」的语义（跳着答也不会回退）。
     progress_index: Mapped[int] = mapped_column(Integer, default=0)

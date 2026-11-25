@@ -28,6 +28,12 @@ import {
   type QuizStartStatus,
 } from "./quizStartSelection"
 
+/** 作答方式 */
+const MODE_OPTIONS: { key: "instant" | "deferred"; label: string; hint: string }[] = [
+  { key: "instant", label: "即时作答", hint: "每答一题立刻判对错、看解析" },
+  { key: "deferred", label: "答完统一结算", hint: "先一口气做完，最后统一判题出结果" },
+]
+
 /** 范围（按作答状态挑题） */
 const STATUS_OPTIONS: { key: QuizStartStatus; label: string }[] = [
   { key: "all", label: "全部" },
@@ -204,6 +210,7 @@ export function QuizStartDialog({
     let n = 0
     return {
       status: ++n,
+      mode: ++n,
       chapter: chapterRows.length > 0 ? ++n : 0,
       type: ++n,
       difficulty: difficultyLevels.length > 0 ? ++n : 0,
@@ -258,6 +265,35 @@ export function QuizStartDialog({
                   {opt.label}
                   <span className="text-small opacity-70">{statusCounts[opt.key] || 0}</span>
                 </Chip>
+              ))}
+            </div>
+          </Section>
+
+          <Section step={steps.mode} title="作答方式">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              {MODE_OPTIONS.map((opt) => (
+                <button
+                  key={opt.key}
+                  type="button"
+                  onClick={() => setSel((s) => ({ ...s, mode: opt.key }))}
+                  className={cn(
+                    "text-left rounded-lg border px-3.5 py-3 transition-colors",
+                    sel.mode === opt.key
+                      ? "border-sea/45 bg-sea-subtle"
+                      : "border-line bg-paper hover:border-sea/40",
+                  )}
+                >
+                  <div className="flex items-center gap-2">
+                    <span
+                      className={cn(
+                        "w-3.5 h-3.5 rounded-full border shrink-0",
+                        sel.mode === opt.key ? "border-sea bg-sea" : "border-line",
+                      )}
+                    />
+                    <span className="text-small font-medium text-ink-primary">{opt.label}</span>
+                  </div>
+                  <p className="mt-1 text-caption text-ink-tertiary leading-snug">{opt.hint}</p>
+                </button>
               ))}
             </div>
           </Section>

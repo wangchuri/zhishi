@@ -921,6 +921,14 @@ export const quizApi = {
     )
   },
 
+  /** 统一结算：把本场会话里 pending 的答案一次性判出来 */
+  gradeAll(sessionId: string) {
+    return request<{ graded: number; total: number }>(
+      "POST",
+      `/api/v1/quiz/sessions/${encodeURIComponent(sessionId)}/grade-all`,
+    )
+  },
+
   listActiveSessions() {
     return request<{ sessions: import("@/types").QuizSession[] }>("GET", "/api/v1/quiz/active-sessions")
   },
@@ -950,6 +958,8 @@ export const quizApi = {
       time_spent_seconds?: number
       request_ai_grade?: boolean
       attachments?: string[]
+      /** 统一结算模式：只记答案，判题留到 gradeAll */
+      defer_grade?: boolean
     }
   ) {
     return request<any>("POST", `/api/v1/quiz/sessions/${sessionId}/answers`, data)

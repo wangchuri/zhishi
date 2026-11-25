@@ -42,6 +42,8 @@ export type QuizStartSelection = {
   tags: string[]
   /** 按作答状态挑题：全部 / 未做 / 做过 / 答错 / 不会 */
   status: QuizStartStatus
+  /** 作答方式：instant=每题即时判题；deferred=答完统一结算 */
+  mode: "instant" | "deferred"
   /** 0 = 全部（仅「均衡」模式使用） */
   count: number
   distribute: "balanced" | "custom"
@@ -56,6 +58,7 @@ export function emptyQuizStartSelection(defaultCount = 10): QuizStartSelection {
     difficulties: [],
     tags: [],
     status: "all",
+    mode: "instant",
     count: defaultCount,
     distribute: "balanced",
     typeCounts: {},
@@ -229,6 +232,7 @@ export function buildQuizStartBody(
   if (sel.difficulties.length) body.difficulties = sel.difficulties
   if (sel.tags.length) body.tags = sel.tags
   if (sel.status && sel.status !== "all") body.filter = sel.status
+  if (sel.mode === "deferred") body.mode = "deferred"
 
   if (sel.distribute === "custom") {
     const counts = effectiveTypeCounts(sel)

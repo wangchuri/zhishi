@@ -35,6 +35,7 @@ def create_session(body: quiz_schemas.QuizSessionCreate, db: Session = Depends(g
         sort=body.sort,
         resume=body.resume if body.resume is not None else True,
         task_id=body.task_id,
+        mode=body.mode or "instant",
     )
     return quiz_service._session_out(db, session)
 
@@ -94,6 +95,14 @@ def get_session(session_id: str, db: Session = Depends(get_db)):
     return quiz_service._session_out(db, session)
 
 
+@router.post("/sessions/{session_id}/grade-all")
+async def grade_all(session_id: str, db: Session = Depends(get_db)):
+    """统一结算：把本场会话里 pending 的答案一次性判出来。"""
+    session = quiz_service.get_session(db, session_id)
+    result = await quiz_service.grade_all(db, session)
+    return result
+
+
 @router.post("/sessions/{session_id}/progress", response_model=quiz_schemas.QuizSession)
 def set_progress(
     session_id: str,
@@ -130,6 +139,7 @@ async def submit_answer(
         body.time_spent_seconds,
         body.request_ai_grade,
         attachments=body.attachments,
+        defer_grade=bool(body.defer_grade),
     )
     from ..services.task import evaluate
     done = evaluate(db)

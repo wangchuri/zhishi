@@ -449,6 +449,7 @@ class QuizService:
         sort: Optional[str] = None,
         resume: bool = True,
         task_id: Optional[str] = None,
+        mode: str = "instant",
     ) -> QuizSession:
         del distribute  # 目前只有 balanced 一种算法；自定义配额走 type_counts
         ids = self._resolve_question_ids(
@@ -494,6 +495,7 @@ class QuizService:
             group_id=group_id,
             title=title,
             status="active",
+            mode=(mode or "instant") if (mode or "instant") in ("instant", "deferred") else "instant",
         )
         db.add(session)
         db.flush()
@@ -776,6 +778,7 @@ class QuizService:
             "group_id": session.group_id,
             "total_questions": len(questions),
             "answered_count": answered,
+            "mode": getattr(session, "mode", None) or "instant",
             "progress_index": int(getattr(session, "progress_index", 0) or 0),
             "started_at": session.started_at.isoformat() if session.started_at else None,
             "finished_at": session.finished_at.isoformat() if session.finished_at else None,
@@ -955,8 +958,9 @@ class QuizService:
         time_spent_seconds: Optional[int],
         request_ai_grade: Optional[bool],
         attachments: Optional[list[str]] = None,
+        defer_grade: bool = False,
     ) -> dict:
-        """提交答题并判题。"""
+        """提交答题并判题。defer_grade=True 时只记答案，判题留到统一结算。"""
         question = db.get(GlobalQuestion, question_id)
         if not question:
             raise NotFoundError("题目不存在")
@@ -965,37 +969,49 @@ class QuizService:
 
         image_paths, file_ids = await prepare_images(attachments)
 
-        status, grade_method, string_match_status, ai_reason = await self.grade_answer(
-            question,
-            user_answer,
-            status_hint,
-            request_ai_grade=bool(request_ai_grade),
-            image_paths=image_paths,
-            file_ids=file_ids,
-        )
+        if defer_grade:
+            # 统一结算模式：先原样记下答案，不判题、不更新统计
+            status, grade_method, string_match_status, ai_reason = (
+                "pending",
+                None,
+                None,
+                None,
+            )
+        else:
+            status, grade_method, string_match_status, ai_reason = await self.grade_answer(
+                question,
+                user_answer,
+                status_hint,
+                request_ai_grade=bool(request_ai_grade),
+                image_paths=image_paths,
+                file_ids=file_ids,
+            )
 
         # 答案/解析展示：错题给正确答案 + citation；答对也给解析（学习者要确认自己的思路）
+        # 统一结算模式下先不返回，避免提前泄题
         correct_answer = None
-        explanation = question.explanation
+        explanation = None
         citation = None
-        if status != "correct":
-            correct_answer = question.answer
-            prov = db.query(QuestionProvenance).filter_by(question_id=question_id).first()
-            if prov and prov.document_id:
-                seg = None
-                if prov.segment_id:
-                    seg = db.get(DocumentSegment, prov.segment_id)
-                if not seg:
-                    seg = db.query(DocumentSegment).filter_by(document_id=prov.document_id).first()
-                if seg:
-                    citation = {
-                        "doc_id": prov.document_id,
-                        "segment_id": seg.id,
-                        "title": seg.title,
-                        "char_start": seg.char_start,
-                        "char_end": seg.char_end,
-                        "snippet": seg.content[:200],
-                    }
+        if not defer_grade:
+            explanation = question.explanation
+            if status != "correct":
+                correct_answer = question.answer
+                prov = db.query(QuestionProvenance).filter_by(question_id=question_id).first()
+                if prov and prov.document_id:
+                    seg = None
+                    if prov.segment_id:
+                        seg = db.get(DocumentSegment, prov.segment_id)
+                    if not seg:
+                        seg = db.query(DocumentSegment).filter_by(document_id=prov.document_id).first()
+                    if seg:
+                        citation = {
+                            "doc_id": prov.document_id,
+                            "segment_id": seg.id,
+                            "title": seg.title,
+                            "char_start": seg.char_start,
+                            "char_end": seg.char_end,
+                            "snippet": seg.content[:200],
+                        }
 
         existing = (
             db.query(QuizAnswer)
@@ -1047,7 +1063,8 @@ class QuizService:
             if time_spent_seconds is not None:
                 existing.time_spent_seconds = time_spent_seconds
             existing.answered_at = datetime.now(timezone.utc)
-            self.revise_ref_stats(db, question_id, ref_doc_id, old_status, status)
+            if not defer_grade:
+                self.revise_ref_stats(db, question_id, ref_doc_id, old_status, status)
         else:
             answer = QuizAnswer(
                 session_id=session.id,
@@ -1082,7 +1099,8 @@ class QuizService:
                 else:
                     raise
             else:
-                self.update_ref_stats(db, question_id, ref_doc_id, status)
+                if not defer_grade:
+                    self.update_ref_stats(db, question_id, ref_doc_id, status)
 
         answered = db.query(QuizAnswer).filter(QuizAnswer.session_id == session.id).count()
         total = db.query(QuizSessionQuestion).filter(QuizSessionQuestion.session_id == session.id).count()
@@ -1118,7 +1136,55 @@ class QuizService:
             "total_questions": total,
             "session_status": session_status,
             "current_streak": _current_streak(db, question_id),
+            "deferred": defer_grade,
         }
+
+    async def grade_all(self, db: Session, session: QuizSession) -> dict:
+        """统一结算：把这场会话里所有 pending 的答案逐题判出来。
+
+        用于「作答完统一结算」模式：答题时只存答案，最后一次性判题并出结果。
+        """
+        pending = (
+            db.query(QuizAnswer)
+            .filter(QuizAnswer.session_id == session.id, QuizAnswer.status == "pending")
+            .all()
+        )
+        if not pending:
+            return {"graded": 0, "total": 0}
+
+        # 统计要落在哪本书上：会话本身没有文档时（资料组）用题目溯源
+        ref_doc_id = session.document_id
+        if not ref_doc_id:
+            prov = db.query(QuestionProvenance).first()
+            ref_doc_id = prov.document_id if prov else None
+
+        graded = 0
+        for ans in pending:
+            question = db.get(GlobalQuestion, ans.question_id)
+            if question is None:
+                continue
+            status, grade_method, string_match_status, ai_reason = await self.grade_answer(
+                question, ans.user_answer, None
+            )
+            ans.status = status
+            ans.grade_method = grade_method
+            ans.string_match_status = string_match_status
+            ans.ai_reason = ai_reason
+            self.update_ref_stats(db, ans.question_id, ref_doc_id, status)
+            graded += 1
+
+        # 全部判完 → 收尾（这里必须自己 commit：complete_session 在会话已 completed 时不会提交）
+        total = (
+            db.query(QuizSessionQuestion)
+            .filter(QuizSessionQuestion.session_id == session.id)
+            .count()
+        )
+        answered = db.query(QuizAnswer).filter(QuizAnswer.session_id == session.id).count()
+        if total > 0 and answered >= total and session.status != "completed":
+            session.status = "completed"
+            session.finished_at = datetime.now(timezone.utc)
+        db.commit()
+        return {"graded": graded, "total": total}
 
     async def grade_standalone(
         self,
