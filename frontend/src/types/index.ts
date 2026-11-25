@@ -306,6 +306,8 @@ export interface QuizSessionQuestion {
   sub_index?: number | null
   material?: QuizQuestionMaterial | null
   last_time_spent_seconds?: number | null
+  /** 本会话里这题是否已答：用于定位「第一道未答题」 */
+  answered?: boolean
 }
 
 export interface QuizQuestionMaterial {

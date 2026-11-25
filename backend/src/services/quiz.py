@@ -471,19 +471,15 @@ class QuizService:
         if not ids:
             raise AppError("没有可刷的题目（可能该文档还没有生成题目）")
 
-        if resume:
-            # 有明确题集（任务/自定义）→ 按题集找同批题目的未完成会话；
-            # 按文档/章节/条件开的练习 → 找同一本书/同一个组的未完成会话。
-            # 否则手机和平板各点一次「刷题」就会各自新建一场，进度永远对不上。
-            if question_ids:
-                existing = self.find_unfinished_by_question_ids(db, ids, document_id=document_id)
-            else:
-                existing = self.find_recent_unfinished(
-                    db,
-                    document_id=document_id,
-                    group_id=group_id,
-                    collection_id=collection_id,
-                )
+        if resume and question_ids:
+            # 只对「明确的题集」复用会话（今日任务、错题重做）：同一批题再点一次
+            # 不该新建一场。
+            #
+            # 按文档 / 章节 / 筛选条件开的练习**不复用**：用户选了「未做 + 单选题」
+            # 就是想要这样一批题，隐式返回旧会话会让筛选看起来完全没生效
+            # （旧会话可能是「全部题型、全部状态」）。想接着上次刷，走列表页的
+            # 「继续最近刷题」入口，那里是显式续刷。
+            existing = self.find_unfinished_by_question_ids(db, ids, document_id=document_id)
             if existing:
                 if task_id:
                     self.bind_quiz_task_session(db, task_id, existing.id)
@@ -743,6 +739,13 @@ class QuizService:
             for a in answers:
                 if a.question_id not in last_times and a.time_spent_seconds is not None:
                     last_times[a.question_id] = int(a.time_spent_seconds)
+        # 本会话已答过的题（供每题标注 answered，前端据此定位第一道未答题）
+        answered_ids = {
+            r[0]
+            for r in db.query(QuizAnswer.question_id)
+            .filter(QuizAnswer.session_id == session.id)
+            .all()
+        }
         image_base = document_image_base(session.document_id)
         questions = []
         for sq, gq in rows:
@@ -758,17 +761,15 @@ class QuizService:
                 "material_id": gq.material_id,
                 "sub_index": gq.sub_index,
                 "last_time_spent_seconds": last_times.get(gq.id),
+                # 本会话里这题是否已答：前端据此定位到第一道未答题，
+                # 而不是用「最后答的题」当游标（回看旧题会让进度看起来倒退）
+                "answered": gq.id in answered_ids,
             })
         # 材料题：带上材料正文，供前端在题目上方展示
         from .question import question_service
 
         question_service.attach_materials(db, questions)
-        answered_rows = (
-            db.query(QuizAnswer.question_id)
-            .filter(QuizAnswer.session_id == session.id)
-            .all()
-        )
-        answered = len({r[0] for r in answered_rows})
+        answered = len(answered_ids)
         return {
             "id": session.id,
             "title": session.title,

@@ -167,8 +167,16 @@ export function QuizPage() {
       .then((res) => {
         const s = res as unknown as QuizSession
         setSession(s)
-        // 定位到上次停下的那一题
-        setCurrentIndex(s.progress_index ?? 0)
+        // 定位到「最后答过的那题之后」：progress_index 记的是最后一次作答的位置，
+        // 回看旧题会让它倒退，看起来像进度丢了。这里改用「已答题的最大下标 + 1」，
+        // 无论中间回看过哪几题，都停在「接着往下做」的位置。
+        const qs = (s.questions || []) as Array<{ answered?: boolean }>
+        let lastAnswered = -1
+        qs.forEach((q, i) => {
+          if (q.answered) lastAnswered = i
+        })
+        const resumeAt = lastAnswered >= 0 ? Math.min(lastAnswered + 1, qs.length - 1) : 0
+        setCurrentIndex(resumeAt)
         setPhase("quiz")
       })
       .catch(() => {
