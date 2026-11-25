@@ -4,23 +4,46 @@ import { cn } from "@/lib/utils"
 const CSP =
   "default-src 'none'; img-src data: blob:; style-src 'unsafe-inline'; script-src 'unsafe-inline'; font-src data:;"
 
-/** 内联 HTML 片段：沙箱 iframe + 高度自适应（聊天流里的小图案/示意图） */
-function wrapInlineHtml(fragment: string): string {
-  const report = `(function(){
-  function post(){
-    var h=Math.max(
-      document.body?document.body.scrollHeight:0,
-      document.documentElement?document.documentElement.scrollHeight:0
-    );
-    try{ parent.postMessage({type:'zhishi-inline-html-height', height:h}, '*'); }catch(e){}
+/** 内联图示的最大显示高度：超过就整体缩小，不出滚动条 */
+const MAX_HEIGHT = 460
+
+/**
+ * 内联 HTML 片段：沙箱 iframe + 自动缩放（聊天流里的小图案/示意图）。
+ *
+ * 内容超过可用宽/高时按比例缩小到装下，**不出现滚动条**——
+ * 内联小图出现滚动条体验很差，宁可整体缩一点。
+ */
+function wrapInlineHtml(fragment: string, maxHeight: number): string {
+  const fitScript = `(function(){
+  var root=document.getElementById('zhishi-inline-fit');
+  if(!root) return;
+  var MAX_H=${maxHeight};
+  var lastW=-1, lastH=-1;
+  function fit(){
+    root.style.transform='none';
+    var de=document.documentElement;
+    var availW=Math.max(1, de.clientWidth);
+    var w=Math.max(root.scrollWidth, root.offsetWidth, 1);
+    var h=Math.max(root.scrollHeight, root.offsetHeight, 1);
+    var scale=Math.min(1, availW/w, MAX_H/h);
+    if(!isFinite(scale)||scale<=0) scale=1;
+    root.style.transformOrigin='top left';
+    root.style.transform = scale<1 ? 'scale('+scale+')' : 'none';
+    var shownW=Math.max(1, Math.ceil(w*scale));
+    var shownH=Math.max(1, Math.ceil(h*scale));
+    if(shownW===lastW && shownH===lastH) return;
+    lastW=shownW; lastH=shownH;
+    document.body.style.width=shownW+'px';
+    document.body.style.height=shownH+'px';
+    try{ parent.postMessage({type:'zhishi-inline-html-height', height:shownH}, '*'); }catch(e){}
   }
-  window.addEventListener('load', post);
+  window.addEventListener('load', fit);
   if(window.ResizeObserver){
-    try{ new ResizeObserver(post).observe(document.body); }catch(e){}
+    try{ new ResizeObserver(fit).observe(root); }catch(e){}
   }
-  setTimeout(post, 0);
-  setTimeout(post, 120);
-  setTimeout(post, 400);
+  setTimeout(fit, 0);
+  setTimeout(fit, 120);
+  setTimeout(fit, 400);
 })();`
 
   return `<!DOCTYPE html>
@@ -29,15 +52,15 @@ function wrapInlineHtml(fragment: string): string {
 <meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy" content="${CSP}">
 <style>
-  html,body{margin:0;padding:0;background:transparent;color:#14212B;
+  html,body{margin:0;padding:0;overflow:hidden;background:transparent;color:#14212B;
     font-family:ui-sans-serif,system-ui,sans-serif;font-size:14px;line-height:1.5;}
-  body{padding:2px 0;}
+  #zhishi-inline-fit{display:inline-block;vertical-align:top;}
   img,svg,canvas{max-width:100%;height:auto;display:block;margin:0 auto;}
   table{border-collapse:collapse;} td,th{padding:2px 6px;}
 </style>
 </head>
-<body>${fragment}
-<script>${report}<\/script>
+<body><div id="zhishi-inline-fit">${fragment}</div>
+<script>${fitScript}<\/script>
 </body>
 </html>`
 }
@@ -56,7 +79,7 @@ export function InlineHtmlFrame({ html, className }: { html: string; className?:
       if (!d || d.type !== "zhishi-inline-html-height") return
       const h = Number(d.height)
       if (!Number.isFinite(h) || h <= 0) return
-      setHeight(Math.min(1600, Math.max(40, Math.ceil(h))))
+      setHeight(Math.min(MAX_HEIGHT + 8, Math.max(32, Math.ceil(h))))
     }
     window.addEventListener("message", onMsg)
     return () => window.removeEventListener("message", onMsg)
@@ -68,7 +91,7 @@ export function InlineHtmlFrame({ html, className }: { html: string; className?:
       title="内联图示"
       sandbox="allow-scripts"
       referrerPolicy="no-referrer"
-      srcDoc={wrapInlineHtml(html)}
+      srcDoc={wrapInlineHtml(html, MAX_HEIGHT)}
       className={cn("block w-full rounded-md border border-line-soft bg-paper/60", className)}
       style={{ height }}
     />
