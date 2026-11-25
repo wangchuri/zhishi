@@ -78,7 +78,7 @@ export function wrapCanvasHtml(fragment: string): string {
   var busy=false;
   var last=-1;
   var userZoom=1;
-  function layout(){
+  function layout(recompute){
     if(busy) return;
     busy=true;
     try{
@@ -92,11 +92,17 @@ export function wrapCanvasHtml(fragment: string): string {
       var availH=Math.max(1, (de.clientHeight||window.innerHeight)-pad);
       var w=Math.max(root.scrollWidth, root.offsetWidth, 1);
       var h=Math.max(root.scrollHeight, root.offsetHeight, 1);
-      var fit=Math.min(1, availW/w, availH/h);
-      if(!isFinite(fit)||fit<=0) fit=1;
-      var s=fit*userZoom;
-      if(Math.abs(s-last)<0.005) return;
-      last=s;
+      var s;
+      if(recompute || last<0){
+        var fit=Math.min(1, availW/w, availH/h);
+        if(!isFinite(fit)||fit<=0) fit=1;
+        s=fit*userZoom;
+        last=s;
+      }else{
+        // 交互导致内容变化（点按钮、展开说明…）：保持当前缩放，只跟着改容器尺寸，
+        // 否则整块画布会突然缩小/放大，看起来像"乱掉了"
+        s=last;
+      }
       root.style.transformOrigin='top left';
       root.style.transform='scale('+s+')';
       host.style.width=Math.ceil(w*s)+'px';
@@ -109,14 +115,14 @@ export function wrapCanvasHtml(fragment: string): string {
     if(typeof z!=='number'||!isFinite(z)) return;
     userZoom=Math.min(3, Math.max(0.5, z));
     last=-1;
-    layout();
+    layout(true);
   }
   window.addEventListener('message', function(e){
     var d=e&&e.data;
     if(!d) return;
     if(d.type==='zhishi-canvas-zoom'){ setZoom(Number(d.zoom)); return; }
     // 父页在侧栏展开/宽度变化后主动让重算一次（首帧常常量在动画中间）
-    if(d.type==='zhishi-canvas-relayout'){ last=-1; layout(); }
+    if(d.type==='zhishi-canvas-relayout'){ last=-1; layout(true); }
   });
   window.addEventListener('wheel', function(e){
     if(!(e.ctrlKey||e.metaKey)) return;
@@ -125,10 +131,11 @@ export function wrapCanvasHtml(fragment: string): string {
     setZoom(next);
     try{ parent.postMessage({type:'zhishi-canvas-zoom-changed', zoom:userZoom}, '*'); }catch(err){}
   }, {passive:false});
-  window.addEventListener('resize', function(){ last=-1; layout(); });
+  window.addEventListener('resize', function(){ last=-1; layout(true); });
   if(window.MutationObserver){
     try{
-      new MutationObserver(function(){ last=-1; setTimeout(layout, 0); }).observe(root,{childList:true,subtree:true});
+      // 交互改 DOM 时不要重新算缩放，只更新容器尺寸（否则画面会突然缩放）
+      new MutationObserver(function(){ setTimeout(function(){ layout(false); }, 0); }).observe(root,{childList:true,subtree:true});
     }catch(e){}
   }
   // 首次量的时候内容常常还没渲染完（图片未加载、画布是脚本画上去的），
@@ -137,26 +144,29 @@ export function wrapCanvasHtml(fragment: string): string {
   // 所以补三种重量触发：元素尺寸变化、load、图片各自 load，以及更长尾的定时。
   if(window.ResizeObserver){
     try{
-      new ResizeObserver(function(){ last=-1; layout(); }).observe(root);
+      // 内容自身尺寸变化：首次（还没适配过）要重算；之后交互引起的变化保持当前缩放
+      new ResizeObserver(function(){
+        if(last<0){ layout(true); } else { layout(false); }
+      }).observe(root);
       // 视口尺寸变了也要重算（侧栏拖宽、换位动画结束时都会变）
-      new ResizeObserver(function(){ last=-1; layout(); }).observe(document.documentElement);
+      new ResizeObserver(function(){ last=-1; layout(true); }).observe(document.documentElement);
     }catch(e){}
   }
-  window.addEventListener('load', function(){ last=-1; layout(); });
+  window.addEventListener('load', function(){ last=-1; layout(true); });
   try{
     var imgs=root.querySelectorAll('img');
     for(var i=0;i<imgs.length;i++){
       if(imgs[i].complete) continue;
-      imgs[i].addEventListener('load', function(){ last=-1; layout(); });
-      imgs[i].addEventListener('error', function(){ last=-1; layout(); });
+      imgs[i].addEventListener('load', function(){ last=-1; layout(true); });
+      imgs[i].addEventListener('error', function(){ last=-1; layout(true); });
     }
   }catch(e){}
-  setTimeout(layout, 0);
-  setTimeout(layout, 120);
-  setTimeout(layout, 400);
-  setTimeout(layout, 1000);
-  setTimeout(layout, 2000);
-  setTimeout(layout, 3000);
+  setTimeout(function(){ layout(true); }, 0);
+  setTimeout(function(){ layout(true); }, 120);
+  setTimeout(function(){ layout(true); }, 400);
+  setTimeout(function(){ layout(false); }, 1000);
+  setTimeout(function(){ layout(false); }, 2000);
+  setTimeout(function(){ layout(false); }, 3000);
 })();`
 
   return `<!DOCTYPE html>
