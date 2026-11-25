@@ -21,8 +21,10 @@ function wrapInlineHtml(fragment: string, maxHeight: number): string {
   var lastW=-1, lastH=-1;
   function fit(){
     root.style.transform='none';
-    var de=document.documentElement;
-    var availW=Math.max(1, de.clientWidth);
+    // 每次量之前先把 body 尺寸放开：否则上一轮设过的宽高会把可用宽度越算越小
+    document.body.style.width='auto';
+    document.body.style.height='auto';
+    var availW=Math.max(1, window.innerWidth);
     var w=Math.max(root.scrollWidth, root.offsetWidth, 1);
     var h=Math.max(root.scrollHeight, root.offsetHeight, 1);
     var scale=Math.min(1, availW/w, MAX_H/h);
@@ -31,10 +33,10 @@ function wrapInlineHtml(fragment: string, maxHeight: number): string {
     root.style.transform = scale<1 ? 'scale('+scale+')' : 'none';
     var shownW=Math.max(1, Math.ceil(w*scale));
     var shownH=Math.max(1, Math.ceil(h*scale));
-    if(shownW===lastW && shownH===lastH) return;
-    lastW=shownW; lastH=shownH;
     document.body.style.width=shownW+'px';
     document.body.style.height=shownH+'px';
+    if(shownW===lastW && shownH===lastH) return;
+    lastW=shownW; lastH=shownH;
     try{ parent.postMessage({type:'zhishi-inline-html-height', height:shownH}, '*'); }catch(e){}
   }
   window.addEventListener('load', fit);
