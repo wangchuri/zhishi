@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback, useLayoutEffect, useMemo } from "react"
+import { flushSync } from "react-dom"
 import {
   ArrowUp,
   History,
@@ -796,18 +797,29 @@ export function ChatPage() {
     }
   }
 
-  /** 画布/刷题面板与对话区互换左右位置（记住偏好） */
+  /** 画布/刷题面板与对话区互换左右位置（记住偏好，带过渡动画） */
   const toggleCanvasSide = useCallback(() => {
-    setCanvasSide((prev) => {
-      const next = prev === "right" ? "left" : "right"
+    const next = canvasSide === "right" ? "left" : "right"
+    const apply = () => {
+      setCanvasSide(next)
       try {
         localStorage.setItem("zhishi.chat.canvasSide", next)
       } catch {
         /* ignore */
       }
-      return next
-    })
-  }, [])
+    }
+    // 现代浏览器：用 View Transitions 让两栏平滑换位（order 变化本身没有过渡）
+    const doc = document as Document & {
+      startViewTransition?: (cb: () => void) => unknown
+    }
+    if (typeof doc.startViewTransition === "function") {
+      doc.startViewTransition(() => {
+        flushSync(apply)
+      })
+    } else {
+      apply()
+    }
+  }, [canvasSide])
 
   /** 画布 / 函数图：窄屏开全屏层，宽屏开右侧栏。 */
   const openCanvasItem = useCallback((item: ChatCanvasItem) => {
@@ -958,7 +970,11 @@ export function ChatPage() {
             // 画布挪到左边时，对话排到最后（右侧）
             canvasSide === "left" ? "lg:order-3" : "lg:order-2",
           )}
-          style={keyboardInset > 0 ? { paddingBottom: keyboardInset } : undefined}
+          style={{
+            ...(keyboardInset > 0 ? { paddingBottom: keyboardInset } : null),
+            // 换位动画用：View Transitions 按这个名字做独立过渡
+            viewTransitionName: "chat-pane",
+          }}
         >
           {/* 手机：历史是覆盖抽屉，用不占聊天位的小按钮唤出 */}
           <div className="lg:hidden shrink-0 flex items-center gap-2 px-3 pt-2">
@@ -1173,6 +1189,7 @@ export function ChatPage() {
             "hidden lg:flex min-h-0 h-full",
             canvasSide === "left" ? "lg:order-2" : "lg:order-3",
           )}
+          style={{ viewTransitionName: "canvas-pane" }}
         >
           {citationSidebarOpen ? (
             <ChatCitationSidebar

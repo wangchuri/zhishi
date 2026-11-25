@@ -304,6 +304,14 @@
   0%, 48% { opacity: 1; }
   50%, 100% { opacity: 0; }
 }
+
+/* 对话 / 画布换位（View Transitions）：两栏各自平滑移动 */
+::view-transition-group(chat-pane),
+::view-transition-group(canvas-pane) {
+  animation-duration: 260ms;
+  animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
 .stream-caret {
   display: inline-block;
   width: 2px;

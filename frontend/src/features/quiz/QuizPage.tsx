@@ -682,6 +682,28 @@ export function QuizPage() {
     if (lastResult) advanceOrFinish(lastResult)
   }
 
+  // 移动端左右滑动：左滑到「辅导」，右滑回「题目」（桌面有并排两栏，不需要）
+  const swipeRef = useRef<{ x: number; y: number } | null>(null)
+  const handleTouchStart = (e: React.TouchEvent) => {
+    const t = e.touches[0]
+    if (!t) return
+    swipeRef.current = { x: t.clientX, y: t.clientY }
+  }
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    const start = swipeRef.current
+    swipeRef.current = null
+    if (!start) return
+    if (typeof window === "undefined" || window.innerWidth >= 1024) return
+    if ((session?.mode || "instant") === "deferred") return
+    const t = e.changedTouches[0]
+    if (!t) return
+    const dx = t.clientX - start.x
+    const dy = t.clientY - start.y
+    // 必须明显是横向滑动，避免和题目里的公式/表格横向滚动打架
+    if (Math.abs(dx) < 70 || Math.abs(dx) < Math.abs(dy) * 1.5) return
+    setMobilePane(dx < 0 ? "tutor" : "question")
+  }
+
   /** 回看上一题（不提交、不判题；该题之前答过的话可以重新作答） */
   const handlePrev = () => {
     if (!session || currentIndex <= 0) return
@@ -965,6 +987,8 @@ export function QuizPage() {
           )}
           data-tip-doc={selectedDocumentId || undefined}
           data-tip-doc-name={selectedDocument?.name || undefined}
+          onTouchStart={handleTouchStart}
+          onTouchEnd={handleTouchEnd}
         >
           {/* 手机：题目 / 辅导 二选一，避免「题目 + 420px 辅导」上下堆叠 */}
           {(session.mode || "instant") !== "deferred" && (
