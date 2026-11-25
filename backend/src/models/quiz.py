@@ -32,6 +32,9 @@ class QuizSession(Base):
     group_id: Mapped[str | None] = mapped_column(String(36), index=True)
     title: Mapped[str | None] = mapped_column(String(200))
     status: Mapped[str] = mapped_column(String(20), default="active")  # active/completed
+    # 做题游标：用户当前做到第几题（0-based）。多端/多入口靠它对齐位置，
+    # 比"第一道未答的题"更贴合「继续上次」的语义（跳着答也不会回退）。
+    progress_index: Mapped[int] = mapped_column(Integer, default=0)
     started_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime)
 

@@ -94,6 +94,18 @@ def get_session(session_id: str, db: Session = Depends(get_db)):
     return quiz_service._session_out(db, session)
 
 
+@router.post("/sessions/{session_id}/progress", response_model=quiz_schemas.QuizSession)
+def set_progress(
+    session_id: str,
+    body: quiz_schemas.QuizProgressIn,
+    db: Session = Depends(get_db),
+):
+    """记录做题游标（当前停在第几题），多端/多入口据此对齐位置。"""
+    session = quiz_service.get_session(db, session_id)
+    session = quiz_service.set_progress(db, session, body.index)
+    return quiz_service._session_out(db, session)
+
+
 @router.get("/sessions/recent/by-document/{document_id}")
 def recent_active(document_id: str, db: Session = Depends(get_db)):
     session = quiz_service.get_recent_active_by_document(db, document_id)

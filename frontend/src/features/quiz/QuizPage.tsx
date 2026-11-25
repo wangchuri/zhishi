@@ -164,8 +164,8 @@ export function QuizPage() {
       .then((res) => {
         const s = res as unknown as QuizSession
         setSession(s)
-        // 跳到第一道还没作答的题（比 answered_count 准：跳着答、重复答都不会错位）
-        setCurrentIndex(s.next_index ?? s.answered_count)
+        // 优先用做题游标（多端对齐），其次第一道未答题，最后才是已答数
+        setCurrentIndex(s.progress_index ?? s.next_index ?? s.answered_count)
         setPhase("quiz")
       })
       .catch(() => {
@@ -527,6 +527,18 @@ export function QuizPage() {
     if (selectedDocumentId) loadQuestionList(selectedDocumentId)
   }
 
+  /** 上报做题游标：多端/多入口据此对齐位置 */
+  const reportProgress = useCallback(
+    (index: number) => {
+      const sid = session?.id
+      if (!sid) return
+      void quizApi.setProgress(sid, index).catch(() => {
+        /* 游标同步失败不影响答题 */
+      })
+    },
+    [session?.id],
+  )
+
   const advanceOrFinish = async (result: QuizAnswerResult) => {
     if (!session) return
     const nextIndex = currentIndex + 1
@@ -535,6 +547,7 @@ export function QuizPage() {
       return
     }
     setCurrentIndex(nextIndex)
+    reportProgress(nextIndex)
     setSelectedOption(null)
     setTextAnswer("")
     setBlankAnswers([])
@@ -679,6 +692,7 @@ export function QuizPage() {
       return
     }
     setCurrentIndex(nextIndex)
+    reportProgress(nextIndex)
     setSelectedOption(null)
     setTextAnswer("")
     setBlankAnswers([])

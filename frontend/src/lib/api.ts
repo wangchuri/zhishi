@@ -912,6 +912,15 @@ export const quizApi = {
     return request<any>("GET", `/api/v1/quiz/sessions/${sessionId}`)
   },
 
+  /** 记录做题游标（当前停在第几题），多端/多入口据此对齐 */
+  setProgress(sessionId: string, index: number) {
+    return request<any>(
+      "POST",
+      `/api/v1/quiz/sessions/${encodeURIComponent(sessionId)}/progress`,
+      { index },
+    )
+  },
+
   listActiveSessions() {
     return request<{ sessions: import("@/types").QuizSession[] }>("GET", "/api/v1/quiz/active-sessions")
   },

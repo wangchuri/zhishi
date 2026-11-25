@@ -598,6 +598,23 @@ class QuizService:
         row.href = f"/quiz/session?session_id={sid}"
         db.commit()
 
+    def set_progress(self, db: Session, session: QuizSession, index: int) -> QuizSession:
+        """记录做题游标（用户当前停在第几题），多端/多入口据此对齐位置。"""
+        total = (
+            db.query(QuizSessionQuestion)
+            .filter(QuizSessionQuestion.session_id == session.id)
+            .count()
+        )
+        upper = max(0, total - 1)
+        try:
+            value = int(index)
+        except Exception:
+            return session
+        session.progress_index = max(0, min(value, upper))
+        db.commit()
+        db.refresh(session)
+        return session
+
     def complete_session(self, db: Session, session: QuizSession) -> QuizSession:
         if session.status != "completed":
             session.status = "completed"
@@ -769,6 +786,7 @@ class QuizService:
             "total_questions": len(questions),
             "answered_count": answered,
             "next_index": next_index,
+            "progress_index": int(getattr(session, "progress_index", 0) or 0),
             "started_at": session.started_at.isoformat() if session.started_at else None,
             "finished_at": session.finished_at.isoformat() if session.finished_at else None,
             "questions": questions,
@@ -1078,6 +1096,15 @@ class QuizService:
 
         answered = db.query(QuizAnswer).filter(QuizAnswer.session_id == session.id).count()
         total = db.query(QuizSessionQuestion).filter(QuizSessionQuestion.session_id == session.id).count()
+
+        # 做题游标推进到下一题：多端/多入口（刷题页 vs Tina 面板）据此对齐位置
+        sq = (
+            db.query(QuizSessionQuestion)
+            .filter_by(session_id=session.id, question_id=question_id)
+            .first()
+        )
+        if sq is not None and total > 0:
+            session.progress_index = max(0, min(int(sq.order_index or 0) + 1, total - 1))
 
         session_status = session.status
         if total > 0 and answered >= total and session.status == "active":

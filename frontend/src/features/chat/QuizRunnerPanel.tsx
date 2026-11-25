@@ -101,9 +101,9 @@ export function QuizRunnerPanel({
         const s = res as QuizSession
         setSession(s)
         const total = s.total_questions || 0
-        // 第一道未作答的题；跳着答/重复答时不会错位
+        // 优先用做题游标（多端对齐），其次第一道未答题
         const nextIndex = Math.min(
-          s.next_index ?? (s.answered_count || 0),
+          s.progress_index ?? s.next_index ?? (s.answered_count || 0),
           Math.max(0, total - 1),
         )
         setIndex(nextIndex)
@@ -219,6 +219,10 @@ export function QuizRunnerPanel({
       return
     }
     setIndex(nextIndex)
+    // 上报游标：刷题页/另一端据此对齐位置
+    void quizApi.setProgress(session.id, nextIndex).catch(() => {
+      /* 同步失败不影响答题 */
+    })
     resetInputs()
   }
 
