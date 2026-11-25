@@ -40,3 +40,23 @@ describe("MarkdownWithMath 选项公式渲染", () => {
     expect(container.querySelector(".katex")).toBeTruthy()
   })
 })
+
+describe("MarkdownWithMath 内联 HTML 图示", () => {
+  it("```html 代码块渲染成沙箱 iframe，不再显示成代码块", () => {
+    const { container } = render(
+      <MarkdownWithMath>
+        {"```html\n<svg width=\"40\" height=\"40\"><circle cx=\"20\" cy=\"20\" r=\"18\"/></svg>\n```"}
+      </MarkdownWithMath>
+    )
+    expect(container.querySelector("iframe")).toBeTruthy()
+    expect(container.querySelector("pre")).toBeFalsy()
+  })
+
+  it("普通代码块仍然是 <pre><code>", () => {
+    const { container } = render(
+      <MarkdownWithMath>{"```js\nconst a = 1\n```"}</MarkdownWithMath>
+    )
+    expect(container.querySelector("pre")).toBeTruthy()
+    expect(container.querySelector("iframe")).toBeFalsy()
+  })
+})

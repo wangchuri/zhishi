@@ -1,9 +1,11 @@
 import ReactMarkdown from "react-markdown"
+import type { Components } from "react-markdown"
 import remarkGfm from "remark-gfm"
 import remarkMath from "remark-math"
 import rehypeKatex from "rehype-katex"
 import "katex/dist/katex.min.css"
 import { cn } from "@/lib/utils"
+import { InlineHtmlFrame } from "@/components/blocks/InlineHtmlFrame"
 
 /** 默认 prose 样式，适用于助手消息 / 正文 */
 export const markdownProseClass =
@@ -148,6 +150,42 @@ export function preprocessLatex(content: string): string {
   return result
 }
 
+/**
+ * 把 ```html 代码块换成自定义节点 <zhishi-inline-html data-html="...">。
+ * 直接在 hast 层替换：比在 components.pre/code 里判断可靠（v10 的 pre 拿到的
+ * children 结构不稳定，之前试过判断类型/className 都取不到）。
+ */
+function rehypeInlineHtml() {
+  return (tree: unknown) => {
+    const visit = (node: { children?: unknown[] }) => {
+      if (!Array.isArray(node.children)) return
+      node.children = node.children.map((child: unknown) => {
+        const el = child as {
+          tagName?: string
+          properties?: Record<string, unknown>
+          children?: { tagName?: string; properties?: { className?: unknown }; children?: { value?: string }[] }[]
+        }
+        if (el?.tagName === "pre") {
+          const code = el.children?.find((c) => c?.tagName === "code")
+          const cls = (code?.properties?.className as string[] | undefined)?.join(" ") || ""
+          if (code && /language-html\b/i.test(cls)) {
+            const text = (code.children || []).map((c) => c?.value || "").join("")
+            return {
+              type: "element",
+              tagName: "zhishi-inline-html",
+              properties: { dataHtml: text.replace(/\n$/, "") },
+              children: [],
+            }
+          }
+        }
+        visit(el)
+        return child
+      })
+    }
+    visit(tree as { children?: unknown[] })
+  }
+}
+
 export function MarkdownWithMath({
   children,
   className,
@@ -171,9 +209,13 @@ export function MarkdownWithMath({
     <div className={cn(proseClass, "overflow-x-auto scroll-thin", className)}>
       <ReactMarkdown
         remarkPlugins={[remarkGfm, remarkMath]}
-        rehypePlugins={[rehypeKatex]}
+        rehypePlugins={[rehypeKatex, rehypeInlineHtml]}
         urlTransform={urlTransform}
         components={{
+          // ```html 代码块 → 沙箱渲染成内联图示（简单图案/示意图）
+          "zhishi-inline-html": ({ node }: { node?: { properties?: { dataHtml?: string } } }) => (
+            <InlineHtmlFrame html={String(node?.properties?.dataHtml ?? "")} />
+          ),
           // 宽表格自己横向滚动，别把整页撑宽（手机上尤其明显）
           // 只传 children：避免 react-markdown 的 node 等非 DOM 属性落到 table 上
           table: ({ children }) => (
@@ -192,7 +234,7 @@ export function MarkdownWithMath({
               className="max-w-full h-auto rounded-md"
             />
           ),
-        }}
+        } as Components}
       >
         {processed}
       </ReactMarkdown>
