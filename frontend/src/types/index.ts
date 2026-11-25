@@ -341,6 +341,8 @@ export interface QuizSession {
   group_id?: string | null
   total_questions: number
   answered_count: number
+  /** 下一道该做的题（第一道未作答的序号）；跳着答/重复答时比 answered_count 准 */
+  next_index?: number
   started_at?: string | null
   finished_at?: string | null
   questions: QuizSessionQuestion[]

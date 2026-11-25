@@ -42,6 +42,8 @@ class QuizSession(BaseModel):
     group_id: Optional[str] = None
     total_questions: int = 0
     answered_count: int = 0
+    # 下一道该做的题（第一道未作答的序号），跳着答/重复答时比 answered_count 准
+    next_index: int = 0
     started_at: Optional[datetime] = None
     finished_at: Optional[datetime] = None
     questions: list[QuizSessionQuestion] = []

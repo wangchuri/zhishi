@@ -469,8 +469,19 @@ class QuizService:
         if not ids:
             raise AppError("没有可刷的题目（可能该文档还没有生成题目）")
 
-        if resume and question_ids:
-            existing = self.find_unfinished_by_question_ids(db, ids, document_id=document_id)
+        if resume:
+            # 有明确题集（任务/自定义）→ 按题集找同批题目的未完成会话；
+            # 按文档/章节/条件开的练习 → 找同一本书/同一个组的未完成会话。
+            # 否则手机和平板各点一次「刷题」就会各自新建一场，进度永远对不上。
+            if question_ids:
+                existing = self.find_unfinished_by_question_ids(db, ids, document_id=document_id)
+            else:
+                existing = self.find_recent_unfinished(
+                    db,
+                    document_id=document_id,
+                    group_id=group_id,
+                    collection_id=collection_id,
+                )
             if existing:
                 if task_id:
                     self.bind_quiz_task_session(db, task_id, existing.id)
@@ -493,6 +504,47 @@ class QuizService:
         if task_id:
             self.bind_quiz_task_session(db, task_id, session.id)
         return session
+
+    def find_recent_unfinished(
+        self,
+        db: Session,
+        *,
+        document_id: Optional[str] = None,
+        group_id: Optional[str] = None,
+        collection_id: Optional[str] = None,
+    ) -> Optional[QuizSession]:
+        """同一本书 / 同一个资料组 / 同一个分区里，最近一场还没答完的会话。
+
+        用于「再点一次刷题」时接着上次继续，而不是每次新建一场（否则多设备、
+        或者 Tina 面板和刷题页会各自持有一份互不相通的进度）。
+        """
+        if not (document_id or group_id or collection_id):
+            return None
+
+        q = db.query(QuizSession).filter(QuizSession.status == "active")
+        if document_id:
+            q = q.filter(QuizSession.document_id == document_id)
+        elif group_id:
+            q = q.filter(QuizSession.group_id == group_id)
+        else:
+            q = q.filter(QuizSession.collection_id == collection_id)
+
+        for session in q.order_by(QuizSession.started_at.desc()).limit(10).all():
+            total = (
+                db.query(QuizSessionQuestion)
+                .filter(QuizSessionQuestion.session_id == session.id)
+                .count()
+            )
+            if total <= 0:
+                continue
+            answered = (
+                db.query(QuizAnswer).filter(QuizAnswer.session_id == session.id).count()
+            )
+            if answered < total:
+                return session
+            # 已经答完但状态没更新：顺手收尾，继续找下一场
+            self.complete_session(db, session)
+        return None
 
     def find_unfinished_by_question_ids(
         self,
@@ -691,11 +743,21 @@ class QuizService:
         from .question import question_service
 
         question_service.attach_materials(db, questions)
-        answered = (
-            db.query(QuizAnswer)
+        answered_rows = (
+            db.query(QuizAnswer.question_id)
             .filter(QuizAnswer.session_id == session.id)
-            .count()
+            .all()
         )
+        answered_qids = {r[0] for r in answered_rows}
+        answered = len(answered_qids)
+        # 下一道该做的题：第一道还没作答的（跳着答/重复答时比 answered_count 更准）
+        next_index = 0
+        for i, (sq, _gq) in enumerate(rows):
+            if sq.question_id not in answered_qids:
+                next_index = i
+                break
+        else:
+            next_index = max(0, len(rows) - 1)
         return {
             "id": session.id,
             "title": session.title,
@@ -705,6 +767,7 @@ class QuizService:
             "group_id": session.group_id,
             "total_questions": len(questions),
             "answered_count": answered,
+            "next_index": next_index,
             "started_at": session.started_at.isoformat() if session.started_at else None,
             "finished_at": session.finished_at.isoformat() if session.finished_at else None,
             "questions": questions,
@@ -727,7 +790,8 @@ class QuizService:
 
         multimodal = bool(image_paths)
         if (not user_answer or not user_answer.strip()) and not multimodal:
-            return "wrong", "未作答"
+            # 没作答也没图：直接判错，不必调模型
+            return "", "未作答"
         try:
             type_label = {
                 "fill_blank": "填空题",
@@ -763,7 +827,8 @@ class QuizService:
                 result += content
             return _parse_ai_grade_response(result)
         except Exception:
-            return "wrong", ""
+            # 返回空 status，让调用方决定兜底（填空题退回字符串匹配、主观题判错）
+            return "", ""
 
     async def grade_answer(
         self,
@@ -783,15 +848,16 @@ class QuizService:
 
         if qtype == "fill_blank":
             string_status = _grade_fill_blank_string(question, user_answer)
-            # 带了图（拍的解答）就直接交给模型读 —— 不必先判错、再让用户手点「让 AI 判断」
-            if request_ai_grade or image_paths or file_ids:
-                ai_status, ai_reason = await self._grade_by_ai(
-                    question,
-                    user_answer,
-                    qtype="fill_blank",
-                    image_paths=image_paths,
-                    file_ids=file_ids,
-                )
+            # 填空题一律交给模型判：关键字匹配对同义表达、语序、大小写太苛刻，
+            # 学生明明写对了也会被判错。字符串匹配只留作 AI 不可用时的兜底参考。
+            ai_status, ai_reason = await self._grade_by_ai(
+                question,
+                user_answer,
+                qtype="fill_blank",
+                image_paths=image_paths,
+                file_ids=file_ids,
+            )
+            if ai_status:
                 return ai_status, "ai", string_status, ai_reason or None
             return string_status, "string", string_status, None
 
@@ -803,7 +869,8 @@ class QuizService:
                 image_paths=image_paths,
                 file_ids=file_ids,
             )
-            return ai_status, "ai", None, ai_reason or None
+            # AI 不可用时按错处理（主观题没法用字符串兜底）
+            return (ai_status or "wrong"), "ai", None, ai_reason or None
 
         # single_choice / 其他：字符串匹配
         if not user_answer or not user_answer.strip():
