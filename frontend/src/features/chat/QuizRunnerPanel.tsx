@@ -101,11 +101,8 @@ export function QuizRunnerPanel({
         const s = res as QuizSession
         setSession(s)
         const total = s.total_questions || 0
-        // 优先用做题游标（多端对齐），其次第一道未答题
-        const nextIndex = Math.min(
-          s.progress_index ?? s.next_index ?? (s.answered_count || 0),
-          Math.max(0, total - 1),
-        )
+        // 定位到上次停下的那一题
+        const nextIndex = Math.min(s.progress_index ?? 0, Math.max(0, total - 1))
         setIndex(nextIndex)
         setSelectedOption(null)
         setTextAnswer("")
@@ -132,31 +129,6 @@ export function QuizRunnerPanel({
     }
     onContextChange(quizSessionId, currentQuestion?.question_id ?? null)
   }, [quizSessionId, currentQuestion?.question_id, onContextChange])
-
-  // 同一场练习可能在刷题页也开着：回到页面时同步一次进度
-  useEffect(() => {
-    if (!quizSessionId) return
-    const sync = () => {
-      if (typeof document !== "undefined" && document.visibilityState !== "visible") return
-      quizApi
-        .getSession(quizSessionId)
-        .then((res) => {
-          const s = res as QuizSession
-          setSession((prev) =>
-            prev ? { ...prev, answered_count: s.answered_count, status: s.status } : prev,
-          )
-        })
-        .catch(() => {
-          /* 同步失败不影响答题 */
-        })
-    }
-    document.addEventListener("visibilitychange", sync)
-    window.addEventListener("focus", sync)
-    return () => {
-      document.removeEventListener("visibilitychange", sync)
-      window.removeEventListener("focus", sync)
-    }
-  }, [quizSessionId])
 
   const resetInputs = useCallback(() => {
     setSelectedOption(null)

@@ -766,16 +766,7 @@ class QuizService:
             .filter(QuizAnswer.session_id == session.id)
             .all()
         )
-        answered_qids = {r[0] for r in answered_rows}
-        answered = len(answered_qids)
-        # 下一道该做的题：第一道还没作答的（跳着答/重复答时比 answered_count 更准）
-        next_index = 0
-        for i, (sq, _gq) in enumerate(rows):
-            if sq.question_id not in answered_qids:
-                next_index = i
-                break
-        else:
-            next_index = max(0, len(rows) - 1)
+        answered = len({r[0] for r in answered_rows})
         return {
             "id": session.id,
             "title": session.title,
@@ -785,7 +776,6 @@ class QuizService:
             "group_id": session.group_id,
             "total_questions": len(questions),
             "answered_count": answered,
-            "next_index": next_index,
             "progress_index": int(getattr(session, "progress_index", 0) or 0),
             "started_at": session.started_at.isoformat() if session.started_at else None,
             "finished_at": session.finished_at.isoformat() if session.finished_at else None,

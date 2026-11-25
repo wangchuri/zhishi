@@ -164,8 +164,8 @@ export function QuizPage() {
       .then((res) => {
         const s = res as unknown as QuizSession
         setSession(s)
-        // 优先用做题游标（多端对齐），其次第一道未答题，最后才是已答数
-        setCurrentIndex(s.progress_index ?? s.next_index ?? s.answered_count)
+        // 定位到上次停下的那一题
+        setCurrentIndex(s.progress_index ?? 0)
         setPhase("quiz")
       })
       .catch(() => {
@@ -337,33 +337,6 @@ export function QuizPage() {
   }
 
   const currentQuestion = session?.questions[currentIndex]
-
-  // 多端 / 多入口（刷题页 vs Tina 刷题面板）可能同时刷同一场：
-  // 回到页面时同步一次进度，避免两边显示不一致。不打断当前正在做的题。
-  useEffect(() => {
-    if (phase !== "quiz" || !session?.id) return
-    const sid = session.id
-    const sync = () => {
-      if (typeof document !== "undefined" && document.visibilityState !== "visible") return
-      quizApi
-        .getSession(sid)
-        .then((res) => {
-          const s = res as unknown as QuizSession
-          setSession((prev) =>
-            prev ? { ...prev, answered_count: s.answered_count, status: s.status } : prev,
-          )
-        })
-        .catch(() => {
-          /* 同步失败不影响答题 */
-        })
-    }
-    document.addEventListener("visibilitychange", sync)
-    window.addEventListener("focus", sync)
-    return () => {
-      document.removeEventListener("visibilitychange", sync)
-      window.removeEventListener("focus", sync)
-    }
-  }, [phase, session?.id])
 
   useEffect(() => {
     if (phase !== "quiz" || !currentQuestion || lastResult) {
