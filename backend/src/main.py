@@ -250,6 +250,11 @@ def main() -> None:
         and os.environ.get("ZHISHI_RELOAD", "1").strip().lower() not in {"0", "false", "no"}
     )
     host = "127.0.0.1" if desktop else "0.0.0.0"
+    # 端口可配置：同一台机器跑多个实例时用 ZHISHI_PORT 区分
+    try:
+        port = int(os.environ.get("ZHISHI_PORT", "").strip() or 17777)
+    except ValueError:
+        port = 17777
 
     try:
         os.chdir(runtime_dir())
@@ -281,9 +286,9 @@ def main() -> None:
     sys.stdout.flush()
 
     if desktop or is_frozen():
-        uvicorn.run(app, host=host, port=17777, reload=False, log_level="info")
+        uvicorn.run(app, host=host, port=port, reload=False, log_level="info")
     else:
-        uvicorn.run("src.main:app", host=host, port=17777, reload=reload)
+        uvicorn.run("src.main:app", host=host, port=port, reload=reload)
 
 
 if __name__ == "__main__":

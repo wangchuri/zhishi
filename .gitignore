@@ -124,3 +124,6 @@ code_agent.py
 .tina/
 *.env
 scratch/
+
+# 数据库备份（部署前自动生成，体积大且含用户数据，不入库）
+data/*.db.bak-*
