@@ -278,3 +278,40 @@ def init_db() -> None:
     if _is_sqlite:
         _sync_sqlite_schema()
         _relax_legacy_not_null()
+        _ensure_quiz_answer_unique()
+
+
+def _ensure_quiz_answer_unique() -> None:
+    """同一会话同一题只保留一条答题记录，并加唯一索引。
+
+    多端同时提交同一题时，旧实现「先查后插」会插入两行：answered_count 虚高，
+    出现「手机刷到 100 题、平板显示 80 题」。这里先清理历史重复（保留最新一条），
+    再建唯一索引，从根上避免再插重复。
+    """
+    try:
+        with engine.begin() as conn:
+            tables = {
+                r[0]
+                for r in conn.execute(
+                    text("SELECT name FROM sqlite_master WHERE type='table'")
+                ).fetchall()
+            }
+            if "quiz_answers" not in tables:
+                return
+            removed = conn.execute(
+                text(
+                    "DELETE FROM quiz_answers WHERE rowid NOT IN ("
+                    "  SELECT MAX(rowid) FROM quiz_answers GROUP BY session_id, question_id"
+                    ")"
+                )
+            ).rowcount
+            conn.execute(
+                text(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS uq_quiz_answers_session_question "
+                    "ON quiz_answers(session_id, question_id)"
+                )
+            )
+            if removed:
+                logger.warning("已清理 %s 条重复答题记录（同会话同题）", removed)
+    except Exception:
+        logger.exception("答题记录去重/建唯一索引失败")

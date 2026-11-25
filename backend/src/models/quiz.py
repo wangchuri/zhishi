@@ -5,7 +5,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import DateTime, Integer, String, Text
+from sqlalchemy import DateTime, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from ..core.database import Base
@@ -50,6 +50,11 @@ class QuizAnswer(Base):
     """答题记录。"""
 
     __tablename__ = "quiz_answers"
+    # 同一场会话里一道题只能有一条记录：多端同时提交时，靠这个约束避免插入重复行
+    # （重复行会让 answered_count 虚高，出现「手机 100 题、平板 80 题」）
+    __table_args__ = (
+        UniqueConstraint("session_id", "question_id", name="uq_quiz_answers_session_question"),
+    )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
     # 旧库 quiz_answers.user_id NOT NULL；单用户默认 1

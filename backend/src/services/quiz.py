@@ -11,6 +11,7 @@ import re
 from datetime import datetime, timezone
 from typing import Optional
 
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from ..core.errors import AppError, NotFoundError
@@ -1052,7 +1053,28 @@ class QuizService:
                 attachments=stored_attachments,
             )
             db.add(answer)
-            self.update_ref_stats(db, question_id, ref_doc_id, status)
+            try:
+                db.flush()
+            except IntegrityError:
+                # 另一端刚刚提交了同一题（唯一索引挡住）：改成更新那条，别插重复行
+                db.rollback()
+                dup = (
+                    db.query(QuizAnswer)
+                    .filter_by(session_id=session.id, question_id=question_id)
+                    .first()
+                )
+                if dup is not None:
+                    dup.user_answer = stored_answer
+                    dup.status = status
+                    dup.grade_method = grade_method
+                    dup.string_match_status = string_match_status
+                    dup.ai_reason = ai_reason
+                    dup.time_spent_seconds = time_spent_seconds
+                    dup.answered_at = datetime.now(timezone.utc)
+                else:
+                    raise
+            else:
+                self.update_ref_stats(db, question_id, ref_doc_id, status)
 
         answered = db.query(QuizAnswer).filter(QuizAnswer.session_id == session.id).count()
         total = db.query(QuizSessionQuestion).filter(QuizSessionQuestion.session_id == session.id).count()
