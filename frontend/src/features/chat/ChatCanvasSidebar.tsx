@@ -86,8 +86,10 @@ export function wrapCanvasHtml(fragment: string): string {
       host.style.width='auto';
       host.style.height='auto';
       var pad=16;
-      var availW=Math.max(1, window.innerWidth-pad);
-      var availH=Math.max(1, window.innerHeight-pad);
+      // 用 clientWidth/Height：不含滚动条，避免"量一次、出滚动条、再量一次"的抖动
+      var de=document.documentElement;
+      var availW=Math.max(1, (de.clientWidth||window.innerWidth)-pad);
+      var availH=Math.max(1, (de.clientHeight||window.innerHeight)-pad);
       var w=Math.max(root.scrollWidth, root.offsetWidth, 1);
       var h=Math.max(root.scrollHeight, root.offsetHeight, 1);
       var fit=Math.min(1, availW/w, availH/h);
@@ -111,8 +113,10 @@ export function wrapCanvasHtml(fragment: string): string {
   }
   window.addEventListener('message', function(e){
     var d=e&&e.data;
-    if(!d||d.type!=='zhishi-canvas-zoom') return;
-    setZoom(Number(d.zoom));
+    if(!d) return;
+    if(d.type==='zhishi-canvas-zoom'){ setZoom(Number(d.zoom)); return; }
+    // 父页在侧栏展开/宽度变化后主动让重算一次（首帧常常量在动画中间）
+    if(d.type==='zhishi-canvas-relayout'){ last=-1; layout(); }
   });
   window.addEventListener('wheel', function(e){
     if(!(e.ctrlKey||e.metaKey)) return;
@@ -134,6 +138,8 @@ export function wrapCanvasHtml(fragment: string): string {
   if(window.ResizeObserver){
     try{
       new ResizeObserver(function(){ last=-1; layout(); }).observe(root);
+      // 视口尺寸变了也要重算（侧栏拖宽、换位动画结束时都会变）
+      new ResizeObserver(function(){ last=-1; layout(); }).observe(document.documentElement);
     }catch(e){}
   }
   window.addEventListener('load', function(){ last=-1; layout(); });
@@ -194,9 +200,22 @@ export function ChatHtmlFrame({
     win.postMessage({ type: "zhishi-canvas-zoom", zoom: z }, "*")
   }, [])
 
+  /** 让 iframe 重新量一次：首帧常常量在侧栏展开/换位的动画中间，量出来偏小 */
+  const requestRelayout = useCallback(() => {
+    const win = iframeRef.current?.contentWindow
+    if (!win) return
+    win.postMessage({ type: "zhishi-canvas-relayout" }, "*")
+  }, [])
+
   useEffect(() => {
     postZoom(zoom)
   }, [zoom, canvas.id, postZoom])
+
+  // 加载后补几次重排：0/120/400ms，覆盖侧栏宽度过渡、字体与图片就绪的时机
+  useEffect(() => {
+    const timers = [0, 120, 400].map((ms) => window.setTimeout(requestRelayout, ms))
+    return () => timers.forEach((t) => window.clearTimeout(t))
+  }, [canvas.id, requestRelayout])
 
   useEffect(() => {
     const onMsg = (e: MessageEvent) => {
@@ -217,7 +236,10 @@ export function ChatHtmlFrame({
       sandbox="allow-scripts"
       referrerPolicy="no-referrer"
       srcDoc={wrapCanvasHtml(canvas.html || "")}
-      onLoad={() => postZoom(zoom)}
+      onLoad={() => {
+        postZoom(zoom)
+        requestRelayout()
+      }}
       className="block w-full h-full min-h-0 rounded-[12px] border border-line bg-paper"
     />
   )
