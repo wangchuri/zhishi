@@ -727,27 +727,30 @@ export function ChatPage() {
     }
   }, [searchParams, navigate, sessionReady])
 
-  const handleWidgetResolved = (questionId: string, next: ChatQuestionWidget, followUp: string) => {
-    setMessages((prev) =>
-      prev.map((m) => {
-        if (!m.payload?.widgets?.some((w) => w.question.question_id === questionId)) return m
-        return {
-          ...m,
-          payload: updateWidgetInPayload(m.payload, questionId, next),
-        }
-      })
-    )
-    if (streamingRef.current) {
-      pendingFollowUpRef.current = followUp
-    } else {
-      void sendText(followUp)
-    }
-  }
+  const handleWidgetResolved = useCallback(
+    (questionId: string, next: ChatQuestionWidget, followUp: string) => {
+      setMessages((prev) =>
+        prev.map((m) => {
+          if (!m.payload?.widgets?.some((w) => w.question.question_id === questionId)) return m
+          return {
+            ...m,
+            payload: updateWidgetInPayload(m.payload, questionId, next),
+          }
+        })
+      )
+      if (streamingRef.current) {
+        pendingFollowUpRef.current = followUp
+      } else {
+        void sendText(followUp)
+      }
+    },
+    [sendText],
+  )
 
-  const handleCitationClick = (citation: Citation) => {
+  const handleCitationClick = useCallback((citation: Citation) => {
     setActiveCitation(citation)
     setCitationSidebarOpen(true)
-  }
+  }, [])
 
   const toggleHistorySidebar = () => {
     setSidebarOpen((prev) => {
@@ -829,6 +832,21 @@ export function ChatPage() {
     if (typeof window !== "undefined" && window.innerWidth < 1024) setCanvasFullscreen(true)
     else setCanvasSidebarOpen(true)
   }, [])
+
+  // 传给消息列表的回调必须稳定，否则 ChatMessage 的 memo 失效，打字时整列消息会重渲染（看着像闪）
+  const handleOnboardingAction = useCallback((text: string) => {
+    void sendTextRef.current(text)
+  }, [])
+
+  const handlePlotOpen = useCallback(
+    (plot: ChatPlotPayload) => openCanvasItem({ type: "plot", plot }),
+    [openCanvasItem],
+  )
+
+  const handleCanvasOpen = useCallback(
+    (canvas: ChatHtmlCanvas) => openCanvasItem({ type: "html", canvas }),
+    [openCanvasItem],
+  )
 
   /** 刷题面板：切换会话时同步 item 与后端上下文 */
   const quizPanelHandlers: QuizPanelHandlers = useMemo(
@@ -1030,9 +1048,9 @@ export function ChatPage() {
                       message={m}
                       onCitationClick={handleCitationClick}
                       onWidgetResolved={handleWidgetResolved}
-                      onOnboardingAction={(text) => void sendText(text)}
-                      onPlotOpen={(plot) => openCanvasItem({ type: "plot", plot })}
-                      onCanvasOpen={(canvas) => openCanvasItem({ type: "html", canvas })}
+                      onOnboardingAction={handleOnboardingAction}
+                      onPlotOpen={handlePlotOpen}
+                      onCanvasOpen={handleCanvasOpen}
                       widgetsDisabled={isStreaming}
                       thinkingActive={
                         isStreaming &&

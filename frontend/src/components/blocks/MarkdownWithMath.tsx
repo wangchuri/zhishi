@@ -1,3 +1,4 @@
+import { memo } from "react"
 import ReactMarkdown from "react-markdown"
 import type { Components } from "react-markdown"
 import remarkGfm from "remark-gfm"
@@ -186,7 +187,7 @@ function rehypeInlineHtml() {
   }
 }
 
-export function MarkdownWithMath({
+export const MarkdownWithMath = memo(function MarkdownWithMath({
   children,
   className,
   proseClass = markdownProseClass,
@@ -240,4 +241,4 @@ export function MarkdownWithMath({
       </ReactMarkdown>
     </div>
   )
-}
+})

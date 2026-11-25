@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react"
+import { memo, useEffect, useRef, useState } from "react"
 import { cn } from "@/lib/utils"
 
 const CSP =
@@ -62,7 +62,7 @@ function wrapInlineHtml(fragment: string, maxHeight: number): string {
 </style>
 </head>
 <body><div id="zhishi-inline-fit">${fragment}</div>
-<script>${fitScript}<\/script>
+<script>${fitScript}</script>
 </body>
 </html>`
 }
@@ -71,7 +71,13 @@ function wrapInlineHtml(fragment: string, maxHeight: number): string {
  * 把 ```html 代码块渲染成沙箱 HTML（聊天消息里内联显示）。
  * 和「画布」不同：这里只做简单图案/示意图，不提供缩放、不占用右侧面板。
  */
-export function InlineHtmlFrame({ html, className }: { html: string; className?: string }) {
+export const InlineHtmlFrame = memo(function InlineHtmlFrame({
+  html,
+  className,
+}: {
+  html: string
+  className?: string
+}) {
   const iframeRef = useRef<HTMLIFrameElement>(null)
   const [height, setHeight] = useState(120)
 
@@ -98,4 +104,4 @@ export function InlineHtmlFrame({ html, className }: { html: string; className?:
       style={{ height }}
     />
   )
-}
+})

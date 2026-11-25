@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { memo, useState } from "react"
 import { ChevronDown, ChevronRight, Wrench } from "lucide-react"
 import type { ChatMessage as ChatMessageType, Citation } from "@/types"
 import { CitationCard } from "@/components/blocks/CitationCard"
@@ -213,7 +213,7 @@ function renderChatBlock(
   return null
 }
 
-export function ChatMessage({
+export const ChatMessage = memo(function ChatMessage({
   message,
   className,
   onCitationClick,
@@ -305,4 +305,4 @@ export function ChatMessage({
       </div>
     </div>
   )
-}
+})
