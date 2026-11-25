@@ -132,24 +132,28 @@ export function wrapCanvasHtml(fragment: string): string {
     try{ parent.postMessage({type:'zhishi-canvas-zoom-changed', zoom:userZoom}, '*'); }catch(err){}
   }, {passive:false});
   window.addEventListener('resize', function(){ last=-1; layout(true); });
-  if(window.MutationObserver){
-    try{
-      // 交互改 DOM 时不要重新算缩放，只更新容器尺寸（否则画面会突然缩放）
-      new MutationObserver(function(){ setTimeout(function(){ layout(false); }, 0); }).observe(root,{childList:true,subtree:true});
-    }catch(e){}
-  }
   // 首次量的时候内容常常还没渲染完（图片未加载、画布是脚本画上去的），
   // 那时量出的 scrollWidth/Height 偏小 → fit=1 不缩放，于是"显示 100% 却没适配"；
   // 之后内容变大又不会触发 MutationObserver（图片加载不产生 DOM 变动）。
   // 所以补三种重量触发：元素尺寸变化、load、图片各自 load，以及更长尾的定时。
+  //
+  // 注意：**交互**（点按钮、展开、滑块）引起的 DOM/尺寸变化一律不再 layout ——
+  // 一旦重新量，整块画布就会突然缩放，看起来像"乱掉了"。
   if(window.ResizeObserver){
     try{
-      // 内容自身尺寸变化：首次（还没适配过）要重算；之后交互引起的变化保持当前缩放
+      // 内容自身尺寸变化：只有还没适配过才重算
       new ResizeObserver(function(){
-        if(last<0){ layout(true); } else { layout(false); }
+        if(last<0) layout(true);
       }).observe(root);
-      // 视口尺寸变了也要重算（侧栏拖宽、换位动画结束时都会变）
-      new ResizeObserver(function(){ last=-1; layout(true); }).observe(document.documentElement);
+      // 只有「视口」尺寸真的变了才重算（内容变高不算视口变化）
+      var lastViewW=-1, lastViewH=-1;
+      new ResizeObserver(function(){
+        var de=document.documentElement;
+        var vw=de.clientWidth, vh=de.clientHeight;
+        if(vw===lastViewW && vh===lastViewH) return;
+        lastViewW=vw; lastViewH=vh;
+        last=-1; layout(true);
+      }).observe(document.documentElement);
     }catch(e){}
   }
   window.addEventListener('load', function(){ last=-1; layout(true); });
@@ -164,9 +168,8 @@ export function wrapCanvasHtml(fragment: string): string {
   setTimeout(function(){ layout(true); }, 0);
   setTimeout(function(){ layout(true); }, 120);
   setTimeout(function(){ layout(true); }, 400);
-  setTimeout(function(){ layout(false); }, 1000);
-  setTimeout(function(){ layout(false); }, 2000);
-  setTimeout(function(){ layout(false); }, 3000);
+  setTimeout(function(){ if(last<0) layout(true); }, 1000);
+  setTimeout(function(){ if(last<0) layout(true); }, 2000);
 })();`
 
   return `<!DOCTYPE html>
