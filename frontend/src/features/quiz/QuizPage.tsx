@@ -6,6 +6,7 @@ import {
   CheckCircle2,
   ChevronDown,
   ChevronLeft,
+  ChevronRight,
   FileText,
   HelpCircle,
   Loader2,
@@ -134,6 +135,8 @@ export function QuizPage() {
   const [customAnswers, setCustomAnswers] = useState<Record<string, string>>({})
   const [submitting, setSubmitting] = useState(false)
   const [lastResult, setLastResult] = useState<QuizAnswerResult | null>(null)
+  // 统一结算模式：本题答案已记录，等用户点「下一题」
+  const [deferredSaved, setDeferredSaved] = useState<QuizAnswerResult | null>(null)
   const attachments = useImageAttachments()
   // 手机：题目 / 辅导 二选一（桌面两栏并排）
   const [mobilePane, setMobilePane] = useState<"question" | "tutor">("question")
@@ -434,6 +437,7 @@ export function QuizPage() {
       setTextAnswer("")
       setBlankAnswers([])
       setLastResult(null)
+      setDeferredSaved(null)
       setReviewItems([])
       setResultsSummary(null)
       setQuestionStartTime(Date.now())
@@ -533,6 +537,7 @@ export function QuizPage() {
     setTextAnswer("")
     setBlankAnswers([])
     setLastResult(null)
+    setDeferredSaved(null)
     setReviewItems([])
     setQuestionStartTime(Date.now())
     attachments.clear()
@@ -578,8 +583,8 @@ export function QuizPage() {
           : prev
       )
       if (isDeferred) {
-        // 统一结算模式：不显示判题反馈，直接进入下一题
-        await advanceOrFinish(result)
+        // 统一结算：不判题、不跳题，停在这里等用户点「下一题」
+        setDeferredSaved(result)
         return
       }
       setLastResult(result)
@@ -630,9 +635,12 @@ export function QuizPage() {
       // "我不会" 不展示答案，由 Tutor 窗口进行辅导，
       // 设置 lastResult 让反馈面板显示「已标记「我不会」」
       setLastResult(result)
-      // 发送辅导消息到当前题的 TutorPanel（手机上同时切到「辅导」）
-      setMobilePane("tutor")
-      tutorPanelRef.current?.sendMessage("我不会做这道题，请给我一些提示")
+      // 统一结算模式没有辅导面板，就不用切 tab / 发消息了
+      if ((session.mode || "instant") !== "deferred") {
+        // 发送辅导消息到当前题的 TutorPanel（手机上同时切到「辅导」）
+        setMobilePane("tutor")
+        tutorPanelRef.current?.sendMessage("我不会做这道题，请给我一些提示")
+      }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "标记失败"
       if (isSessionExpiredError(msg)) handleSessionExpired()
@@ -655,9 +663,12 @@ export function QuizPage() {
       notifyCompletedTasks(result)
       setLastResult(result)
       addReviewItem(result, currentQuestion.stem, "我不会")
-      // 手机上同时切到「辅导」，否则讲解发出去了但用户看不到
-      setMobilePane("tutor")
-      tutorPanelRef.current?.sendMessage("这道题我做错了，请帮我讲解一下")
+      // 统一结算模式没有辅导面板，就不用切 tab / 发消息了
+      if ((session.mode || "instant") !== "deferred") {
+        // 手机上同时切到「辅导」，否则讲解发出去了但用户看不到
+        setMobilePane("tutor")
+        tutorPanelRef.current?.sendMessage("这道题我做错了，请帮我讲解一下")
+      }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "标记失败"
       if (isSessionExpiredError(msg)) handleSessionExpired()
@@ -682,6 +693,7 @@ export function QuizPage() {
     setBlankAnswers([])
     setCustomAnswers({})
     setLastResult(null)
+    setDeferredSaved(null)
     setReviewItems([])
     setQuestionStartTime(Date.now())
     attachments.clear()
@@ -704,6 +716,7 @@ export function QuizPage() {
     setBlankAnswers([])
     setCustomAnswers({})
     setLastResult(null)
+    setDeferredSaved(null)
     setReviewItems([])
     setQuestionStartTime(Date.now())
     attachments.clear()
@@ -943,26 +956,34 @@ export function QuizPage() {
 
       {phase === "quiz" && session && currentQuestion && (
         <div
-          className="flex flex-col gap-3 lg:grid lg:grid-cols-[1fr_340px] lg:gap-6 lg:h-[calc(100dvh-9rem)] min-h-0"
+          className={cn(
+            "flex flex-col gap-3 lg:grid lg:gap-6 lg:h-[calc(100dvh-9rem)] min-h-0",
+            // 统一结算模式不需要辅导（没有即时反馈，问了也没意义），题目占满宽度
+            (session.mode || "instant") === "deferred"
+              ? "lg:grid-cols-1"
+              : "lg:grid-cols-[1fr_340px]",
+          )}
           data-tip-doc={selectedDocumentId || undefined}
           data-tip-doc-name={selectedDocument?.name || undefined}
         >
           {/* 手机：题目 / 辅导 二选一，避免「题目 + 420px 辅导」上下堆叠 */}
-          <div className="lg:hidden flex items-center gap-1 rounded-full border border-line bg-paper p-0.5 shrink-0">
-            {([["question", "题目"], ["tutor", "辅导"]] as const).map(([key, label]) => (
-              <button
-                key={key}
-                type="button"
-                onClick={() => setMobilePane(key)}
-                className={cn(
-                  "flex-1 h-8 rounded-full text-small font-medium transition-colors",
-                  mobilePane === key ? "bg-sea text-paper" : "text-ink-soft",
-                )}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
+          {(session.mode || "instant") !== "deferred" && (
+            <div className="lg:hidden flex items-center gap-1 rounded-full border border-line bg-paper p-0.5 shrink-0">
+              {([["question", "题目"], ["tutor", "辅导"]] as const).map(([key, label]) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => setMobilePane(key)}
+                  className={cn(
+                    "flex-1 h-8 rounded-full text-small font-medium transition-colors",
+                    mobilePane === key ? "bg-sea text-paper" : "text-ink-soft",
+                  )}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
           <div
             className={cn(
               "bg-surface border border-line-soft rounded-lg shadow-xs flex-col min-h-0 overflow-hidden",
@@ -1055,7 +1076,7 @@ export function QuizPage() {
                 blankAnswers={blankAnswers}
                 customAnswers={customAnswers}
                 lastResult={lastResult}
-                submitting={submitting}
+                submitting={submitting || Boolean(deferredSaved)}
                 documentId={session?.document_id ?? null}
                 onSelectOption={setSelectedOption}
                 onTextAnswerChange={setTextAnswer}
@@ -1086,7 +1107,25 @@ export function QuizPage() {
                     上次本题用时 {formatDuration(currentQuestion.last_time_spent_seconds)}
                   </p>
                 )}
-              {!lastResult ? (
+              {deferredSaved ? (
+                <div className="flex flex-wrap items-center gap-3">
+                  <span className="text-small text-ink-secondary">
+                    已记录，最后统一判题
+                  </span>
+                  <Button
+                    variant="primary"
+                    size="md"
+                    onClick={() => {
+                      const r = deferredSaved
+                      setDeferredSaved(null)
+                      void advanceOrFinish(r)
+                    }}
+                  >
+                    下一题
+                    <ChevronRight className="w-4 h-4" strokeWidth={2} />
+                  </Button>
+                </div>
+              ) : !lastResult ? (
                 <>
                   {isAiGradedQuestion(currentQuestion.question_type) &&
                     attachments.ids.length === 0 &&
@@ -1153,20 +1192,22 @@ export function QuizPage() {
             </>
           </div>
 
-          <div
-            className={cn(
-              "flex-col min-h-0 overflow-hidden",
-              mobilePane === "tutor" ? "flex h-[65dvh]" : "hidden lg:flex lg:h-full",
-            )}
-          >
-            <TutorPanel
-              ref={tutorPanelRef}
-              key={currentQuestion.question_id}
-              questionId={currentQuestion.question_id}
-              quizSessionId={session.id}
-              className="flex-1 min-h-0"
-            />
-          </div>
+          {(session.mode || "instant") !== "deferred" && (
+            <div
+              className={cn(
+                "flex-col min-h-0 overflow-hidden",
+                mobilePane === "tutor" ? "flex h-[65dvh]" : "hidden lg:flex lg:h-full",
+              )}
+            >
+              <TutorPanel
+                ref={tutorPanelRef}
+                key={currentQuestion.question_id}
+                questionId={currentQuestion.question_id}
+                quizSessionId={session.id}
+                className="flex-1 min-h-0"
+              />
+            </div>
+          )}
         </div>
       )}
       {phase === "quiz" && reviewItems.length > 0 && (
