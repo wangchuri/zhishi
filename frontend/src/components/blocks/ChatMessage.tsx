@@ -80,6 +80,7 @@ function ReasoningBlock({
         <div
           className={cn(
             "mt-1 p-2 rounded border text-small leading-relaxed whitespace-pre-wrap",
+            "break-words",
             crimson
               ? "bg-danger-soft border-danger/20 text-danger"
               : "bg-ink-tertiary/5 border-line-soft text-ink-soft",
@@ -234,7 +235,8 @@ export const ChatMessage = memo(function ChatMessage({
     const images = message.attachments || []
     return (
       <div className={cn("animate-msg-in", className)}>
-        <div className="bg-sea text-paper rounded-[4px] px-4 py-2.5 text-body leading-relaxed space-y-2">
+        {/* break-words：用户贴长链接/长串时别把气泡撑出屏幕 */}
+        <div className="bg-sea text-paper rounded-[4px] px-4 py-2.5 text-body leading-relaxed space-y-2 break-words">
           {images.length > 0 && <MessageImages ids={images} />}
           {message.content}
         </div>

@@ -1030,7 +1030,7 @@ export function ChatPage() {
           <div
             ref={scrollRef}
             onScroll={onChatScroll}
-            className="flex-1 overflow-y-auto scroll-thin px-4 sm:px-8 py-5 sm:py-6 [overflow-anchor:none]"
+            className="flex-1 overflow-y-auto overflow-x-hidden scroll-thin px-4 sm:px-8 py-5 sm:py-6 [overflow-anchor:none]"
           >
             <div className="max-w-[860px] mx-auto space-y-4">
               {loadingHistory ? (

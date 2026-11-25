@@ -16,11 +16,14 @@ if (!window.matchMedia) {
 }
 
 if (!window.ResizeObserver) {
-  window.ResizeObserver = vi.fn().mockImplementation(() => ({
-    observe: vi.fn(),
-    unobserve: vi.fn(),
-    disconnect: vi.fn(),
-  }))
+  // 必须是真的 class：组件里是 `new ResizeObserver(...)`，
+  // 用 vi.fn() 当构造器会抛 "is not a constructor"
+  class ResizeObserverMock {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  }
+  window.ResizeObserver = ResizeObserverMock as unknown as typeof ResizeObserver
 }
 
 // 每个测试前清空 localStorage，保证 api 地址等状态隔离
