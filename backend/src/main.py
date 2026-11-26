@@ -53,6 +53,12 @@ _FRONTEND_DIST = frontend_dist_dir()
 
 app = FastAPI(title="知拾", version="0.1.0")
 
+# 插件接口必须在开始服务前挂上（内置插件是纯 Python 注册，毫秒级；
+# MCP 走 warmup_async 在后台连，不拖慢启动）
+from .plugins.registry import plugin_registry as _plugin_registry
+
+_plugin_registry.mount_routes(app)
+
 
 @app.exception_handler(AppError)
 async def _app_error_handler(request: Request, exc: AppError):

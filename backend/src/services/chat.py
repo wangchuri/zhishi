@@ -302,9 +302,9 @@ class ToolBundle:
 def _with_plugins(base):
     """把插件工具包挂到基础工具后面。
 
-    插件的工具名是 ``mcp_<server>_<tool>``，和内置的 ``chat_*`` / ``onboard_*``
-    不会重名；tina 的 ``Tools.__iadd__`` 会再做一次冲突检查。
-    插件没配或加载失败时原样返回，绝不影响正常对话。
+    插件工具名是 ``<plugin_id>_<fn>``（内置）或 ``mcp_<server>_<tool>``（MCP），
+    和内置的 ``chat_*`` / ``onboard_*`` 不会重名；tina 的 ``Tools.__iadd__``
+    会再做一次冲突检查。插件没配或加载失败时原样返回，绝不影响正常对话。
     """
     try:
         from ..plugins.registry import plugin_registry
@@ -313,11 +313,10 @@ def _with_plugins(base):
     except Exception:
         logger.warning("加载插件工具失败", exc_info=True)
         return base
-    if plugin_tools is None:
+    if not plugin_tools:
         return base
-    if isinstance(base, list):
-        return [*base, plugin_tools]
-    return [base, plugin_tools]
+    base_list = list(base) if isinstance(base, list) else [base]
+    return [*base_list, *plugin_tools]
 
 
 def _plugin_mcp_client():

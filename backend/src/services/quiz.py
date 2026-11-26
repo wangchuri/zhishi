@@ -747,9 +747,12 @@ class QuizService:
             .all()
         }
         image_base = document_image_base(session.document_id)
+        # 插件钩子：英文题挂发音按钮 / 生词（只算一次，别在循环里 import）
+        from ..plugins.hooks import emit_entity
+
         questions = []
         for sq, gq in rows:
-            questions.append({
+            item = {
                 "question_id": gq.id,
                 "order_index": sq.order_index,
                 "stem": absolutize_image_refs(gq.stem or "", image_base),
@@ -764,7 +767,8 @@ class QuizService:
                 # 本会话里这题是否已答：前端据此定位到第一道未答题，
                 # 而不是用「最后答的题」当游标（回看旧题会让进度看起来倒退）
                 "answered": gq.id in answered_ids,
-            })
+            }
+            questions.append(emit_entity("question", item))
         # 材料题：带上材料正文，供前端在题目上方展示
         from .question import question_service
 

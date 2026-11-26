@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react"
 import { ArrowLeft, ChevronRight, HelpCircle, Loader2, SkipForward } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { EntityExtensionsView } from "@/components/blocks/EntityExtensions"
 import { quizApi } from "@/lib/api"
 import { QuizQuestionInput } from "@/features/quiz/QuizQuestionInput"
 import { QuizAnswerFeedback } from "@/features/quiz/QuizAnswerFeedback"
@@ -295,6 +296,8 @@ export function QuizRunnerPanel({
             {error}
           </div>
         )}
+        {/* 插件扩展槽：英文题出现发音按钮 / 生词 chip */}
+        <EntityExtensionsView extensions={currentQuestion.extensions} />
         <QuizQuestionInput
           question={currentQuestion}
           selectedOption={selectedOption}

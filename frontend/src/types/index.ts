@@ -195,6 +195,49 @@ export interface QuestionOption {
   text: string
 }
 
+/** 插件扩展槽里的音频项：有 src 就播音频文件，没有就用浏览器 TTS 朗读 text */
+export interface EntityAudio {
+  label?: string
+  /** 音频地址（真人录音 / 云端 TTS）；为空时退回浏览器 speechSynthesis */
+  src?: string
+  /** 要朗读的文本 */
+  text?: string
+  /** BCP-47，如 en-US */
+  lang?: string
+}
+
+/** 插件扩展槽里的词条（点一下发音） */
+export interface EntityWord {
+  word: string
+  phonetic?: string
+  meaning?: string
+  audio?: EntityAudio
+}
+
+/** 插件扩展槽里的词典卡 */
+export interface EntityDict {
+  word: string
+  phonetic?: string
+  meanings?: string[]
+  examples?: string[]
+}
+
+/**
+ * 单个插件的扩展数据。
+ *
+ * 前端不认识具体插件，只按这些固定键渲染（见 components/blocks/EntityExtensions.tsx）。
+ * 插件想出新花样时，要么复用已有键，要么在这里加一个新键 + 一个内置渲染器。
+ */
+export interface EntityExtensionData {
+  audio?: EntityAudio[]
+  words?: EntityWord[]
+  dict?: EntityDict
+  [key: string]: unknown
+}
+
+/** 实体（题目/材料/tip/消息）上的插件扩展槽：{plugin_id: data} */
+export type EntityExtensions = Record<string, EntityExtensionData>
+
 /** 题目 */
 export interface Question {
   id: string
@@ -216,6 +259,8 @@ export interface Question {
   material_id?: string | null
   sub_index?: number | null
   material?: QuizQuestionMaterial | null
+  /** 插件扩展槽（英文题的发音按钮、生词等），由后端插件钩子填 */
+  extensions?: EntityExtensions | null
 }
 
 /** 题目列表（含做题统计） */
@@ -308,6 +353,8 @@ export interface QuizSessionQuestion {
   last_time_spent_seconds?: number | null
   /** 本会话里这题是否已答：用于定位「第一道未答题」 */
   answered?: boolean
+  /** 插件扩展槽（英文题的发音按钮 / 生词），由后端插件钩子填 */
+  extensions?: EntityExtensions | null
 }
 
 export interface QuizQuestionMaterial {

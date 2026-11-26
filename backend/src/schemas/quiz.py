@@ -33,6 +33,9 @@ class QuizSessionQuestion(BaseModel):
     last_time_spent_seconds: Optional[int] = None
     # 本会话里这题是否已答：前端据此定位「接着往下做」的位置
     answered: bool = False
+    # 插件扩展槽（英文题的发音按钮 / 生词）。必须在 schema 里声明，
+    # 否则 response_model 会把 _session_out 里塞的 extensions 裁掉。
+    extensions: Optional[dict] = None
 
 
 class QuizSession(BaseModel):

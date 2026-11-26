@@ -1,6 +1,7 @@
 import { useState } from "react"
 import { Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { EntityExtensionsView } from "@/components/blocks/EntityExtensions"
 import { QuizQuestionInput } from "@/features/quiz/QuizQuestionInput"
 import { QuizAnswerFeedback } from "@/features/quiz/QuizAnswerFeedback"
 import { quizApi } from "@/lib/api"
@@ -134,6 +135,8 @@ export function ChatQuestionCard({
           {widget.question.document_name}
         </div>
       )}
+      {/* 插件扩展槽：英文题会出现发音按钮和生词 chip（插件不碰前端，只出数据） */}
+      <EntityExtensionsView extensions={q.extensions} className="mb-2" />
       <QuizQuestionInput
         question={q}
         selectedOption={selectedOption}

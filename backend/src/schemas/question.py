@@ -50,6 +50,10 @@ class Question(BaseModel):
     material_id: Optional[str] = None
     sub_index: Optional[int] = None
     material: Optional[QuestionMaterial] = None
+    # 插件扩展槽：{plugin_id: {audio: [...], words: [...], dict: {...}, ...}}
+    # 前端不认识具体插件，只按固定键渲染（见 EntityExtensions.tsx）。
+    # 必须在 schema 里声明——FastAPI 的 response_model 会把没声明的字段裁掉。
+    extensions: Optional[dict] = None
 
 
 class QuestionListResult(BaseModel):

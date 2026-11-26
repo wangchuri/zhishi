@@ -109,7 +109,7 @@ def format_question_for_agent(
 
 def _public_question(gq: GlobalQuestion, doc_id: Optional[str], doc_name: Optional[str]) -> dict:
     options = json.loads(gq.options) if gq.options else []
-    return {
+    payload = {
         "question_id": gq.id,
         "stem": gq.stem,
         "question_type": gq.question_type,
@@ -121,6 +121,10 @@ def _public_question(gq: GlobalQuestion, doc_id: Optional[str], doc_name: Option
         "document_name": doc_name,
         "tags": parse_tags(gq.tags),
     }
+    # 插件钩子：英文题挂发音按钮 / 生词（前端用内置渲染器画，插件不碰前端）
+    from ..plugins.hooks import emit_entity
+
+    return emit_entity("question", payload)
 
 
 class ChatTools:

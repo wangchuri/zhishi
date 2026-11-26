@@ -17,21 +17,26 @@ pdf_parse_policy: smart
 mineru_install_dir: ""
 mineru_idle_seconds: 600
 
-# ── 插件（外部 MCP server）───────────────────────────────
-# 每个插件 = 一个 MCP server，工具名会变成 mcp_<id>_<tool>，Tina 可以直接调用。
-# 支持三种传输：stdio（本地子进程）、http（Streamable HTTP）、sse（旧版）。
-# 改完调 POST /api/v1/system/plugins/reload 即可生效，不用重启后端。
-# 单用户自托管：插件跑在你自己机器上，等同于自己 pip install，不做沙箱。
+# ── 插件 ──────────────────────────────────────────────────
+# 两种来源，都是本机单用户、不做沙箱（等同于自己 pip install）：
 #
-# plugins:
+# 1) 内置插件（plugins/builtin/<id>/）：主推形态。能注册后端接口、Agent 工具、
+#    钩子、提示词补充；给实体挂 extensions 后前端用内置渲染器画（发音按钮、
+#    生词 chip、词典卡）。改完 POST /api/v1/system/plugins/reload 生效。
+# 2) MCP server：逃生口，默认空。想接 Notion / Obsidian / 某个学校服务时加一行。
+plugins:
+  builtin:
+    # 英语：英文题挂发音按钮（浏览器 TTS，离线可用）和生词 chip
+    english: true
+  mcp_servers: []
+#
+# MCP 配置示例（需要 node/npx 或远程服务时取消注释）：
 #   mcp_servers:
-#     # 例子 1：本地文件系统（需要 node/npx）
 #     - id: files
 #       type: stdio
 #       command: npx
 #       args: ["-y", "@modelcontextprotocol/server-filesystem", "D:/notes"]
 #       enabled: false
-#     # 例子 2：远程 HTTP 服务
 #     - id: school
 #       type: http
 #       url: https://example.com/mcp
@@ -39,5 +44,3 @@ mineru_idle_seconds: 600
 #         Authorization: "Bearer xxx"
 #       enabled: false
 #       timeout: 15
-plugins:
-  mcp_servers: []

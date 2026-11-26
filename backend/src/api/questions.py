@@ -24,6 +24,24 @@ def _questions_per_page(value: Optional[int], default: int = 3) -> int:
     return max(0, int(value))
 
 
+def _apply_question_extensions(data):
+    """给题目应用插件钩子（英文题挂发音按钮 / 生词）。
+
+    钩子是原地改 payload 的 ``extensions`` 槽；插件抛异常只会记日志，
+    这里不需要 try——``hooks.emit`` 已经吞掉了。
+    """
+    from ..plugins.hooks import emit_entity
+
+    questions = data.get("questions") if isinstance(data, dict) else None
+    if isinstance(questions, list):
+        for item in questions:
+            if isinstance(item, dict):
+                emit_entity("question", item)
+    elif isinstance(data, dict) and data.get("id"):
+        emit_entity("question", data)
+    return data
+
+
 @router.get("", response_model=q_schemas.QuestionListResult)
 def list_questions(
     document_id: Optional[str] = None,
@@ -39,7 +57,7 @@ def list_questions(
         keyword=keyword,
         group_id=group_id,
     )
-    return data
+    return _apply_question_extensions(data)
 
 
 @router.post("/generate-from-pages", response_model=q_schemas.PageQuestionResult)
@@ -161,7 +179,7 @@ async def job_stream(websocket: WebSocket, job_id: str):
 
 @router.get("/{question_id}")
 def get_question(question_id: str, db: Session = Depends(get_db)):
-    return question_service.get_question(db, question_id)
+    return _apply_question_extensions(question_service.get_question(db, question_id))
 
 
 @router.delete("", response_model=q_schemas.DeleteResult)
