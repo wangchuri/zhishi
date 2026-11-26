@@ -212,6 +212,8 @@ export interface EntityWord {
   phonetic?: string
   meaning?: string
   audio?: EntityAudio
+  /** 词典接口地址；点开词条时才请求（钩子里不查，避免首屏卡住） */
+  dictUrl?: string
 }
 
 /** 插件扩展槽里的词典卡 */

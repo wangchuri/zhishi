@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react"
 import { useNavigate } from "react-router-dom"
-import { Server, Wifi, WifiOff, UserRound, Sparkles, ListTodo, FileScan, HardDrive } from "lucide-react"
+import { Server, Wifi, WifiOff, UserRound, Sparkles, ListTodo, FileScan, HardDrive, Puzzle, ChevronRight } from "lucide-react"
 import { toast } from "sonner"
 import { AppShell } from "@/components/layout/AppShell"
 import { PageHeader } from "@/components/blocks/PageHeader"
@@ -246,6 +246,24 @@ export function SettingsPage() {
       <PageHeader title="设置" subtitle="个人信息和连接" />
 
       <div className="space-y-5">
+        {/* 插件入口：按领域扩展 Tina 的能力 */}
+        <button
+          type="button"
+          onClick={() => navigate("/settings/plugins")}
+          className="w-full flex items-center gap-3 rounded-lg border border-line bg-paper px-4 py-3 text-left transition-colors hover:border-sea/40 hover:bg-paper-2/50"
+        >
+          <div className="w-8 h-8 rounded-md bg-sea-subtle text-sea flex items-center justify-center shrink-0">
+            <Puzzle className="w-4 h-4" strokeWidth={2} />
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="text-body font-medium text-ink">插件</div>
+            <div className="text-caption text-ink-tertiary">
+              按领域扩展能力：发音、词典、判题器、复习算法
+            </div>
+          </div>
+          <ChevronRight className="w-4 h-4 text-ink-disabled shrink-0" strokeWidth={2} />
+        </button>
+
         <Card className="overflow-hidden">
           <div className="flex items-center gap-3 px-5 py-3.5 border-b border-line-light bg-paper-2/50">
             <div className="w-8 h-8 rounded-md bg-sea-subtle text-sea flex items-center justify-center">

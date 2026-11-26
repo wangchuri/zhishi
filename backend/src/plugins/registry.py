@@ -263,16 +263,31 @@ class PluginRegistry:
     # ---- 状态（设置页 / 排查用）----
 
     def status(self) -> dict:
-        self._ensure_loaded()
-        builtin = [
-            {
-                "plugin_id": pid,
-                "routes": [path for path, _h, _m in api.routes],
-                "tools": api.tools.tools_names,
-                "prompt": bool(api.prompt_parts),
-            }
-            for pid, api in self._apis.items()
-        ]
+        """插件状态（设置页用）。
+
+        只同步加载内置插件（毫秒级）；MCP 由启动时的 warmup_async 在后台连，
+        这里只报当前已连上的，不为了看一眼状态去等 15 秒超时。
+        """
+        self._ensure_builtin()
+        from .builtin import BUILTIN_PLUGINS, iter_builtin
+
+        all_meta = {pid: meta for pid, meta, _fn in iter_builtin()}
+        builtin = []
+        for plugin_id in BUILTIN_PLUGINS:
+            meta = all_meta.get(plugin_id) or {}
+            api = self._apis.get(plugin_id)
+            builtin.append(
+                {
+                    "plugin_id": plugin_id,
+                    "name": meta.get("name") or plugin_id,
+                    "description": meta.get("description") or "",
+                    "enabled": api is not None,
+                    "routes": [path for path, _h, _m in api.routes] if api else [],
+                    "tools": api.tools.tools_names if api else [],
+                    "prompt": bool(api.prompt_parts) if api else False,
+                }
+            )
+
         mcp_servers: dict[str, list[str]] = {}
         if self._mcp_tools is not None:
             for tool in self._mcp_tools.tools:
@@ -294,7 +309,10 @@ class PluginRegistry:
         }
 
     def reload(self) -> None:
-        """改完配置后重建（会断开 MCP 会话、清掉钩子）。"""
+        """改完配置后重建（会断开 MCP 会话、清掉钩子）。
+
+        管理员主动操作，所以这里**同步**加载（含 MCP），让调用方拿到最新状态。
+        """
         with self._lock:
             if self._client is not None:
                 try:
@@ -311,6 +329,7 @@ class PluginRegistry:
             self._mcp_tools = None
             self._mcp_errors = []
             self._mcp_loaded = False
+        self._ensure_loaded()
 
 
 plugin_registry = PluginRegistry()

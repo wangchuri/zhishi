@@ -1,5 +1,5 @@
 import { memo, useCallback, useEffect, useRef, useState } from "react"
-import { Pause, Volume2 } from "lucide-react"
+import { Loader2, Pause, Volume2 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { canSpeak, speakText, stopSpeaking } from "@/lib/speech"
 import type { EntityAudio, EntityExtensionData, EntityExtensions, EntityWord } from "@/types"
@@ -107,10 +107,15 @@ export const AudioButton = memo(function AudioButton({
 
 // ---- 词条 chip ----
 
-/** 生词 chip：点一下念，有音标/释义时点「?」展开 */
+/** 生词 chip：点一下念，点「?」查音标和释义（有 dictUrl 时按需请求） */
 export const WordChip = memo(function WordChip({ word }: { word: EntityWord }) {
   const [open, setOpen] = useState(false)
   const [playing, setPlaying] = useState(false)
+  const [loading, setLoading] = useState(false)
+  // 钩子没给释义时，点开才去查（避免首屏一次查几十个词）
+  const [fetched, setFetched] = useState<{ phonetic?: string; meanings?: string[] } | null>(
+    null,
+  )
   useStopOnUnmount()
 
   const speakWord = useCallback(() => {
@@ -127,10 +132,38 @@ export const WordChip = memo(function WordChip({ word }: { word: EntityWord }) {
     if (ok) setPlaying(true)
   }, [word.audio, word.word])
 
-  const detail = [word.phonetic, word.meaning].filter(Boolean).join(" ")
+  const inlineDetail = [word.phonetic, word.meaning].filter(Boolean).join(" ")
+  const hasDetail = Boolean(inlineDetail) || Boolean(word.dictUrl)
+
+  const toggleDetail = useCallback(async () => {
+    if (open) {
+      setOpen(false)
+      return
+    }
+    setOpen(true)
+    if (fetched || inlineDetail || !word.dictUrl) return
+    setLoading(true)
+    try {
+      const res = await fetch(word.dictUrl)
+      if (res.ok) {
+        const data = (await res.json()) as { phonetic?: string; meanings?: string[] }
+        setFetched({
+          phonetic: data.phonetic || undefined,
+          meanings: Array.isArray(data.meanings) ? data.meanings : [],
+        })
+      }
+    } catch {
+      // 查词失败就只显示发音，不打扰用户
+    } finally {
+      setLoading(false)
+    }
+  }, [fetched, inlineDetail, open, word.dictUrl])
+
+  const detail = inlineDetail
+  const meanings = fetched?.meanings ?? []
 
   return (
-    <span className="inline-flex items-center gap-0.5 rounded-full border border-line-soft bg-paper">
+    <span className="inline-flex flex-wrap items-center gap-0.5 rounded-full border border-line-soft bg-paper">
       <button
         type="button"
         onClick={speakWord}
@@ -143,18 +176,23 @@ export const WordChip = memo(function WordChip({ word }: { word: EntityWord }) {
         <Volume2 className="w-3 h-3" strokeWidth={2} />
         <span className="font-medium">{word.word}</span>
       </button>
-      {detail ? (
+      {hasDetail ? (
         <button
           type="button"
-          onClick={() => setOpen((v) => !v)}
+          onClick={() => void toggleDetail()}
           title="音标 / 释义"
           className="h-6 px-1.5 text-caption text-ink-tertiary hover:text-ink-soft"
         >
-          {open ? "×" : "?"}
+          {loading ? <Loader2 className="w-3 h-3 animate-spin" strokeWidth={2} /> : open ? "×" : "?"}
         </button>
       ) : null}
-      {open && detail ? (
-        <span className="px-1.5 text-caption text-ink-tertiary">{detail}</span>
+      {open ? (
+        <span className="px-1.5 pb-0.5 text-caption text-ink-tertiary">
+          {detail || fetched?.phonetic ? (
+            <span className="mr-1">{detail || fetched?.phonetic}</span>
+          ) : null}
+          {meanings.length ? meanings.join("；") : loading ? "查询中…" : detail ? "" : "没查到释义"}
+        </span>
       ) : null}
     </span>
   )

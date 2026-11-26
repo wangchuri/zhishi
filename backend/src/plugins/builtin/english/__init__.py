@@ -73,7 +73,11 @@ def _keywords(text: str, limit: int = _MAX_WORDS) -> list[str]:
 
 
 def attach_english_extras(payload: dict) -> dict:
-    """钩子：题目要发给前端前，英文题挂上发音按钮和生词。"""
+    """钩子：题目要发给前端前，英文题挂上发音按钮和生词。
+
+    **不在这里查词典**——题目列表一次 20 题、每题好几个生词，同步查会拖慢首屏。
+    只给每个词一个 ``dictUrl``，用户点开时才查（见 ``dict.py``）。
+    """
     if not isinstance(payload, dict):
         return payload
 
@@ -95,7 +99,13 @@ def attach_english_extras(payload: dict) -> dict:
     words = _keywords(sample)
     if words:
         data["words"] = [
-            {"word": word, "audio": {"text": word, "lang": "en-US"}} for word in words
+            {
+                "word": word,
+                "audio": {"text": word, "lang": "en-US"},
+                # 前端点开时才请求，避免首屏一次查几十个词
+                "dictUrl": f"/api/v1/plugins/{PLUGIN['id']}/dict?word={word}",
+            }
+            for word in words
         ]
 
     if not data:
@@ -103,7 +113,15 @@ def attach_english_extras(payload: dict) -> dict:
     return add_extension(payload, PLUGIN["id"], data)
 
 
+def dict_endpoint(word: str = "") -> dict:
+    """GET /api/v1/plugins/english/dict?word=xxx —— 查音标和中文释义。"""
+    from .dict import lookup
+
+    return lookup(word)
+
+
 def register(api) -> None:
+    api.route("/dict", dict_endpoint)
     api.on("question.presented", attach_english_extras)
     api.prompt_section(
         "用户问到英语题时：先说明题干在问什么，讲生词给中文释义，"

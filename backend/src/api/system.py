@@ -101,23 +101,46 @@ def put_mineru_settings(body: MineruSettingsUpdate) -> MineruSettingsOut:
     return _mineru_out()
 
 
-# ---- 插件（MCP server）----
+# ---- 插件（内置领域插件 + MCP）----
 
 
 @router.get("/plugins")
 def get_plugins() -> dict:
-    """插件状态：已连接的 MCP server 和它们提供的工具。
-
-    配置写在 ``config.yml`` 的 ``plugins.mcp_servers`` 里，本机单用户，不做鉴权分级。
-    """
+    """插件状态：内置插件的接口/工具/开关，MCP server 的连接情况。"""
     from ..plugins.registry import plugin_registry
 
     return plugin_registry.status()
 
 
+class PluginToggle(BaseModel):
+    enabled: bool
+
+
+@router.put("/plugins/{plugin_id}")
+def set_plugin_enabled(plugin_id: str, body: PluginToggle) -> dict:
+    """开关一个内置插件（写回 config.yml 并重载，不用重启后端）。"""
+    from ..plugins.builtin import BUILTIN_PLUGINS
+    from ..plugins.registry import plugin_registry
+
+    if plugin_id not in BUILTIN_PLUGINS:
+        raise AppError(f"没有这个内置插件：{plugin_id}")
+
+    plugins = dict(config.plugins)
+    builtin = dict(plugins.get("builtin") or {})
+    builtin[plugin_id] = bool(body.enabled)
+    plugins["builtin"] = builtin
+    try:
+        config.update_values({"plugins": plugins})
+    except OSError as e:
+        raise AppError(f"写入配置文件失败: {e}") from e
+
+    plugin_registry.reload()
+    return plugin_registry.status()
+
+
 @router.post("/plugins/reload")
 def reload_plugins() -> dict:
-    """重新读配置并重连 MCP server（改完 config.yml 不用重启后端）。
+    """重新读配置并重连（改完 config.yml 不用重启后端）。
 
     注意：会断开现有 MCP 会话；正在进行的对话不受影响（它们已经拿到工具表）。
     """

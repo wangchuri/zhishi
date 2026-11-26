@@ -14,6 +14,7 @@ import { LearningAnalyticsPage } from "@/features/learning/LearningAnalyticsPage
 import { TargetedTrainingPage } from "@/features/learning/TargetedTrainingPage"
 import { ProfilePage } from "@/features/profile/ProfilePage"
 import { SettingsPage } from "@/features/settings/SettingsPage"
+import { PluginsPage } from "@/features/settings/PluginsPage"
 import { ServerSetupPage } from "@/features/setup/ServerSetupPage"
 import { LoginPage } from "@/features/auth/LoginPage"
 import { AuthScaffold } from "@/components/layout/AuthScaffold"
@@ -90,6 +91,7 @@ export function AppRoutes() {
       <Route path="/plans" element={<Navigate to="/" replace />} />
       <Route path="/profile" element={<RequireServer><ProfilePage /></RequireServer>} />
       <Route path="/settings" element={<RequireServer><SettingsPage /></RequireServer>} />
+      <Route path="/settings/plugins" element={<RequireServer><PluginsPage /></RequireServer>} />
       <Route path="/quiz" element={<RequireServer><QuizBookListPage /></RequireServer>} />
       <Route path="/quiz/practice" element={<RequireServer><QuizPracticePage /></RequireServer>} />
       <Route path="/quiz/ongoing" element={<Navigate to="/quiz/practice" replace />} />

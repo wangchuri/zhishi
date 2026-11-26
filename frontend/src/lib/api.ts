@@ -1145,6 +1145,37 @@ export const systemApi = {
   releaseMineru() {
     return request<{ released: boolean }>("POST", "/api/v1/system/mineru/release")
   },
+  // ─── 插件（内置领域插件 + MCP）───
+  getPlugins() {
+    return request<PluginsStatus>("GET", "/api/v1/system/plugins")
+  },
+  setPluginEnabled(pluginId: string, enabled: boolean) {
+    return request<PluginsStatus>("PUT", `/api/v1/system/plugins/${pluginId}`, { enabled })
+  },
+  reloadPlugins() {
+    return request<PluginsStatus>("POST", "/api/v1/system/plugins/reload")
+  },
+}
+
+/** 插件状态：内置插件的接口/工具/开关，MCP server 的连接情况 */
+export type PluginsStatus = {
+  builtin: Array<{
+    plugin_id: string
+    routes: string[]
+    tools: string[]
+    prompt: boolean
+    /** 后端补的展示用元数据（清单里的 name/description） */
+    name?: string
+    description?: string
+    enabled?: boolean
+  }>
+  mcp: {
+    configured: boolean
+    connected: boolean
+    servers: Array<{ server_id: string; tools: string[] }>
+  }
+  hooks: Record<string, string[]>
+  errors: Array<{ plugin_id?: string; server_id?: string; error: string }>
 }
 
 export type OnboardingUiItem = {
