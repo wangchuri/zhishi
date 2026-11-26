@@ -176,10 +176,19 @@ def create_agent(
     multimodal=True 时返回 MultimodalAgent，apredict 支持 image= / file_id=。
 
     **上下文裁剪归应用层**：tina 0.7.4 起移除了 `max_context_length`，框架不再
-    按字符硬截断（它猜不准应用的度量口径）。知拾的裁剪分两层：
-    - 正常：services/memory.py 按模型 API 返回的真实 prompt_tokens，到窗口 70% 就
-      后台压缩进长期记忆，memory_cursor 前移、回放时跳过已压缩部分；
-    - 兜底：还没做（需要时给 Agent 注入自定义 ContextManager 覆写 limit_messages）。
+    按字符硬截断（它猜不准应用的度量口径）。知拾只靠一层机制，**不做兜底裁剪**：
+
+    services/memory.py 每轮把模型 API 返回的真实 prompt_tokens 记到
+    ChatSession.last_prompt_tokens，下一轮开始前检查，到窗口 70% 就后台压缩进
+    长期记忆（memory_cursor 前移、回放时跳过已压缩部分）。
+
+    为什么不做「超阈值裁历史」的兜底：
+    - 1M 窗口 × 70% = 700k token，正常对话到不了；真到了说明是单轮暴涨，
+      而那时超窗口的是当前这轮本身，裁历史救不了；
+    - 裁剪会和后台压缩线程抢 messages，memory_cursor 会错位。
+
+    真要防的是「压缩失败后每轮重试」和「换小窗口模型时压缩来不及」，
+    前者该退避、后者该把压缩改成同步——都不是裁历史能解决的。
 
     mcp_client 是插件用的 MCPClient。插件工具名形如 mcp_<server>_<tool>，
     执行时由 tina 的 MCPToolExecutor 按名字反查 server，所以这里必须传
