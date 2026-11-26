@@ -154,6 +154,10 @@ def _on_startup() -> None:
             )
     finally:
         db.close()
+    # 插件（MCP server）在后台连，避免第一次对话卡在握手/超时上
+    from .plugins.registry import plugin_registry
+
+    plugin_registry.warmup_async()
 
 
 async def _poll_task_completion() -> None:

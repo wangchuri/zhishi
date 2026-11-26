@@ -189,6 +189,22 @@ class Config:
         except (TypeError, ValueError):
             return 600
 
+    @property
+    def plugins(self) -> dict:
+        """插件配置（config.yml 的 ``plugins`` 段）。
+
+        形如：
+            plugins:
+              mcp_servers:
+                - id: files
+                  type: stdio
+                  command: npx
+                  args: ["-y", "@modelcontextprotocol/server-filesystem", "D:/notes"]
+                  enabled: false
+        """
+        raw = self._data.get("plugins")
+        return raw if isinstance(raw, dict) else {}
+
     def mineru_settings_public(self) -> dict:
         """给前端的配置视图（含 token，本机单用户）。"""
         return {

@@ -294,6 +294,7 @@ def create_agent(
     max_context_length: int | None = None,
     keyword_actions: "KeywordActions | None" = None,
     multimodal: bool = False,
+    mcp_client=None,
 ) -> Agent:
     """创建 tina Agent（默认后端模型配置）。
 
@@ -301,6 +302,10 @@ def create_agent(
 
     max_context_length 是 tina 自己的滚动截断线（按字符算）。默认跟随模型窗口，
     让"到 70% 就压缩进长期记忆"先于框架硬截断发生；否则框架会先把老消息丢掉。
+
+    mcp_client 是插件用的 MCPClient。插件工具名形如 mcp_<server>_<tool>，
+    执行时由 tina 的 MCPToolExecutor 按名字反查 server，所以这里必须传
+    **和注册插件工具时同一个** client 实例（见 src/plugins/registry.py）。
     """
     llm = create_llm(model=model, multimodal=multimodal)
     kwargs: dict = {
@@ -310,6 +315,8 @@ def create_agent(
         kwargs["max_tool_loop"] = max_tool_loop
     if keyword_actions is not None:
         kwargs["keyword_actions"] = keyword_actions
+    if mcp_client is not None:
+        kwargs["mcp"] = mcp_client
     agent_cls = MultimodalAgent if multimodal else Agent
     agent = agent_cls(llm=llm, tools=tools, system_prompt=system_prompt, **kwargs)
     _attach_reasoning_roundtrip(agent)

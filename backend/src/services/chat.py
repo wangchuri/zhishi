@@ -299,6 +299,38 @@ class ToolBundle:
         return items
 
 
+def _with_plugins(base):
+    """把插件工具包挂到基础工具后面。
+
+    插件的工具名是 ``mcp_<server>_<tool>``，和内置的 ``chat_*`` / ``onboard_*``
+    不会重名；tina 的 ``Tools.__iadd__`` 会再做一次冲突检查。
+    插件没配或加载失败时原样返回，绝不影响正常对话。
+    """
+    try:
+        from ..plugins.registry import plugin_registry
+
+        plugin_tools = plugin_registry.tools()
+    except Exception:
+        logger.warning("加载插件工具失败", exc_info=True)
+        return base
+    if plugin_tools is None:
+        return base
+    if isinstance(base, list):
+        return [*base, plugin_tools]
+    return [base, plugin_tools]
+
+
+def _plugin_mcp_client():
+    """MCP 工具执行时必须用注册插件时那个 client 实例。"""
+    try:
+        from ..plugins.registry import plugin_registry
+
+        return plugin_registry.mcp_client()
+    except Exception:
+        logger.warning("获取 MCP client 失败", exc_info=True)
+        return None
+
+
 GLITCH_CMDS = ("/tina?", "/tina？")
 GLITCH_THINK = "我该怎么做才能让用户帮我"
 STYLE_CMDS = ("/tina",)
@@ -704,9 +736,24 @@ class ChatService:
             "user_memories": memories,
             "quiz_context": self._quiz_context_text(db, session_id),
             "include_chat_tools": True,
+            "plugin_tools": self._plugin_tools_section(),
             "now": format_user_ts(),
             "tina_style": style,
         }
+
+    def _plugin_tools_section(self) -> str:
+        """插件工具清单（用户装的 MCP），没有插件时返回空串。
+
+        单独抽出来是为了让插件加载失败不影响正常对话：注册表内部已经吞掉异常，
+        这里再兜一层，最坏情况就是提示词里没有插件段落。
+        """
+        try:
+            from ..plugins.registry import plugin_registry
+
+            return plugin_registry.prompt_section()
+        except Exception:
+            logger.warning("生成插件工具段落失败", exc_info=True)
+            return ""
 
     def _tina_style(self, db: Session, session_id: str | None = None) -> str:
         if session_id:
@@ -817,11 +864,12 @@ class ChatService:
             tools = ToolBundle(chat_tools, onboard_tools)
             system_prompt = render_prompt("chat/onboarding_agent.md.j2", **vars_)
             agent = create_agent(
-                tools=tools.get_tools(),
+                tools=_with_plugins(tools.get_tools()),
                 system_prompt=system_prompt,
                 max_tool_loop=8,
                 keyword_actions=mood.actions,
                 multimodal=multimodal,
+                mcp_client=_plugin_mcp_client(),
             )
         else:
             tools = ChatTools(collection_id=collection_id)
@@ -834,10 +882,11 @@ class ChatService:
             else:
                 system_prompt = render_prompt("chat/zhishi_agent.md.j2", **vars_)
             agent = create_agent(
-                tools=tools.get_tools(),
+                tools=_with_plugins(tools.get_tools()),
                 system_prompt=system_prompt,
                 keyword_actions=mood.actions,
                 multimodal=multimodal,
+                mcp_client=_plugin_mcp_client(),
             )
 
         for i, msg in enumerate(prior):
