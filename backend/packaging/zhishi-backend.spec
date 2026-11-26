@@ -10,6 +10,7 @@
 """
 
 import os
+import sys
 from pathlib import Path
 
 from PyInstaller.utils.hooks import collect_all, collect_data_files, collect_submodules
@@ -22,13 +23,46 @@ OUT = REPO / "desktop" / "zhishi-backend"
 
 datas = [
     (str(BACKEND / "prompts"), "prompts"),
-    (str(BACKEND / "config.yml"), "."),
+    # 只带模板，不带 config.yml：里面有 mineru_api_token 等本机配置，不能进安装包。
+    # 缺 config.yml 时 config.py 会退回内置默认值，首次保存设置时自动生成。
+    (str(BACKEND / "config.yml.example"), "."),
     (str(BACKEND / "tina.env.example"), "."),
 ]
 if FRONTEND_DIST.is_dir() and (FRONTEND_DIST / "index.html").is_file():
     datas.append((str(FRONTEND_DIST), "frontend_dist"))
 
 binaries = []
+
+# 本项目的 .venv 建在 miniconda 上（sys.base_prefix = ...\miniconda），venv 里没有
+# DLLs/ 目录，PyInstaller 的 bindepend 因此找不到 _ssl / _sqlite3 / _lzma / pyexpat
+# 依赖的 OpenSSL 等 DLL，会静默漏收 —— 打出来的 exe 一启动就
+# "ImportError: DLL load failed while importing _ssl"。
+# 这里按名字从 base_prefix 补齐（标准 CPython 在 DLLs/，conda 在 Library/bin/）。
+_EXTRA_DLLS = (
+    "libssl-3-x64.dll",
+    "libcrypto-3-x64.dll",
+    "sqlite3.dll",
+    "liblzma.dll",
+    "libexpat.dll",
+    "LIBBZ2.dll",
+    "ffi.dll",
+    "VCOMP140.DLL",
+    "MSVCP140_ATOMIC_WAIT.dll",
+)
+_DLL_DIRS = [
+    Path(sys.base_prefix) / "Library" / "bin",
+    Path(sys.base_prefix) / "DLLs",
+    Path(sys.base_prefix),
+]
+for _name in _EXTRA_DLLS:
+    for _dir in _DLL_DIRS:
+        _candidate = _dir / _name
+        if _candidate.is_file():
+            binaries.append((str(_candidate), "."))
+            break
+    else:
+        print(f"WARNING: 未找到 {_name}，打包后可能缺 DLL")
+
 hiddenimports = [
     "uvicorn.logging",
     "uvicorn.loops",
@@ -43,7 +77,12 @@ hiddenimports = [
     "sqlalchemy.dialects.sqlite",
 ]
 
-for pkg in ("chromadb", "sentence_transformers", "tina"):
+# 只收集真正需要的包。
+# 千万不要收 sentence_transformers：它会把 torch / transformers / scipy / sklearn /
+# pandas 整条链拉进 PYZ 和 _internal（实测 +4 GB，exe 也会从 ~18 MB 涨到 83 MB）。
+# 嵌入走的是 fastembed（ONNX），chromadb 对 sentence_transformers 是延迟导入
+# （sentence_transformer_embedding_function.py 里在 __init__ 内才 import），不收也安全。
+for pkg in ("chromadb", "tina"):
     try:
         d, b, h = collect_all(pkg)
         datas += d
@@ -57,10 +96,6 @@ try:
 except Exception:
     pass
 
-# tina wheel 本地路径
-for whl_hint in (BACKEND / "3rdParty").glob("tina_python*.whl"):
-    pass  # 已通过 pip 安装进 venv，collect_all(tina) 即可
-
 a = Analysis(
     [str(BACKEND / "packaging" / "desktop_entry.py")],
     pathex=[str(BACKEND)],
@@ -70,9 +105,27 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=["tkinter", "matplotlib", "pytest", "IPython"],
+    excludes=[
+        "tkinter",
+        "matplotlib",
+        "pytest",
+        "IPython",
+        # 以下是 sentence-transformers 的连带依赖，本项目不用（嵌入走 fastembed/ONNX）
+        "torch",
+        "torchvision",
+        "torchaudio",
+        "transformers",
+        "sentence_transformers",
+        "scipy",
+        "sklearn",
+        "pandas",
+        # opencv 只有独立安装的 MinerU 用，后端本体不 import
+        "cv2",
+    ],
+    # 只能 1，不能 2：tina 靠工具函数的 docstring 生成 JSON Schema，
+    # optimize=2 会剥掉 docstring，工具参数描述全空、模型调用会出错。
+    optimize=1,
     noarchive=False,
-    optimize=0,
 )
 pyz = PYZ(a.pure)
 

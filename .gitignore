@@ -104,7 +104,19 @@ data/*.db-journal
 data/*.db-wal
 data/*.db-shm
 # ─── 本地打包产物 ─────────────────────────
-desktop/
+# 只忽略产物，desktop/app/ 下的 Electron 工程源码要进仓库
+desktop/Zhishi/
+desktop/zhishi-backend/
+desktop/build/
+desktop/_newbackend/
+desktop/*.zip
+desktop/app/node_modules/
+desktop/app/release/
+# electron-builder 的 buildResources 目录要进仓库（installer.nsh / make_icon.py），
+# 只有生成出来的图标忽略 —— 注意上面的通配 build/ 会匹配到它，这里要显式放行
+!desktop/app/build/
+!desktop/app/build/**
+desktop/app/build/icon.ico
 
 # ─── LEKT 本地编译产物（按需提交则注释掉）──
 # backend/*.pyd

@@ -276,9 +276,9 @@ def main() -> None:
 
     print()
     print("=============== 知拾 访问地址 ===============")
-    print("  本机访问:   http://127.0.0.1:7777")
+    print(f"  本机访问:   http://127.0.0.1:{port}")
     if not desktop:
-        print("  局域网:     同一 WiFi 下用本机 IP:17777")
+        print(f"  局域网:     同一 WiFi 下用本机 IP:{port}")
     if desktop:
         print("  模式:       后台（冻结/桌面）")
     print("=============================================")

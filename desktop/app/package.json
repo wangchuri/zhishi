@@ -1,0 +1,20 @@
+{
+  "name": "zhishi-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "知拾 桌面端：Electron 外壳，Python 后端放在 zhishi-backend/ 旁路目录",
+  "main": "electron/main.js",
+  "scripts": {
+    "start": "electron .",
+    "start:dev": "electron . --dev",
+    "icon": "\"../../.venv/Scripts/python.exe\" build/make_icon.py",
+    "pack": "electron-builder --win dir --x64",
+    "dist": "electron-builder --win nsis --x64"
+  },
+  "//": "dependencies 必须保持为空：前端产物由后端托管（main.js 里 loadURL 后端地址），Electron 侧只有 main/preload 两个文件。一旦往里加依赖，electron-builder 会把整个 node_modules 打进 app.asar（实测多出 102 MB）。",
+  "dependencies": {},
+  "devDependencies": {
+    "electron": "^33.4.11",
+    "electron-builder": "^25.1.8"
+  }
+}

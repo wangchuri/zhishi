@@ -1,0 +1,57 @@
+# 知拾 桌面端打包配置（electron-builder）
+#
+# 关键约束：**Electron 侧只有 electron/main.js + electron/preload.js 两个文件**。
+# 前端产物由 Python 后端托管（main.js 打包后 loadURL(http://127.0.0.1:7777/)），
+# 所以这里不打包 dist/，也不打包 node_modules —— 之前把 frontend 的 package.json
+# 当成 Electron 应用配置，导致 56 个前端包（102 MB）被塞进 app.asar。
+#
+# 构建：
+#   cd desktop/app && npm install
+#   npm run pack        # → release/win-unpacked/
+#   然后把 desktop/zhishi-backend/ 整个目录拷进 release/win-unpacked/
+
+appId: com.zhishi.app
+productName: Zhishi
+copyright: Copyright © 2026 知拾
+
+directories:
+  output: release
+  buildResources: build
+
+# 直接用 node_modules 里已解压的 electron（npm install 时下好的），
+# 否则 electron-builder 会再从 github 下一份 115 MB 的 zip，国内极慢。
+electronDist: node_modules/electron/dist
+
+# 只打主进程代码。**不要**加 node_modules、dist、src 之类的通配，
+# dependencies 为空已经保证没有 node_modules 了。
+files:
+  - electron/**/*
+  - package.json
+  - "!**/*.map"
+  - "!**/*.ts"
+
+# 窗口图标走 resourcesPath，main.js 的 iconPath() 会优先找它
+extraResources:
+  - from: ../../frontend/public/logo.png
+    to: logo.png
+
+win:
+  icon: build/icon.ico
+  target:
+    - target: dir
+      arch:
+        - x64
+
+# 只保留中英文语言包：默认 55 个 locales 共 42.5 MB，砍掉省 ~40 MB
+electronLanguages:
+  - zh-CN
+  - en-US
+
+# 安装包（npm run dist 时才用）：web 安装器按需下载，下载体积更小
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  deleteAppDataOnUninstall: false
+  # 卸载时问用户要不要删用户数据（storage/ 里有资料和题库）
+  include: build/installer.nsh
