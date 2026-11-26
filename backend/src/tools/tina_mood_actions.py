@@ -59,16 +59,25 @@ class TinaMoodActions:
 
 
 def last_assistant_raw_text(agent) -> str:
-    """从 Agent 上下文取含关键词的原文（可见流可能已 Hide）。"""
+    """从 Agent 上下文取最后一条 assistant 正文（可见流可能已 Hide）。
+
+    tina 0.7.4 起 ``get_messages()`` 返回 ``Message`` / ``ToolCalls`` 对象
+    （不再是 dict），所以要按属性读；这里同时兼容旧版的 dict 形态。
+    """
     try:
         messages = agent.context_manager.get_messages()
     except Exception:
         return ""
     for msg in reversed(messages or []):
-        if not isinstance(msg, dict):
+        if isinstance(msg, dict):
+            role = msg.get("role")
+            content = msg.get("content")
+        else:
+            role = getattr(msg, "role", None)
+            content = getattr(msg, "content", None)
+        if role != "assistant":
             continue
-        if msg.get("role") != "assistant":
-            continue
-        if (msg.get("content") or "").strip():
-            return str(msg.get("content") or "")
+        # content 可能是 str，也可能是多模态块列表
+        if isinstance(content, str) and content.strip():
+            return content
     return ""

@@ -44,40 +44,6 @@ def format_agent_error(exc: BaseException) -> str:
     return f"{name}: {detail}" if detail else name
 
 
-def _patch_tina_multimodal_add_assistant() -> None:
-    """tina 0.7.3：Agent.add_message 会给 add_assistant_message 传 name，
-    但 MultimodalContextManager 覆写的那版只收 message（基类 ContextManager 收 name）。
-    多模态 Agent 回放历史时会 TypeError: takes 2 positional arguments but 3 were given。
-
-    已提给 tina：docs/bugs/2026-10-15-multimodal-add-assistant-message.md
-    tina 修好（预计 0.7.4）后即可删掉本补丁。
-    """
-    try:
-        from tina.agent.core.context_manager import MultimodalContextManager
-    except Exception:  # pragma: no cover
-        logger.warning("未能给 MultimodalContextManager 打补丁", exc_info=True)
-        return
-
-    original = MultimodalContextManager.add_assistant_message
-    if getattr(original, "_zhishi_patched", False):
-        return
-
-    def add_assistant_message(self, message: str, name: str | None = None):
-        self.messages.append(
-            {"role": "assistant", "content": message}
-            if name is None
-            else {"role": "assistant", "content": message, "name": name}
-        )
-        self.limit_messages()
-        return self.messages
-
-    add_assistant_message._zhishi_patched = True  # type: ignore[attr-defined]
-    MultimodalContextManager.add_assistant_message = add_assistant_message
-
-
-_patch_tina_multimodal_add_assistant()
-
-
 def create_llm(
     model: str | None = None,
     env_path: str | None = None,
@@ -155,96 +121,6 @@ def is_tool_related_chunk(chunk) -> bool:
     )
 
 
-def _last_tool_calls_assistant(messages: list[dict]) -> dict | None:
-    for i in range(len(messages) - 1, -1, -1):
-        msg = messages[i]
-        role = msg.get("role")
-        if role == "assistant" and msg.get("tool_calls"):
-            return msg
-        if role in ("user", "system"):
-            break
-    return None
-
-
-def _tool_turn_key(tool_calls: list) -> str:
-    ids = []
-    for call in tool_calls or []:
-        ids.append(str(call.get("id") or call.get("tool_call_id") or ""))
-    return "|".join(ids)
-
-
-def _merge_split_assistant(messages: list[dict], target: dict) -> None:
-    """Tina 会把同一轮拆成 content 一条 + tool_calls 一条，合回 DeepSeek 要的一条。"""
-    try:
-        idx = messages.index(target)
-    except ValueError:
-        return
-    if idx == 0:
-        return
-    prev = messages[idx - 1]
-    if prev.get("role") != "assistant" or prev.get("tool_calls"):
-        return
-    if prev.get("content") and not target.get("content"):
-        target["content"] = prev["content"]
-    if prev.get("reasoning_content") and not target.get("reasoning_content"):
-        target["reasoning_content"] = prev["reasoning_content"]
-    messages.pop(idx - 1)
-
-
-def _chunk_reasoning(chunk) -> str:
-    if isinstance(chunk, dict):
-        return str(chunk.get("reasoning_content") or "")
-    return str(getattr(chunk, "reasoning_content", None) or "")
-
-
-def _attach_reasoning_roundtrip(agent: Agent) -> None:
-    """DeepSeek 思考模式 + tools：工具回合必须回传 reasoning_content。
-
-    Tina 会丢掉思考，并把同一轮拆成 content 一条 + tool_calls 一条。
-    用 on_stream_chunk 记下思考，在 before_tool_calls（json.loads 之前）写回。
-    工具参数解析失败时 after_tool_call 不会触发，所以不能只靠 after_tool_call。
-    """
-    parts: list[str] = []
-    patched: set[str] = set()
-
-    def _on_stream_chunk(chunk) -> None:
-        text = _chunk_reasoning(chunk)
-        if text:
-            parts.append(text)
-
-    def _patch_last_tool_turn() -> None:
-        messages = agent.context_manager.get_messages()
-        target = _last_tool_calls_assistant(messages)
-        if target is None:
-            return
-        key = _tool_turn_key(target.get("tool_calls") or [])
-        if key in patched:
-            return
-        patched.add(key)
-        reasoning = "".join(parts)
-        parts.clear()
-        if reasoning and not target.get("reasoning_content"):
-            target["reasoning_content"] = reasoning
-        _merge_split_assistant(messages, target)
-
-    def _before_tool_calls(tool_calls) -> None:
-        try:
-            _patch_last_tool_turn()
-        except Exception:
-            logger.exception("回写工具回合 reasoning 失败")
-
-    def _after_tool_call(tool_name: str, tool_arguments: dict, tool_result):
-        try:
-            _patch_last_tool_turn()
-        except Exception:
-            logger.exception("回写工具回合 reasoning 失败")
-        return tool_name, tool_arguments, tool_result
-
-    agent.add_on_stream_chunk_handler(_on_stream_chunk)
-    agent.add_before_tool_calls_handler(_before_tool_calls)
-    agent.add_after_tool_call_handler(_after_tool_call)
-
-
 def _attach_usage_recorder(agent: Agent) -> None:
     """记下每次请求模型 API 返回的 usage（含 prompt_tokens）。
 
@@ -291,7 +167,6 @@ def create_agent(
     *,
     model: str | None = None,
     max_tool_loop: int | None = None,
-    max_context_length: int | None = None,
     keyword_actions: "KeywordActions | None" = None,
     multimodal: bool = False,
     mcp_client=None,
@@ -300,17 +175,18 @@ def create_agent(
 
     multimodal=True 时返回 MultimodalAgent，apredict 支持 image= / file_id=。
 
-    max_context_length 是 tina 自己的滚动截断线（按字符算）。默认跟随模型窗口，
-    让"到 70% 就压缩进长期记忆"先于框架硬截断发生；否则框架会先把老消息丢掉。
+    **上下文裁剪归应用层**：tina 0.7.4 起移除了 `max_context_length`，框架不再
+    按字符硬截断（它猜不准应用的度量口径）。知拾的裁剪分两层：
+    - 正常：services/memory.py 按模型 API 返回的真实 prompt_tokens，到窗口 70% 就
+      后台压缩进长期记忆，memory_cursor 前移、回放时跳过已压缩部分；
+    - 兜底：还没做（需要时给 Agent 注入自定义 ContextManager 覆写 limit_messages）。
 
     mcp_client 是插件用的 MCPClient。插件工具名形如 mcp_<server>_<tool>，
     执行时由 tina 的 MCPToolExecutor 按名字反查 server，所以这里必须传
     **和注册插件工具时同一个** client 实例（见 src/plugins/registry.py）。
     """
     llm = create_llm(model=model, multimodal=multimodal)
-    kwargs: dict = {
-        "max_context_length": int(max_context_length or MODEL_CONTEXT_TOKENS)
-    }
+    kwargs: dict = {}
     if max_tool_loop is not None:
         kwargs["max_tool_loop"] = max_tool_loop
     if keyword_actions is not None:
@@ -318,8 +194,9 @@ def create_agent(
     if mcp_client is not None:
         kwargs["mcp"] = mcp_client
     agent_cls = MultimodalAgent if multimodal else Agent
+    # context_manager 交给 tina 自建：Agent → ContextManager，
+    # MultimodalAgent → MultimodalContextManager(tools=self.tools)
     agent = agent_cls(llm=llm, tools=tools, system_prompt=system_prompt, **kwargs)
-    _attach_reasoning_roundtrip(agent)
     _attach_usage_recorder(agent)
     return agent
 

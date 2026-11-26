@@ -29,4 +29,6 @@ chromadb>=0.5.0
 fastembed>=0.4.0  # ONNX 嵌入（无 torch），模型 BAAI/bge-small-zh-v1.5
 
 # Agent 框架（tina，DeepSeek tool-calling + KeywordActions）
-tina-python==0.7.3
+# 0.7.4 起：ToolCalls 是原子单位（不再产生孤儿 tool_calls）、reasoning_content
+# 默认回传、框架不再管上下文长度（裁剪归应用层，见 core/llm.py 的说明）
+tina-python==0.7.4
