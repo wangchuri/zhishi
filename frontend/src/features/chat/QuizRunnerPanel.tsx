@@ -5,6 +5,12 @@ import { Button } from "@/components/ui/button"
 import { quizApi } from "@/lib/api"
 import { QuizQuestionInput } from "@/features/quiz/QuizQuestionInput"
 import { QuizAnswerFeedback } from "@/features/quiz/QuizAnswerFeedback"
+import {
+  AttachImageButton,
+  AttachmentThumbnails,
+  CaptureImageButton,
+} from "@/components/blocks/ImageAttachments"
+import { useImageAttachments } from "@/hooks/useImageAttachments"
 import { QuizSessionPicker } from "@/features/quiz/QuizSessionPicker"
 import { sessionTitle } from "@/features/quiz/quizSessionFormat"
 import {
@@ -57,6 +63,8 @@ export function QuizRunnerPanel({
   const [lastResult, setLastResult] = useState<QuizAnswerResult | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // 拍照作答：和主刷题页同一套 hook，图片先传成 upload id，随答案一起提交
+  const attachments = useImageAttachments()
 
   const currentQuestion = session?.questions[index]
 
@@ -137,7 +145,8 @@ export function QuizRunnerPanel({
     setCustomAnswers({})
     setLastResult(null)
     setError(null)
-  }, [])
+    attachments.clear()
+  }, [attachments])
 
   const submit = async (opts?: { unknown?: boolean }) => {
     if (!session || !currentQuestion || submitting) return
@@ -157,7 +166,9 @@ export function QuizRunnerPanel({
         blankAnswers,
         customAnswers,
       )
-      if (!hasAnswer) return
+      // 主观题可以只拍照不写字：有图片也算作答
+      const hasImage = isAiGradedQuestion(qtype) && attachments.ids.length > 0
+      if (!hasAnswer && !hasImage) return
     }
 
     setSubmitting(true)
@@ -169,6 +180,11 @@ export function QuizRunnerPanel({
         user_answer: opts?.unknown ? undefined : payload,
         status: opts?.unknown ? "unknown" : undefined,
         defer_grade: isDeferred || undefined,
+        // 手写解答的照片：随答案一起交给 AI 判题
+        attachments:
+          !opts?.unknown && isAiGradedQuestion(qtype) && attachments.ids.length
+            ? attachments.ids
+            : undefined,
       })
       const result = res as QuizAnswerResult
       setSession((prev) =>
@@ -309,6 +325,12 @@ export function QuizRunnerPanel({
           onCustomAnswersChange={setCustomAnswers}
           documentId={session.document_id}
         />
+        {attachments.items.length > 0 && (
+          <AttachmentThumbnails items={attachments.items} onRemove={attachments.remove} />
+        )}
+        {attachments.error && (
+          <div className="text-caption text-danger">{attachments.error}</div>
+        )}
         {lastResult && (
           <QuizAnswerFeedback
             question={currentQuestion}
@@ -322,13 +344,28 @@ export function QuizRunnerPanel({
       <div className="shrink-0 border-t border-line-soft px-3 py-2 flex flex-wrap gap-2">
         {!lastResult ? (
           <>
+            {/* 拍照作答：选择题走字符串匹配，传了图也判不了，所以只给主观题/填空题 */}
+            {isAiGradedQuestion(qtype) && (
+              <>
+                <CaptureImageButton
+                  onFiles={attachments.addFiles}
+                  disabled={submitting || attachments.uploading}
+                  className="border border-line"
+                />
+                <AttachImageButton
+                  onFiles={attachments.addFiles}
+                  disabled={submitting || attachments.uploading}
+                />
+              </>
+            )}
             <Button
               variant="primary"
               size="sm"
               onClick={() => void submit()}
               disabled={
                 submitting ||
-                !canSubmitAnswer(qtype, selectedOption, textAnswer, blankAnswers, customAnswers)
+                (!canSubmitAnswer(qtype, selectedOption, textAnswer, blankAnswers, customAnswers) &&
+                  attachments.ids.length === 0)
               }
             >
               {submitting
