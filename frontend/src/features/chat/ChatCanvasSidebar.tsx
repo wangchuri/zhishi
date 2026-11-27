@@ -232,6 +232,9 @@ export function ChatHtmlFrame({
 
   useEffect(() => {
     const onMsg = (e: MessageEvent) => {
+      // 只认自己这个 iframe 的消息：同页可能有多个 iframe（内联图示、多个画布），
+      // 不判断来源会互相串消息
+      if (e.source !== iframeRef.current?.contentWindow) return
       const d = e.data
       if (!d || d.type !== "zhishi-canvas-zoom-changed") return
       const z = Number(d.zoom)
