@@ -18,6 +18,10 @@ export const InlineHtmlFrame = memo(function InlineHtmlFrame({
 
   useEffect(() => {
     const onMsg = (e: MessageEvent) => {
+      // 只认自己这个 iframe 发来的高度：一条消息里可能有多个内联图示，
+      // 不判断 source 的话所有实例都会套用最后到达的那个高度——
+      // 高的图被压矮，看起来就是底部内容被裁掉。
+      if (e.source !== iframeRef.current?.contentWindow) return
       const d = e.data as { type?: string; height?: number } | null
       if (!d || d.type !== HEIGHT_MESSAGE) return
       const h = Number(d.height)

@@ -102,6 +102,8 @@ export function wrapInlineHtml(fragment: string, maxHeight: number): string {
   window.addEventListener('resize', refit);
   window.addEventListener('message', function(e){
     var d=e.data;
+    // 只认宿主页面发来的 refit；沙箱里的内容自己 postMessage 不该触发重算
+    if(e.source!==parent) return;
     if(d && d.type==='${REFIT_MESSAGE}') refit();
   });
   if(window.ResizeObserver){
